@@ -49,6 +49,8 @@ jobs:
           dash tests/test-controller.sh
       - name: Exercise deterministic policy/state unit tests
         run: dash tests/test-policy.sh
+      - name: Exercise formal enforcement state machine
+        run: dash tests/test-enforcement.sh
       - name: Enforce proxy isolation contract
         run: python3 tests/test-proxy-isolation.py
       - name: Exercise read-only runtime isolation audit
