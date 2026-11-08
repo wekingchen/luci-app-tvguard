@@ -19,6 +19,10 @@ create() {
     # A rule with no jump target only counts matching packets.
     has "$RAW" -m comment --comment TVG_COUNT ||
         "$IPT" -t raw -A "$RAW" -m comment --comment TVG_COUNT
+    has "$RAW" -p tcp -m comment --comment TVG_TCP ||
+        "$IPT" -t raw -A "$RAW" -p tcp -m comment --comment TVG_TCP
+    has "$RAW" -p udp -m comment --comment TVG_UDP ||
+        "$IPT" -t raw -A "$RAW" -p udp -m comment --comment TVG_UDP
     has "$RAW" -j "$GATE" ||
         "$IPT" -t raw -A "$RAW" -j "$GATE"
     has PREROUTING -i "$IFACE" -s "$IP" -j "$RAW" ||
@@ -73,6 +77,18 @@ case "${1:-}" in
             echo unknown
         fi
         ;;
+    sample)
+        # Output: all_packets all_bytes tcp_packets tcp_bytes udp_packets udp_bytes
+        "$IPT" -t raw -L "$RAW" -n -v -x 2>/dev/null |
+            awk '
+                /TVG_COUNT/ {a=$1; b=$2; foundA=1}
+                /TVG_TCP/   {t=$1; u=$2; foundT=1}
+                /TVG_UDP/   {v=$1; w=$2; foundU=1}
+                END {
+                    if (!foundA || !foundT || !foundU) exit 1
+                    print a, b, t, u, v, w
+                }'
+        ;;
     count)
         "$IPT" -t raw -L "$RAW" -n -v -x 2>/dev/null |
             awk '/TVG_COUNT/ {print $1; found=1; exit} END {if (!found) exit 1}'
@@ -86,5 +102,5 @@ case "${1:-}" in
         "$IPT" -t raw -F "$GATE" 2>/dev/null || :
         "$IPT" -t raw -X "$GATE" 2>/dev/null || :
         ;;
-    *) echo "usage: tvguard-fw {sync|gate 0|gate 1|count|inspect|remove}" >&2; exit 2 ;;
+    *) echo "usage: tvguard-fw {sync|gate 0|gate 1|sample|count|inspect|remove}" >&2; exit 2 ;;
 esac
