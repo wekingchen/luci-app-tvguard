@@ -144,50 +144,42 @@ if sh "$CHECK" > "$TMP/fail-mode" 2>&1; then
     echo "FAIL: compatibility check ran while enforcement was enabled" >&2
     exit 1
 fi
-grep -q '^reason=enforce_must_be_0
- "$TMP/fail-mode"
+grep -q '^reason=enforce_must_be_0$' "$TMP/fail-mode"
 export TVG_COMPAT_ENFORCE=0
 
 export TVG_COMPAT_ARMED=1
 if sh "$CHECK" > "$TMP/fail-armed" 2>&1; then exit 1; fi
-grep -q '^reason=allow_enforcement_must_be_0
- "$TMP/fail-armed"
+grep -q '^reason=allow_enforcement_must_be_0$' "$TMP/fail-armed"
 export TVG_COMPAT_ARMED=0
 
 export TVG_COMPAT_OBSERVE=1
 if sh "$CHECK" > "$TMP/fail-observe" 2>&1; then exit 1; fi
-grep -q '^reason=observe_reply_must_be_0
- "$TMP/fail-observe"
+grep -q '^reason=observe_reply_must_be_0$' "$TMP/fail-observe"
 export TVG_COMPAT_OBSERVE=0
 
 export TVG_COMPAT_AUDIT='unsafe:test'
 if sh "$CHECK" > "$TMP/fail-audit" 2>&1; then exit 1; fi
-grep -q '^reason=isolation_before_unsafe:test
- "$TMP/fail-audit"
+grep -q '^reason=isolation_before_unsafe:test$' "$TMP/fail-audit"
 export TVG_COMPAT_AUDIT=ok
 
 export TVG_COMPAT_GATE=blocked
 if sh "$CHECK" > "$TMP/fail-gate" 2>&1; then exit 1; fi
-grep -q '^reason=gate_before_blocked
- "$TMP/fail-gate"
+grep -q '^reason=gate_before_blocked$' "$TMP/fail-gate"
 export TVG_COMPAT_GATE=allowed
 
 export TVG_COMPAT_FAIL_TABLE=mangle
 if sh "$CHECK" > "$TMP/fail-table" 2>&1; then exit 1; fi
-grep -q '^reason=snapshot_before_unavailable
- "$TMP/fail-table"
+grep -q '^reason=snapshot_before_unavailable$' "$TMP/fail-table"
 export TVG_COMPAT_FAIL_TABLE=none
 
 export TVG_COMPAT_MUTATE=fail
 if sh "$CHECK" > "$TMP/fail-sync" 2>&1; then exit 1; fi
-grep -q '^reason=tvguard_sync_failed
- "$TMP/fail-sync"
+grep -q '^reason=tvguard_sync_failed$' "$TMP/fail-sync"
 export TVG_COMPAT_MUTATE=none
 
 export TVG_COMPAT_INCLUDE_PATH=/usr/libexec/foreign-firewall-include
 if sh "$CHECK" > "$TMP/fail-include" 2>&1; then exit 1; fi
-grep -q '^reason=firewall_include_path_unexpected
- "$TMP/fail-include"
+grep -q '^reason=firewall_include_path_unexpected$' "$TMP/fail-include"
 export TVG_COMPAT_INCLUDE_PATH=/usr/libexec/tvguard-firewall-include
 
 echo "PASS: compatibility checker validates safe switches, audit/gate, snapshots, sync and firewall include ownership"
