@@ -12,18 +12,24 @@ let state = {
     mode: 'child', activity: 'active', firewall_state: 'allowed',
     date: '2026-11-08', enforce: 0, armed: 0, blocked: 0,
     used_seconds: 123, quota_seconds: 7200, remaining_seconds: 7077,
-    bonus_seconds: 0, bonus_undo_available: 0, pps: 8, tcp_pps: 1, udp_pps: 7,
+    bonus_seconds: 0, bonus_undo_available: 0, bonus_limit_seconds: 7200,
+    policy_reason: 'none', pps: 8, tcp_pps: 1, udp_pps: 7,
     bytes_per_second: 2900, traffic_class: 'low_traffic',
     shadow_label: 'unknown', calibration_phase: 'idle',
     calibration_label: 'none', calibration_app: 'none',
     calibration_last_session: 'none'
 };
 let commands = [];
+let eventLog = [
+    '1700000000|1|mode|切换为 parent',
+    '1700000060|2|reward|+30 分钟',
+    '1700000120|3|enforcement|enforce=0'
+].join('\n');
 const mockFs = {
     exec: (name, args) => {
         commands.push([name, args]);
         if (args[0] === 'status') return Promise.resolve({code: 0, stdout: JSON.stringify(state)});
-        if (args[0] === 'log') return Promise.resolve({code: 0, stdout: ''});
+        if (args[0] === 'log') return Promise.resolve({code: 0, stdout: eventLog});
         if (args[0] === 'calibration') return Promise.resolve({code: 0, stdout: 'sample line'});
         if (args[0] === 'isolation') return Promise.resolve({code: 0, stdout: 'ok\n'});
         if (name === '/usr/libexec/tvguardctl') return Promise.resolve({code: 0, stdout: ''});
@@ -97,6 +103,11 @@ const updates = [
     assert.equal(page._uiSummary.control, '观察模式');
     assert.equal(page._uiSummary.isolationSafe, true);
     assert.equal(page._uiSummary.canEnableEnforcement, false);
+    assert.equal(page._eventSummary.length, 3);
+    assert.equal(page._eventSummary[0].title, '控制策略');
+    assert.match(page._eventSummary[0].note, /观察模式/);
+    assert.equal(page._eventSummary[2].title, '模式切换');
+    assert.match(page._eventSummary[2].note, /家长模式/);
     assert.match(page._isolationStatus.label, /通过/);
     assert.match(page._isolationStatus.label, /nat \/ mangle \/ filter/);
 
@@ -126,6 +137,8 @@ const updates = [
         remaining_seconds: 3600,
         bonus_seconds: 900,
         bonus_undo_available: 1,
+        bonus_limit_seconds: 7200,
+        policy_reason: 'none',
         shadow_label: 'playing',
         traffic_class: 'high_traffic',
         pps: 120,
@@ -138,6 +151,8 @@ const updates = [
     assert.match(page._overviewNodes.parentNotice.textContent, /家长模式进行中/);
     assert.equal(page._overviewNodes.parentNotice.style.display, '');
     assert.equal(page._overviewNodes.undoButton.disabled, false);
+    assert.match(page._overviewNodes.rewardLimit.textContent, /15 \/ 120 分钟/);
+    assert.equal(page._overviewNodes.rewardButtons[0].node.disabled, false);
     assert.match(page._overviewNodes.shadowValue.textContent, /疑似播放/);
     assert.match(page._overviewNodes.trafficNote.textContent, /2\.0 KB\/s/);
 
@@ -150,6 +165,8 @@ const updates = [
         remaining_seconds: 7077,
         bonus_seconds: 0,
         bonus_undo_available: 0,
+        bonus_limit_seconds: 7200,
+        policy_reason: 'none',
         shadow_label: 'unknown',
         traffic_class: 'low_traffic',
         pps: 8,
@@ -158,6 +175,31 @@ const updates = [
     page.updateOverviewUI(state);
     assert.equal(page._overviewNodes.parentNotice.style.display, 'none');
     assert.equal(page._overviewNodes.undoButton.disabled, true);
+
+    // Near the daily reward cap, only additions that fit must remain clickable.
+    Object.assign(state, {
+        bonus_seconds: 6300,
+        bonus_undo_available: 1,
+        bonus_limit_seconds: 7200,
+        policy_reason: 'quota',
+        remaining_seconds: 0
+    });
+    page.updateOverviewUI(state);
+    assert.match(page._overviewNodes.rewardLimit.textContent, /105 \/ 120 分钟/);
+    assert.equal(page._overviewNodes.rewardButtons[0].node.disabled, false);
+    assert.equal(page._overviewNodes.rewardButtons[1].node.disabled, true);
+    assert.equal(page._overviewNodes.rewardButtons[2].node.disabled, true);
+    assert.match(page._overviewNodes.modeNote.textContent, /额度已用完/);
+
+    Object.assign(state, {
+        bonus_seconds: 0,
+        bonus_undo_available: 0,
+        bonus_limit_seconds: 7200,
+        policy_reason: 'window',
+        remaining_seconds: 7077
+    });
+    page.updateOverviewUI(state);
+    assert.match(page._overviewNodes.modeNote.textContent, /不在允许使用时段/);
 
     assert.match(page._trafficNodes.outgoing.textContent, /8 PPS/);
     assert.match(page._trafficNodes.replyStatus.textContent, /未启用|暂不可用/);
@@ -187,6 +229,8 @@ const updates = [
         assert.equal(n.selection.disabled, active);
         assert.equal(n.scene.disabled, active);
         assert.ok(n.title.textContent.length > 0);
+        if (phase.calibration_phase === 'running')
+            assert.match(n.title.textContent, /电视系统|小米系统首页闲置/);
     }
     assert.equal(page._calibrationNodes.title.textContent, '未在采样');
 
