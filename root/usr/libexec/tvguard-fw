@@ -212,14 +212,23 @@ case "${1:-}" in
         printf '%s %s\n' "$lan" "$local"
         ;;
     remove)
-        remove_reply_rules
+        # Destructive chain cleanup is permitted only when the current TVG
+        # namespace is fully proven to be ours. On any conflict, remove only
+        # exact TV-scoped hooks and leave disputed chain contents untouched.
+        owned=0
+        isolation_ok && owned=1
+        remove_reply_rules || :
         while has PREROUTING -i "$IFACE" -s "$IP" -j "$RAW"; do
-            raw_ipt -D PREROUTING -i "$IFACE" -s "$IP" -j "$RAW"
+            raw_ipt -D PREROUTING -i "$IFACE" -s "$IP" -j "$RAW" || break
         done
-        raw_ipt -F "$RAW" 2>/dev/null || :
-        raw_ipt -X "$RAW" 2>/dev/null || :
-        raw_ipt -F "$GATE" 2>/dev/null || :
-        raw_ipt -X "$GATE" 2>/dev/null || :
+        if [ "$owned" = 1 ]; then
+            raw_ipt -F "$RAW" 2>/dev/null || :
+            raw_ipt -X "$RAW" 2>/dev/null || :
+            raw_ipt -F "$GATE" 2>/dev/null || :
+            raw_ipt -X "$GATE" 2>/dev/null || :
+        else
+            echo "TV Guard: isolation audit not clean; disputed TVG chains were not flushed/deleted" >&2
+        fi
         ;;
     *) echo "usage: tvguard-fw {sync|sync-reply|gate 0|gate 1|sample|count|inspect|inspect-reply|sample-reply|remove}" >&2; exit 2 ;;
 esac
