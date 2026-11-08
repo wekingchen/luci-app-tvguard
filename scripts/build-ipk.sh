@@ -20,7 +20,8 @@ for f in \
     usr/libexec/tvguardd \
     usr/libexec/tvguard-status \
     usr/libexec/tvguard-fw \
-    usr/libexec/tvguard-firewall-include; do
+    usr/libexec/tvguard-firewall-include \
+    usr/libexec/tvguard-shadow; do
     chmod 755 "$WORK/data/$f"
 done
 
