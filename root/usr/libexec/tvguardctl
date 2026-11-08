@@ -192,7 +192,12 @@ calculate() {
     esac
 }
 apply_gate() {
-    if [ "$ENFORCE" = 1 ] && [ "$BLOCKED" = 1 ]; then
+    expected=allowed
+    [ "$ENFORCE" = 1 ] && [ "$BLOCKED" = 1 ] && expected=blocked
+    actual="$("$FW" inspect 2>/dev/null || echo unknown)"
+    # Avoid rewriting the iptables gate on every 10-second tick.
+    [ "$actual" = "$expected" ] && return 0
+    if [ "$expected" = blocked ]; then
         "$FW" gate 1
     else
         "$FW" gate 0
@@ -350,7 +355,13 @@ esac
 
 case "$1" in
     tick)
-        "$FW" sync
+        # Firewall3 reloads can delete our custom chain. Recreate only when
+        # needed; otherwise do not transiently apply a stale disk snapshot.
+        hook_state="$("$FW" inspect 2>/dev/null || echo absent)"
+        case "$hook_state" in
+            allowed|blocked) : ;;
+            *) "$FW" sync ;;
+        esac
         tick
         ;;
     sync)
