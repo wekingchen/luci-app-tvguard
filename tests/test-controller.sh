@@ -93,7 +93,8 @@ check 'assert s["enforce"] == 0 and s["armed"] == 0 and s["mode"] == "child"'
 check 'assert s["pps"] == 0 and s["calibration_label"] == "none"'
 check 'assert s["reply_observer"] == "disabled" and s["reply_coverage"] == "unverified"'
 check 'assert s["reply_prerouting_pps"] == 0 and s["reply_local_pps"] == 0'
-check 'assert s["bonus_undo_available"] == 0'
+check 'assert s["bonus_undo_available"] == 0 and s["bonus_limit_seconds"] == 7200'
+check 'assert s["policy_reason"] == "none"'
 
 sh "$CTL" bonus 15
 status
@@ -110,10 +111,11 @@ if sh "$CTL" bonus 999 > "$TMP/out" 2>&1; then exit 1; fi
 
 sh "$CTL" mode parent 30
 status
-check 'assert s["mode"] == "parent" and s["parent_until"] > 0'
+check 'assert s["mode"] == "parent" and s["parent_until"] > 0 and s["policy_reason"] == "none"'
 sh "$CTL" mode locked
 status
 check 'assert s["mode"] == "locked" and s["would_block"] == 1 and s["blocked"] == 0'
+check 'assert s["policy_reason"] == "locked"'
 sh "$CTL" mode child
 
 # Prime the counter baseline: never bill 20 seconds when daemon starts.
