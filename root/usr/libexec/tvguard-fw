@@ -4,6 +4,9 @@
 set -eu
 IPT=/usr/sbin/iptables
 [ -x "$IPT" ] || IPT="$(command -v iptables)"
+# Single choke point: TV Guard is technically unable to select nat/mangle/filter
+# through this adapter. Proxy tools own those tables.
+raw_ipt() { raw_ipt "$@"; }
 RAW=TVG_RAW
 GATE=TVG_GATE
 IP="$(uci -q get tvguard.main.ip || echo 192.168.101.76)"
@@ -12,7 +15,7 @@ IFACE="$(uci -q get tvguard.main.interface || echo br-lan)"
 case "$IP" in ''|*[!0-9.]* ) echo "invalid TV IPv4 address" >&2; exit 2;; esac
 case "$IFACE" in ''|*[!a-zA-Z0-9_.:-]* ) echo "invalid interface" >&2; exit 2;; esac
 
-has() { "$IPT" -t raw -C "$@" >/dev/null 2>&1; }
+has() { raw_ipt -C "$@" >/dev/null 2>&1; }
 
 # Passive reply-observation hooks. They have NO -j target and never ACCEPT,
 # RETURN, DROP, MARK or alter routing. Disabled until explicitly authorized
@@ -26,16 +29,16 @@ reply_rules_present() {
 }
 add_reply_rules() {
     has PREROUTING -i "$IFACE" -d "$IP" -m comment --comment TVG_RX_LAN ||
-        "$IPT" -t raw -I PREROUTING 1 -i "$IFACE" -d "$IP" -m comment --comment TVG_RX_LAN || return 1
+        raw_ipt -I PREROUTING 1 -i "$IFACE" -d "$IP" -m comment --comment TVG_RX_LAN || return 1
     has OUTPUT -o "$IFACE" -d "$IP" -m comment --comment TVG_RX_LOCAL ||
-        "$IPT" -t raw -I OUTPUT 1 -o "$IFACE" -d "$IP" -m comment --comment TVG_RX_LOCAL || return 1
+        raw_ipt -I OUTPUT 1 -o "$IFACE" -d "$IP" -m comment --comment TVG_RX_LOCAL || return 1
 }
 remove_reply_rules() {
     while has PREROUTING -i "$IFACE" -d "$IP" -m comment --comment TVG_RX_LAN; do
-        "$IPT" -t raw -D PREROUTING -i "$IFACE" -d "$IP" -m comment --comment TVG_RX_LAN || return 1
+        raw_ipt -D PREROUTING -i "$IFACE" -d "$IP" -m comment --comment TVG_RX_LAN || return 1
     done
     while has OUTPUT -o "$IFACE" -d "$IP" -m comment --comment TVG_RX_LOCAL; do
-        "$IPT" -t raw -D OUTPUT -o "$IFACE" -d "$IP" -m comment --comment TVG_RX_LOCAL || return 1
+        raw_ipt -D OUTPUT -o "$IFACE" -d "$IP" -m comment --comment TVG_RX_LOCAL || return 1
     done
 }
 sync_reply_rules() {
@@ -51,7 +54,7 @@ sync_reply_rules() {
     fi
 }
 read_reply_count() {
-    "$IPT" -t raw -L "$1" -n -v -x 2>/dev/null |
+    raw_ipt -L "$1" -n -v -x 2>/dev/null |
         awk -v label="$2" '
         index($0, "/* " label " */") {
             if (found++) exit 2
@@ -63,33 +66,33 @@ read_reply_count() {
         }'
 }
 create() {
-    "$IPT" -t raw -N "$RAW" 2>/dev/null || :
-    "$IPT" -t raw -N "$GATE" 2>/dev/null || :
+    raw_ipt -N "$RAW" 2>/dev/null || :
+    raw_ipt -N "$GATE" 2>/dev/null || :
     # A rule with no jump target only counts matching packets.
     has "$RAW" -m comment --comment TVG_COUNT ||
-        "$IPT" -t raw -A "$RAW" -m comment --comment TVG_COUNT
+        raw_ipt -A "$RAW" -m comment --comment TVG_COUNT
     has "$RAW" -p tcp -m comment --comment TVG_TCP ||
-        "$IPT" -t raw -A "$RAW" -p tcp -m comment --comment TVG_TCP
+        raw_ipt -A "$RAW" -p tcp -m comment --comment TVG_TCP
     has "$RAW" -p udp -m comment --comment TVG_UDP ||
-        "$IPT" -t raw -A "$RAW" -p udp -m comment --comment TVG_UDP
+        raw_ipt -A "$RAW" -p udp -m comment --comment TVG_UDP
     has "$RAW" -j "$GATE" ||
-        "$IPT" -t raw -A "$RAW" -j "$GATE"
+        raw_ipt -A "$RAW" -j "$GATE"
     # Configure the gate before adding its PREROUTING entry.
     # No temporary unguarded window during first initialization.
     if ! has "$GATE" -j RETURN && ! has "$GATE" -j DROP; then
         gate "$(policy)"
     fi
     has PREROUTING -i "$IFACE" -s "$IP" -j "$RAW" ||
-        "$IPT" -t raw -I PREROUTING 1 -i "$IFACE" -s "$IP" -j "$RAW"
+        raw_ipt -I PREROUTING 1 -i "$IFACE" -s "$IP" -j "$RAW"
 }
 gate() {
     case "$1" in 0) TARGET=RETURN;; 1) TARGET=DROP;; *) exit 2;; esac
     # Atomic replacement when already initialized; avoid temporary ACCEPT windows.
-    if "$IPT" -t raw -C "$GATE" -j RETURN 2>/dev/null ||
-       "$IPT" -t raw -C "$GATE" -j DROP 2>/dev/null; then
-        "$IPT" -t raw -R "$GATE" 1 -j "$TARGET"
+    if raw_ipt -C "$GATE" -j RETURN 2>/dev/null ||
+       raw_ipt -C "$GATE" -j DROP 2>/dev/null; then
+        raw_ipt -R "$GATE" 1 -j "$TARGET"
     else
-        "$IPT" -t raw -A "$GATE" -j "$TARGET"
+        raw_ipt -A "$GATE" -j "$TARGET"
     fi
 }
 policy() {
@@ -132,9 +135,9 @@ case "${1:-}" in
     inspect)
         if ! has PREROUTING -i "$IFACE" -s "$IP" -j "$RAW"; then
             echo absent
-        elif "$IPT" -t raw -C "$GATE" -j DROP >/dev/null 2>&1; then
+        elif raw_ipt -C "$GATE" -j DROP >/dev/null 2>&1; then
             echo blocked
-        elif "$IPT" -t raw -C "$GATE" -j RETURN >/dev/null 2>&1; then
+        elif raw_ipt -C "$GATE" -j RETURN >/dev/null 2>&1; then
             echo allowed
         else
             echo unknown
@@ -142,7 +145,7 @@ case "${1:-}" in
         ;;
     sample)
         # Output: all_packets all_bytes tcp_packets tcp_bytes udp_packets udp_bytes
-        "$IPT" -t raw -L "$RAW" -n -v -x 2>/dev/null |
+        raw_ipt -L "$RAW" -n -v -x 2>/dev/null |
             awk '
                 /TVG_COUNT/ {a=$1; b=$2; foundA=1}
                 /TVG_TCP/   {t=$1; u=$2; foundT=1}
@@ -153,7 +156,7 @@ case "${1:-}" in
                 }'
         ;;
     count)
-        "$IPT" -t raw -L "$RAW" -n -v -x 2>/dev/null |
+        raw_ipt -L "$RAW" -n -v -x 2>/dev/null |
             awk '/TVG_COUNT/ {print $1; found=1; exit} END {if (!found) exit 1}'
         ;;
     inspect-reply)
@@ -176,12 +179,12 @@ case "${1:-}" in
     remove)
         remove_reply_rules
         while has PREROUTING -i "$IFACE" -s "$IP" -j "$RAW"; do
-            "$IPT" -t raw -D PREROUTING -i "$IFACE" -s "$IP" -j "$RAW"
+            raw_ipt -D PREROUTING -i "$IFACE" -s "$IP" -j "$RAW"
         done
-        "$IPT" -t raw -F "$RAW" 2>/dev/null || :
-        "$IPT" -t raw -X "$RAW" 2>/dev/null || :
-        "$IPT" -t raw -F "$GATE" 2>/dev/null || :
-        "$IPT" -t raw -X "$GATE" 2>/dev/null || :
+        raw_ipt -F "$RAW" 2>/dev/null || :
+        raw_ipt -X "$RAW" 2>/dev/null || :
+        raw_ipt -F "$GATE" 2>/dev/null || :
+        raw_ipt -X "$GATE" 2>/dev/null || :
         ;;
     *) echo "usage: tvguard-fw {sync|sync-reply|gate 0|gate 1|sample|count|inspect|inspect-reply|sample-reply|remove}" >&2; exit 2 ;;
 esac
