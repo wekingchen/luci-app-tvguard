@@ -97,8 +97,11 @@ return view.extend({
                 s.enforce ?
                     this.actionButton('关闭控制，恢复观察模式', ['enforce', 'off'],
                         '确认关闭所有 TV Guard 自动封禁？', true) :
-                    this.actionButton('开启正式网络控制', ['enforce', 'on'],
-                        '即将实际阻断电视的网络访问。请先完成现场测试，并确认主路由绕过风险。继续吗？', true)
+                    (s.armed ?
+                        this.actionButton('开启正式网络控制', ['enforce', 'on'],
+                            '即将实际阻断经过 N1 的电视 IPv4 数据包。确认已完成现场测试并准备好恢复方案吗？', true) :
+                        E('p', { 'class': 'alert-message warning' },
+                            '正式控制尚未解锁。开发版默认只观察；待实机验证完成后，管理员才能通过 UCI 显式授权开启。'))
             ]),
             panel('最近操作记录', [
                 E('pre', {
