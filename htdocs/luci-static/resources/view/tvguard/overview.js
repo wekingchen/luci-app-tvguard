@@ -62,6 +62,28 @@ return view.extend({
             unknown: '无法核实当前 TV Guard 防火墙规则'
         }[s.firewall_state] || '未知';
         var blocks = (s.enforce ? '正式控制' : '观察模式') + ' · ' + fwState;
+        var appSelect = E('select', { 'class': 'cbi-input-select', 'style': 'margin:4px' }, [
+            E('option', { 'value': 'tencent' }, '腾讯极光'),
+            E('option', { 'value': 'iqiyi' }, '爱奇艺'),
+            E('option', { 'value': 'mango' }, '芒果 TV'),
+            E('option', { 'value': 'other' }, '其他视频应用')
+        ]);
+        var sceneSelect = E('select', { 'class': 'cbi-input-select', 'style': 'margin:4px' }, [
+            E('option', { 'value': 'playing' }, '正常播放'),
+            E('option', { 'value': 'paused' }, '视频暂停'),
+            E('option', { 'value': 'app_home' }, '应用首页闲置'),
+            E('option', { 'value': 'system_home' }, '小米系统首页闲置'),
+            E('option', { 'value': 'sleep' }, '熄屏待机')
+        ]);
+        var startCalibration = E('button', {
+            'class': 'btn cbi-button-action',
+            'click': ui.createHandlerFn(this, function() {
+                var label = sceneSelect.value, app = appSelect.value;
+                return this.handleAction(['calibrate', label, app],
+                    '请确认电视当前实际状态为“' + sceneSelect.options[sceneSelect.selectedIndex].text +
+                    '”。接下来记录 120 秒，期间不要操作遥控器。');
+            })
+        }, '开始 120 秒标注');
         var page = [
             E('h2', 'TV Guard · 电视时间管理'),
             E('p', { 'class': 'alert-message warning' },
@@ -84,14 +106,12 @@ return view.extend({
                 E('p', [ E('strong', '网络强度：'), String(s.traffic_class || 'unknown') ]),
                 E('p', [ E('strong', '当前校准：'),
                     s.calibration_label !== 'none' ?
-                    s.calibration_label + '，结束于 ' +
-                        new Date(Number(s.calibration_until) * 1000).toLocaleTimeString() : '未开启' ]),
-                E('p', '开始采样前，请确保电视已处于对应状态；每次手工标注持续 120 秒。'),
-                this.actionButton('标注：正在播放', ['calibrate', 'playing'], '电视确实正在播放视频吗？现在开始记录 120 秒网络指纹。'),
-                this.actionButton('标注：视频暂停', ['calibrate', 'paused'], '电视确实停在暂停画面吗？现在开始记录 120 秒。'),
-                this.actionButton('标注：App 首页', ['calibrate', 'app_home'], '电视确实停留在视频 App 首页且没有主动播放吗？'),
-                this.actionButton('标注：小米系统首页', ['calibrate', 'system_home'], '电视确实停在小米电视系统首页且未操作吗？'),
-                this.actionButton('标注：熄屏待机', ['calibrate', 'sleep'], '电视确实已熄屏待机吗？'),
+                    (String(s.calibration_app || 'general') + ' · ' +
+                     s.calibration_label + '，结束于 ' +
+                     new Date(Number(s.calibration_until) * 1000).toLocaleTimeString()) : '未开启' ]),
+                E('p', '先在电视上打开并保持对应状态；请选择 App 和状态，手工标注 120 秒。只是采集样本，不会自动免计时。'),
+                E('div', { 'style': 'display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-bottom:8px' },
+                    [appSelect, sceneSelect, startCalibration]),
                 this.actionButton('停止校准', ['calibrate', 'stop'], '结束本次校准吗？'),
                 E('pre', { 'style': 'max-height:160px;overflow:auto;white-space:pre-wrap;word-break:break-word' },
                   (samples || '').split('\n').slice(-12).join('\n') || '暂无标注样本')
