@@ -40,7 +40,9 @@ gate() {
 }
 policy() {
     ENFORCE="$(uci -q get tvguard.main.enforce || echo 0)"
-    [ "$ENFORCE" = 1 ] || { echo 0; return; }
+    ARMED="$(uci -q get tvguard.main.allow_enforcement || echo 0)"
+    # Match the controller's two-key interlock even during firewall reload.
+    [ "$ENFORCE" = 1 ] && [ "$ARMED" = 1 ] || { echo 0; return; }
     FILE=/etc/tvguard/state
     [ -r "$FILE" ] || { echo 1; return; }
     MODE="$(sed -n 's/^MODE=//p' "$FILE" | tail -n 1)"
