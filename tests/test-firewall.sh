@@ -261,4 +261,30 @@ assert c=={
     "PROXY_OUT_B":[["-m","comment","--comment","existing_proxy_out_b"]],
 },c
 PY
-echo "PASS: gate, opt-in passive reply telemetry, duplicate avoidance, safety and isolated removal"
+# Disputed TVG namespace on uninstall: remove only the exact TV hook, never
+# flush/delete a chain whose ownership cannot be proven.
+python3 - "$TMP/state.json" <<'PY'
+import json,sys
+p=sys.argv[1]
+s=json.load(open(p))
+s["chains"]["TVG_RAW"]=[["-m","comment","--comment","FOREIGN_TVG_CONTENT"]]
+s["chains"]["TVG_GATE"]=[["-j","RETURN"]]
+s["chains"]["PREROUTING"].insert(0,["-i","br-lan","-s","192.168.101.76","-j","TVG_RAW"])
+json.dump(s,open(p,"w"))
+PY
+export MOCK_ISOLATION=unsafe
+sh "$FW" remove >/dev/null 2>"$TMP/remove-warning"
+grep -q 'were not flushed/deleted' "$TMP/remove-warning"
+python3 - "$TMP/state.json" <<'PY'
+import json,sys
+c=json.load(open(sys.argv[1]))["chains"]
+assert ["-i","br-lan","-s","192.168.101.76","-j","TVG_RAW"] not in c["PREROUTING"],c
+assert c["TVG_RAW"]==[["-m","comment","--comment","FOREIGN_TVG_CONTENT"]],c
+assert c["TVG_GATE"]==[["-j","RETURN"]],c
+assert c["PREROUTING"]==[
+    ["-s","203.0.113.5","-j","PROXY_RAW_A"],
+    ["-d","198.51.100.8","-j","PROXY_RAW_B"],
+],c
+PY
+
+echo "PASS: gate, proxy-rule preservation, observer isolation, audited cleanup and disputed-chain safety"
