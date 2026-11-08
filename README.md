@@ -64,6 +64,7 @@ option observe_reply '0'
 - 构建：PR Checks 下 `package` 产出开发版 IPK（具体版本以相应 Action 产物为准）；N1 早期包安装已验证，后续版本仍需逐版验收。
 - `tests/test-controller.sh` 验证额度、奖励以及“高回程流量不能影响计时/gate”；`tests/test-firewall.sh` 验证代理样例规则在同步、观测、gate 切换和卸载前后保持原样。
 - `tests/test-proxy-isolation.py` 是源码硬门禁；`tests/test-isolation-audit.sh` 验证 N1 运行时隔离审计；`tests/test-package-safety.sh` 验证安装/卸载不会取得或删除外部 firewall section。
+- 候选包内置 `tvguard-compat-check`：仅在三项安全开关均为 0 时运行，执行一次 TVG 自身 sync，并验证 raw/mangle/nat/filter 的所有非 TVG 规则前后完全一致。
 - 新增回程观测仅在开发分支和模拟环境中通过测试；当前用户 N1 无需升级、启用或采样。
 - [通用识别、验证方法及已知限制](docs/CALIBRATION.md)
 - [设计与已知限制](docs/DESIGN.md)
