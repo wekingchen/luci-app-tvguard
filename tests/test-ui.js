@@ -92,6 +92,24 @@ const updates = [
     assert.equal(polls.size, 1);
     assert.equal(page._calibrationNodes.start.disabled, false);
     assert.equal(page._calibrationNodes.stop.disabled, true);
+    assert.match(page._trafficNodes.outgoing.textContent, /8 PPS/);
+    assert.match(page._trafficNodes.replyStatus.textContent, /未启用|暂不可用/);
+    Object.assign(state, {
+        reply_observer: 'ready',
+        reply_sample_status: 'observed',
+        reply_prerouting_pps: 15,
+        reply_prerouting_bps: 20000,
+        reply_local_pps: 5,
+        reply_local_bps: 4000
+    });
+    assert.doesNotThrow(() => page.updateTrafficUI(state));
+    assert.match(page._trafficNodes.replyStatus.textContent, /检测到回程流量/);
+    assert.match(page._trafficNodes.prerouting.textContent, /15 PPS/);
+    assert.match(page._trafficNodes.local.textContent, /5 PPS/);
+    state.reply_observer = 'unavailable';
+    page.updateTrafficUI(state);
+    assert.match(page._trafficNodes.replyStatus.textContent, /暂不可用/);
+    assert.equal(page._trafficNodes.local.textContent, '—');
     for (const phase of updates) {
         Object.assign(state, phase);
         assert.doesNotThrow(() => page.updateCalibrationUI(state), phase.calibration_phase);
