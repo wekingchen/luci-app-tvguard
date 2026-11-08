@@ -9,6 +9,7 @@ IPT=/usr/sbin/iptables
 raw_ipt() { "$IPT" -t raw "$@"; }
 RAW=TVG_RAW
 GATE=TVG_GATE
+AUDIT=/usr/libexec/tvguard-isolation-audit
 IP="$(uci -q get tvguard.main.ip || echo 192.168.101.76)"
 IFACE="$(uci -q get tvguard.main.interface || echo br-lan)"
 
@@ -27,6 +28,15 @@ reply_rules_present() {
     has PREROUTING -i "$IFACE" -d "$IP" -m comment --comment TVG_RX_LAN &&
     has OUTPUT -o "$IFACE" -d "$IP" -m comment --comment TVG_RX_LOCAL
 }
+core_rules_present() {
+    has PREROUTING -i "$IFACE" -s "$IP" -j "$RAW" &&
+    has "$RAW" -j "$GATE" &&
+    { has "$GATE" -j RETURN || has "$GATE" -j DROP; }
+}
+isolation_ok() {
+    [ -x "$AUDIT" ] || return 1
+    [ "$("$AUDIT" 2>/dev/null || true)" = ok ]
+}
 add_reply_rules() {
     has PREROUTING -i "$IFACE" -d "$IP" -m comment --comment TVG_RX_LAN ||
         raw_ipt -I PREROUTING 1 -i "$IFACE" -d "$IP" -m comment --comment TVG_RX_LAN || return 1
@@ -43,11 +53,25 @@ remove_reply_rules() {
 }
 sync_reply_rules() {
     if reply_enabled; then
+        # Fail closed: an experimental observer may exist only on top of a
+        # complete core hook and a passing read-only isolation audit.
+        if ! core_rules_present || ! isolation_ok; then
+            remove_reply_rules || :
+            echo "TV Guard: reply observation refused by isolation preflight" >&2
+            return 0
+        fi
         # Optional diagnostic must not break the existing TVG gate if an older
         # firmware lacks the raw OUTPUT capability or the table was reset.
         if ! add_reply_rules; then
             remove_reply_rules || :
             echo "TV Guard: passive reply observation unavailable" >&2
+            return 0
+        fi
+        # Re-audit the final rule layout. Any unexpected target/table placement
+        # causes immediate rollback of observer-only rules.
+        if ! isolation_ok; then
+            remove_reply_rules || :
+            echo "TV Guard: reply observation rolled back by isolation audit" >&2
         fi
     else
         remove_reply_rules
