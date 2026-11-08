@@ -6,6 +6,7 @@ trap 'rm -rf "$TMP"' EXIT HUP INT TERM
 
 cat > "$TMP/iptables" <<'SH'
 #!/bin/sh
+if [ "$1" = -w ] && [ "$2" = 2 ]; then shift 2; fi
 [ "$1" = -t ] || exit 2
 table="$2"
 [ "$3" = -S ] || exit 2
