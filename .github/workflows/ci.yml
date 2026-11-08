@@ -47,6 +47,8 @@ jobs:
           dash tests/test-controller.sh
       - name: Enforce proxy isolation contract
         run: python3 tests/test-proxy-isolation.py
+      - name: Exercise read-only runtime isolation audit
+        run: dash tests/test-isolation-audit.sh
       - name: Exercise mock firewall3 rule lifecycle
         run: |
           set -eu
@@ -75,6 +77,8 @@ jobs:
           grep -q 'TVG_RX_LAN' root/usr/libexec/tvguard-fw
           grep -q 'TVG_RX_LOCAL' root/usr/libexec/tvguard-fw
           grep -q 'reply_coverage' root/usr/libexec/tvguardctl
+          grep -q 'isolation)' root/usr/libexec/tvguard-status
+          grep -q 'tvguard-isolation-audit' scripts/build-ipk.sh
 
   package:
     runs-on: ubuntu-latest
