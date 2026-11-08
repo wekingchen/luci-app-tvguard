@@ -27,17 +27,21 @@ fail() {
     exit 1
 }
 
+read_table() {
+    "$IPT" -w 2 -t "$1" -S
+}
+
 # TV Guard must never own rules or chains in tables used by transparent routing
 # or NAT. Missing optional tables are ignored; any TVG marker is a failure.
 for table in nat mangle filter; do
-    dump="$("$IPT" -t "$table" -S 2>/dev/null || true)"
+    dump="$(read_table "$table" 2>/dev/null || true)"
     if printf '%s
 ' "$dump" | grep -q 'TVG_'; then
         fail "tvg_marker_in_$table"
     fi
 done
 
-raw="$("$IPT" -t raw -S 2>/dev/null)" || {
+raw="$(read_table raw 2>/dev/null)" || {
     echo "unavailable:raw_table"
     exit 2
 }
