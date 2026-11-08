@@ -98,6 +98,13 @@ const updates = [
     assert.equal(initial.length, 4);
     const root = page.render(initial);
     assert.equal(root.tag, 'div');
+    assert.equal(root.props.class, 'tvg-root');
+    assert.match(source, /tvg-summary-grid\{grid-template-columns:repeat\(4/);
+    assert.match(source, /@media\(max-width:700px\)/);
+    assert.match(source, /tvg-summary-grid\{grid-template-columns:repeat\(2,minmax\(0,1fr\)\)/);
+    assert.match(source, /tvg-mode-row>\.btn:last-child\{grid-column:1\/-1/);
+    assert.match(source, /background:rgba\(127,127,127,\.08\)/);
+    assert.doesNotMatch(source, /background:var\(--background-color-high,#fafafa\)/);
     assert.equal(polls.size, 1);
     assert.equal(page._calibrationNodes.start.disabled, false);
     assert.equal(page._calibrationNodes.stop.disabled, true);
