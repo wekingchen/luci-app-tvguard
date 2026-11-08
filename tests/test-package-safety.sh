@@ -59,14 +59,23 @@ printf '%s %s\n' "$(basename "$0")" "$*" >> "$TVG_ACTION_LOG"
 exit 0
 SH
 chmod +x "$TMP/bin/uci" "$TMP/mock-action"
-for name in rpcd tvguard tvguard-fw; do
+for name in rpcd tvguard; do
     cp "$TMP/mock-action" "$TMP/$name"
 done
+cat > "$TMP/tvguard-fw" <<'SH'
+#!/bin/sh
+printf 'tvguard-fw %s\n' "$*" >> "$TVG_ACTION_LOG"
+if [ "${1:-}" = remove ]; then
+    exit "${TVG_FW_REMOVE_EXIT:-0}"
+fi
+exit 0
+SH
 chmod +x "$TMP/"*
 
 export PATH="$TMP/bin:/usr/bin:/bin"
 export TVG_UCI_STATE="$STATE"
 export TVG_ACTION_LOG="$LOG"
+export TVG_FW_REMOVE_EXIT=0
 
 rewrite() {
     src="$1"; dest="$2"
@@ -149,12 +158,29 @@ cmp "$STATE" "$TMP/foreign.before"
 grep -q '^tvguard stop$' "$LOG"
 grep -q '^tvguard-fw remove$' "$LOG"
 
-# Owned section is deleted, and only that section is committed.
+# Failed firewall detach aborts uninstall and retains the owned UCI include.
+owned
+: > "$LOG"
+export TVG_FW_REMOVE_EXIT=9
+if sh "$TMP/prerm" >"$TMP/out" 2>"$TMP/err"; then
+    echo "FAIL: prerm ignored TV firewall detach failure" >&2
+    exit 1
+fi
+grep -q '^firewall.tvguard=include
+ "$STATE"
+! grep -q '^delete firewall.tvguard
+ "$LOG"
+grep -q 'aborting uninstall' "$TMP/err"
+export TVG_FW_REMOVE_EXIT=0
+
+# Owned section is deleted only after firewall detach succeeds.
 owned
 : > "$LOG"
 sh "$TMP/prerm"
 ! grep -q '^firewall.tvguard=' "$STATE"
-grep -q '^delete firewall.tvguard$' "$LOG"
-grep -q '^commit firewall$' "$LOG"
+grep -q '^delete firewall.tvguard
+ "$LOG"
+grep -q '^commit firewall
+ "$LOG"
 
-echo "PASS: package scripts claim/delete only TV Guard-owned firewall include and never reload global firewall"
+echo "PASS: package ownership is isolated and failed firewall detach cannot leave a dangling hook after uninstall"
