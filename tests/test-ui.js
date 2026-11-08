@@ -95,6 +95,15 @@ const updates = [
     assert.equal(page._calibrationNodes.stop.disabled, true);
     assert.match(page._isolationStatus.label, /通过/);
     assert.match(page._isolationStatus.label, /nat \/ mangle \/ filter/);
+
+    page.render([state, '', '', {code: 1, text: 'unsafe:test_violation'}]);
+    assert.match(page._isolationStatus.label, /异常/);
+    assert.match(page._isolationStatus.label, /unsafe:test_violation/);
+    page.render([state, '', '', {code: 2, text: 'unavailable:raw_table'}]);
+    assert.match(page._isolationStatus.label, /无法验证/);
+    assert.match(page._isolationStatus.label, /不等于已确认安全/);
+    // Restore normal render for the remaining interaction checks.
+    page.render([state, '', '', {code: 0, text: 'ok'}]);
     assert.match(page._trafficNodes.outgoing.textContent, /8 PPS/);
     assert.match(page._trafficNodes.replyStatus.textContent, /未启用|暂不可用/);
     Object.assign(state, {
