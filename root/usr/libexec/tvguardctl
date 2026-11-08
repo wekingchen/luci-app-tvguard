@@ -7,6 +7,7 @@ umask 077
 PATH=/usr/sbin:/usr/bin:/sbin:/bin
 export PATH
 FW=/usr/libexec/tvguard-fw
+AUDIT=/usr/libexec/tvguard-isolation-audit
 RUN=/var/run/tvguard.state
 DIR=/etc/tvguard
 STATE="$DIR/state"
@@ -670,6 +671,9 @@ case "$1" in
             on)
                 [ "$ARMED" = 1 ] ||
                     { echo "observer-only build: enable allow_enforcement=1 explicitly in UCI after testing" >&2; exit 2; }
+                audit_state="$("$AUDIT" 2>/dev/null || true)"
+                [ "$audit_state" = ok ] ||
+                    { echo "refusing enforcement: proxy isolation audit is not ok ($audit_state)" >&2; exit 2; }
                 ENFORCE=1
                 ;;
             off) ENFORCE=0 ;;
