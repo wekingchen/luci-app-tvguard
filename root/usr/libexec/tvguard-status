@@ -4,5 +4,6 @@ case "${1:-status}" in
     status) exec /usr/libexec/tvguardctl status ;;
     log) exec /usr/libexec/tvguardctl log ;;
     calibration) exec /usr/libexec/tvguardctl calibration ;;
+    isolation) exec /usr/libexec/tvguard-isolation-audit ;;
     *) exit 2 ;;
 esac
