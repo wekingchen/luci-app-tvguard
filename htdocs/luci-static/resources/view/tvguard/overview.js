@@ -104,6 +104,15 @@ return view.extend({
                     E('strong', '速率：'), String(s.bytes_per_second || 0) + ' B/s'
                 ]),
                 E('p', [ E('strong', '网络强度：'), String(s.traffic_class || 'unknown') ]),
+                E('p', [ E('strong', '网络指纹候选：'),
+                    ({ playing:'疑似播放', paused:'疑似暂停', app_home:'疑似应用首页',
+                       system_home:'疑似小米系统首页', sleep:'疑似熄屏网络静默',
+                       unknown:'无法判断' })[s.shadow_label] || '无法判断',
+                    ' · 参考应用：' + (s.shadow_app || 'none'),
+                    ' · 匹配分数：' + String(s.shadow_score || 0) + '（不是准确率）'
+                ]),
+                E('p', { 'class':'description' },
+                    '候选识别必须积累多次独立标注样本，且目前仅显示诊断结果，不会改变儿童计时或封禁策略。'),
                 E('p', [ E('strong', '当前校准：'),
                     s.calibration_label !== 'none' ?
                     (String(s.calibration_app || 'general') + ' · ' +
