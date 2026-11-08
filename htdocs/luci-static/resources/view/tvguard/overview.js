@@ -34,6 +34,13 @@ function byteRate(value) {
 }
 
 function panel(title, subtitle, children, extraStyle) {
+    var heading = [E('h3', { 'style': 'margin:0 0 4px;font-size:1.15rem' }, title)];
+    if (subtitle)
+        heading.push(E('div', {
+            'class': 'description',
+            'style': 'margin:0;line-height:1.55'
+        }, subtitle));
+
     return E('section', {
         'class': 'cbi-section',
         'style': [
@@ -44,15 +51,9 @@ function panel(title, subtitle, children, extraStyle) {
             'box-shadow:0 1px 2px rgba(0,0,0,.04)',
             extraStyle || ''
         ].join(';')
-    }, [
-        E('div', { 'style': 'margin-bottom:12px' }, [
-            E('h3', { 'style': 'margin:0 0 4px;font-size:1.15rem' }, title),
-            subtitle ? E('div', {
-                'class': 'description',
-                'style': 'margin:0;line-height:1.55'
-            }, subtitle) : null
-        ])
-    ].concat(children || []));
+    }, [E('div', { 'style': 'margin-bottom:12px' }, heading)].concat(children || []).filter(function(node) {
+        return node != null;
+    }));
 }
 
 function metric(label, value, note, emphasis) {
@@ -94,14 +95,19 @@ function badge(text, tone) {
 }
 
 function detailBlock(summary, children, open) {
-    return E('details', {
-        'open': open ? 'open' : null,
+    var attrs = {
         'style': 'margin-top:12px;border-top:1px solid var(--border-color-medium,#ddd);padding-top:10px'
-    }, [
+    };
+    if (open)
+        attrs.open = 'open';
+
+    return E('details', attrs, [
         E('summary', {
             'style': 'cursor:pointer;font-weight:600;padding:4px 0;user-select:none'
         }, summary),
-        E('div', { 'style': 'padding-top:10px' }, children)
+        E('div', { 'style': 'padding-top:10px' }, (children || []).filter(function(node) {
+            return node != null;
+        }))
     ]);
 }
 
@@ -654,6 +660,15 @@ return view.extend({
                 }, events || '暂无操作记录')
             ], false)
         ];
+
+        this._uiSummary = {
+            mode: modeName,
+            control: controlName,
+            isolation: isolationShort,
+            isolationSafe: isolationSafe,
+            quotaPercent: quotaPercent,
+            canEnableEnforcement: canEnable
+        };
 
         this._isolationStatus = {
             label: isolationSafe ?
