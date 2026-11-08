@@ -49,6 +49,22 @@ SSR 透明代理或正常路由
 - 计数器归零（防火墙重载）不被解释为电视熄屏。
 - **FW3 的旧规则若仍在**，新页面显示“允许”也可能无法联网；安装前先核查。
 
+## 代理隔离硬约束
+
+代理工具兼容不是经验性约定，而是代码结构和 CI 门禁：
+
+1. `tvguard-fw` 的全部 iptables 写操作只能经过 `raw_ipt()`，固定使用 `iptables -w 2 -t raw`；不能选择其他表。
+2. TV Guard 不创建或修改 `nat/mangle/filter` 规则，不使用 `MARK/CONNMARK/TPROXY/REDIRECT/DNAT/SNAT/NOTRACK`，不修改 `ip rule`、策略路由、网络 sysctl。
+3. 核心 hook 只能是 `PREROUTING -i br-lan -s <电视IPv4> -j TVG_RAW`。运行时审计拒绝宽匹配、重复 hook 或非电视地址。
+4. 允许状态下，`TVG_GATE -j RETURN` 只从 TVG 自有子链返回调用链，后续 raw/mangle/nat 规则继续执行。
+5. 回程观测仅允许电视目标地址的 target-free 计数规则；观测异常不能影响 `USED_S`、`ACTIVITY`、`BLOCKED`。
+6. procd 只监听 `tvguard` 配置，不监听全局 `firewall` trigger。fw3 重载只通过独立 include 恢复 TVG 专属规则。
+7. 安装/卸载前校验 `firewall.tvguard` 所有权；同名外部 section 不覆盖、不删除。
+8. `tvguard-isolation-audit` 只读扫描四张表。异常布局下核心写操作拒绝继续；卸载时只删除精确匹配的 TV hook，不 flush 所有权有争议的链。
+9. CI 同时运行源码隔离扫描、模拟代理规则保留测试、运行时审计测试和 package 所有权测试。
+
+这套设计不能证明任意第三方固件/内核永远不存在实现层 bug，因此真实 N1 仍需验收；但 TV Guard 自身没有获得修改代理配置、代理表或其他客户端路由的代码路径。
+
 ## 可选回程观测（当前开发分支，默认不启用）
 
 `tvguard.main.observe_reply=0` 默认关闭；保持以前的计时、RAW 门控、SSR/PassWall/OpenClash 配置不变。**尚未在真实 N1 验证，不能直接宣称已支持完整的双向流量统计。**
@@ -65,6 +81,7 @@ SSR 透明代理或正常路由
 - 连续差值独立计时，计数器首次出现、FW3 清空后、异常回跳时不产生虚假瞬时速率；缺少规则显示 unavailable，不解读为电视熄屏。
 - 状态字段 `reply_prerouting_pps/bps` 和 `reply_local_pps/bps` 仅用于诊断，`reply_coverage` 恒为 `unverified`；**永不用于 `USED_S`、免计时或防火墙判决**。
 - 仅删除自己精确匹配的注释规则，不清空 PREROUTING 或 OUTPUT。旧版本没有 `observe_reply` 选项时视作关闭，升级后也不会自动启用。
+- 启用前、写入后都必须通过运行时隔离审计；否则观测规则拒绝创建或立即回滚。
 
 ## 控制、计时与日志
 
