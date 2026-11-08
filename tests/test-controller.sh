@@ -204,6 +204,44 @@ status
 check 'assert s["reply_observer"] == "disabled" and s["reply_prerouting_bps"] == 0'
 check 'assert s["reply_local_bps"] == 0 and s["reply_coverage"] == "unverified"'
 
+# High reply-only traffic must never create billable activity. Force the
+# outgoing counter to stay flat and clear the outgoing activity history.
+python3 - "$TMP/run/runtime" <<'PY'
+from pathlib import Path
+import sys,time
+p=Path(sys.argv[1])
+lines=p.read_text().splitlines()
+values={}
+for line in lines:
+    if '=' in line:
+        k,v=line.split('=',1)
+        values[k]=v
+values['LAST_EPOCH']=str(int(time.time())-10)
+values['LAST_PACKET_EPOCH']='0'
+# Re-arm reply observer baselines ten seconds in the past.
+values['RX_LAST_EPOCH']=str(int(time.time())-10)
+values['RX_LAST_LAN_COUNT']='2'
+values['RX_LAST_LAN_BYTES']='50'
+values['RX_LAST_LOCAL_COUNT']='3'
+values['RX_LAST_LOCAL_BYTES']='60'
+order=[line.split('=',1)[0] for line in lines if '=' in line]
+p.write_text('\n'.join(k+'='+values[k] for k in order)+'\n')
+PY
+export TVGUARD_TEST_OBSERVER=ready
+echo '2 50 3 60' > "$TMP/reply"
+# Keep outgoing counters unchanged from the previous tick.
+before_used="$(sh "$CTL" status | python3 -c 'import json,sys; print(json.load(sys.stdin)["used_seconds"])')"
+# Increase reply counters only.
+echo '1002 500050 2003 900060' > "$TMP/reply"
+sh "$CTL" tick
+status
+after_used="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["used_seconds"])' "$TMP/status.json")"
+[ "$after_used" = "$before_used" ]
+check 'assert s["activity"] == "silent", s'
+check 'assert s["reply_sample_status"] == "observed", s'
+check 'assert s["reply_prerouting_pps"] > 0 and s["reply_local_pps"] > 0, s'
+check 'assert s["enforce"] == 0 and s["blocked"] == 0, s'
+
 # Missing reply counters after FW3 reload must request an OBSERVER-ONLY repair
 # at most once per minute. No call to the gate is made by sync-reply.
 export TVGUARD_TEST_OBSERVER=unavailable
