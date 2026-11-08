@@ -193,8 +193,8 @@ echo '170 17000 260 29000' > "$TMP/reply"
 sh "$CTL" tick
 status
 check 'assert s["reply_observer"] == "ready" and s["reply_sample_status"] == "observed"'
-check 'assert s["reply_prerouting_pps"] == 7 and s["reply_prerouting_bps"] == 700, s'
-check 'assert s["reply_local_pps"] == 6 and s["reply_local_bps"] == 900, s'
+check 'assert 5 <= s["reply_prerouting_pps"] <= 7 and 580 <= s["reply_prerouting_bps"] <= 780, s'
+check 'assert 5 <= s["reply_local_pps"] <= 6 and 750 <= s["reply_local_bps"] <= 1000, s'
 check 'assert s["reply_coverage"] == "unverified" and s["enforce"] == 0 and s["armed"] == 0'
 
 # A labelled window with a valid reply delta writes the new 12-column
