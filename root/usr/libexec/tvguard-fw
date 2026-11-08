@@ -120,6 +120,10 @@ case "${1:-}" in
         create
         gate "$(policy)"
         ;;
+    sync-reply)
+        # Repair only the passive observation hooks, never touch TVG_GATE.
+        sync_reply_rules
+        ;;
     gate)
         create
         gate "${2:-}"
@@ -178,5 +182,5 @@ case "${1:-}" in
         "$IPT" -t raw -F "$GATE" 2>/dev/null || :
         "$IPT" -t raw -X "$GATE" 2>/dev/null || :
         ;;
-    *) echo "usage: tvguard-fw {sync|gate 0|gate 1|sample|count|inspect|inspect-reply|sample-reply|remove}" >&2; exit 2 ;;
+    *) echo "usage: tvguard-fw {sync|sync-reply|gate 0|gate 1|sample|count|inspect|inspect-reply|sample-reply|remove}" >&2; exit 2 ;;
 esac
