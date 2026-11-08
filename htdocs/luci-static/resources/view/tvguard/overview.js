@@ -34,56 +34,36 @@ function byteRate(value) {
 }
 
 function panel(title, subtitle, children, extraStyle) {
-    var heading = [E('h3', { 'style': 'margin:0 0 4px;font-size:1.15rem' }, title)];
+    var heading = [
+        E('div', { 'class': 'tvg-panel-title' }, title)
+    ];
     if (subtitle)
         heading.push(E('div', {
-            'class': 'description',
-            'style': 'margin:0;line-height:1.55'
+            'class': 'description tvg-panel-subtitle'
         }, subtitle));
 
     return E('section', {
-        'class': 'cbi-section',
-        'style': [
-            'margin:0 0 16px',
-            'padding:16px',
-            'border:1px solid var(--border-color-medium,#ddd)',
-            'border-radius:12px',
-            'box-shadow:0 1px 2px rgba(0,0,0,.04)',
-            extraStyle || ''
-        ].join(';')
-    }, [E('div', { 'style': 'margin-bottom:12px' }, heading)].concat(children || []).filter(function(node) {
+        'class': 'tvg-panel',
+        'style': extraStyle || ''
+    }, [E('div', { 'class': 'tvg-panel-head' }, heading)].concat(children || []).filter(function(node) {
         return node != null;
     }));
 }
 
 function metric(label, value, note, emphasis) {
     var children = [
+        E('div', { 'class': 'description tvg-metric-label' }, label),
         E('div', {
-            'class': 'description',
-            'style': 'margin-bottom:6px'
-        }, label),
-        E('div', {
-            'style': 'font-size:' + (emphasis ? '1.65rem' : '1.2rem') +
-                ';font-weight:700;line-height:1.2;overflow-wrap:anywhere'
+            'class': emphasis ? 'tvg-metric-value tvg-metric-value-primary' : 'tvg-metric-value'
         }, value)
     ];
     if (note)
         children.push(E('div', {
-            'class': 'description',
-            'style': 'margin-top:6px;line-height:1.45'
+            'class': 'description tvg-metric-note'
         }, note));
 
-    return E('div', {
-        'style': [
-            'min-width:0',
-            'padding:14px',
-            'border:1px solid var(--border-color-medium,#ddd)',
-            'border-radius:10px',
-            'background:var(--background-color-high,#fafafa)'
-        ].join(';')
-    }, children);
+    return E('div', { 'class': 'tvg-metric' }, children);
 }
-
 function badge(text, tone) {
     var palette = {
         good: 'border-color:#66bb6a',
@@ -99,7 +79,7 @@ function badge(text, tone) {
             'border:1px solid',
             'border-radius:999px',
             'color:inherit',
-            'background:var(--background-color-high,transparent)',
+            'background:transparent',
             palette[tone] || palette.neutral
         ].join(';')
     }, text);
@@ -122,17 +102,68 @@ function detailBlock(summary, children, open) {
     ]);
 }
 
-function grid(children, minWidth) {
+function grid(children, minWidth, extraClass) {
     return E('div', {
-        'style': 'display:grid;grid-template-columns:repeat(auto-fit,minmax(' +
-            (minWidth || 160) + 'px,1fr));gap:10px'
+        'class': 'tvg-grid' + (extraClass ? ' ' + extraClass : ''),
+        'style': '--tvg-min:' + (minWidth || 160) + 'px'
     }, children);
 }
 
-function buttonRow(children) {
+function buttonRow(children, extraClass) {
     return E('div', {
-        'style': 'display:flex;flex-wrap:wrap;gap:8px;align-items:center'
+        'class': 'tvg-button-row' + (extraClass ? ' ' + extraClass : '')
     }, children);
+}
+
+function responsiveStyles() {
+    return E('style', {}, [
+        '.tvg-root{max-width:980px;margin:0 auto;padding:0 2px 20px;}',
+        '.tvg-page-head{margin:0 0 14px;}',
+        '.tvg-page-title{font-size:1.45rem;font-weight:700;line-height:1.25;margin:0 0 5px;}',
+        '.tvg-panel{margin:0 0 14px;padding:15px;border:1px solid rgba(127,127,127,.42);border-radius:12px;background:transparent;box-shadow:none;}',
+        '.tvg-panel-head{margin-bottom:12px;}',
+        '.tvg-panel-title{font-size:1.12rem;font-weight:700;line-height:1.3;margin:0 0 4px;}',
+        '.tvg-panel-subtitle{margin:0;line-height:1.55;}',
+        '.tvg-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(var(--tvg-min),1fr));gap:10px;}',
+        '.tvg-summary-grid{grid-template-columns:repeat(4,minmax(0,1fr));margin-bottom:14px;}',
+        '.tvg-metric{min-width:0;padding:13px;border:1px solid rgba(127,127,127,.32);border-radius:10px;background:rgba(127,127,127,.08);}',
+        '.tvg-metric-label{margin-bottom:5px;}',
+        '.tvg-metric-value{font-size:1.13rem;font-weight:700;line-height:1.25;overflow-wrap:anywhere;}',
+        '.tvg-metric-value-primary{font-size:1.55rem;}',
+        '.tvg-metric-note{margin-top:6px;line-height:1.42;}',
+        '.tvg-button-row{display:flex;flex-wrap:wrap;gap:8px;align-items:center;}',
+        '.tvg-button-row>.btn{margin:0;min-height:36px;}',
+        '.tvg-soft-box{padding:12px;border:1px solid rgba(127,127,127,.32);border-radius:9px;background:rgba(127,127,127,.08);}',
+        '.tvg-advanced-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;}',
+        '.tvg-root details>summary{line-height:1.4;}',
+        '@media(max-width:700px){',
+        ' .tvg-root{padding:0 0 16px;}',
+        ' .tvg-page-head{margin-bottom:10px;}',
+        ' .tvg-page-title{font-size:1.28rem;}',
+        ' .tvg-panel{padding:12px;margin-bottom:12px;border-radius:10px;}',
+        ' .tvg-panel-head{margin-bottom:9px;}',
+        ' .tvg-panel-title{font-size:1.05rem;}',
+        ' .tvg-panel-subtitle{font-size:.9rem;line-height:1.48;}',
+        ' .tvg-summary-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-bottom:12px;}',
+        ' .tvg-metric{padding:10px;min-height:88px;}',
+        ' .tvg-metric-value{font-size:1.04rem;}',
+        ' .tvg-metric-value-primary{font-size:1.38rem;}',
+        ' .tvg-metric-note{font-size:.85rem;line-height:1.35;}',
+        ' .tvg-button-row{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;}',
+        ' .tvg-button-row>.btn{width:100%;min-width:0;white-space:normal;line-height:1.25;padding-left:8px;padding-right:8px;}',
+        ' .tvg-mode-row>.btn:last-child{grid-column:1/-1;}',
+        ' .tvg-calibration-row{grid-template-columns:1fr;}',
+        ' .tvg-calibration-row select,.tvg-calibration-row>.btn{width:100%;min-width:0;}',
+        ' .tvg-smart-grid{grid-template-columns:repeat(2,minmax(0,1fr));}',
+        ' .tvg-advanced-grid{grid-template-columns:1fr;}',
+        ' .alert-message{padding:10px 12px!important;line-height:1.45!important;}',
+        '}',
+        '@media(max-width:360px){',
+        ' .tvg-summary-grid,.tvg-smart-grid{grid-template-columns:1fr 1fr;}',
+        ' .tvg-button-row{grid-template-columns:1fr 1fr;}',
+        ' .tvg-metric{padding:9px;}',
+        '}'
+    ].join('\n'));
 }
 
 function trafficName(value) {
@@ -662,7 +693,7 @@ return view.extend({
                 'font-size:.85rem',
                 'padding:10px',
                 'border-radius:8px',
-                'background:var(--background-color-high,#f7f7f7)'
+                'background:rgba(127,127,127,.08)'
             ].join(';')
         }, (samples || '').split('\n').slice(-12).join('\n') || '暂无标注样本');
 
@@ -814,12 +845,13 @@ return view.extend({
         this._eventSummary = parsedEvents;
 
         var page = [
-            E('div', { 'style': 'margin-bottom:14px' }, [
-                E('h2', { 'style': 'margin-bottom:4px' }, 'TV Guard · 电视时间管理'),
+            responsiveStyles(),
+            E('div', { 'class': 'tvg-page-head' }, [
+                E('div', { 'class': 'tvg-page-title' }, 'TV Guard · 电视时间管理'),
                 E('div', {
                     'class': 'description',
-                    'style': 'font-size:.95rem;line-height:1.5'
-                }, '先把日常管理做简单；网络诊断和算法实验都收在页面下方，需要时再展开。')
+                    'style': 'font-size:.92rem;line-height:1.48'
+                }, '日常管理放在前面；网络诊断和算法实验收在页面下方，需要时再展开。')
             ]),
             statusBanner,
 
@@ -828,8 +860,7 @@ return view.extend({
                 metric('当前模式', modeNode, modeNoteNode, false),
                 metric('控制状态', controlName, controlNote, false),
                 E('div', {
-                    'style': 'min-width:0;padding:14px;border:1px solid var(--border-color-medium,#ddd);' +
-                        'border-radius:10px;background:var(--background-color-high,#fafafa)'
+                    'class': 'tvg-metric'
                 }, [
                     E('div', { 'class': 'description', 'style': 'margin-bottom:7px' }, '网络安全'),
                     badge(isolationShort, isolationTone),
@@ -838,7 +869,7 @@ return view.extend({
                         'style': 'margin-top:7px;line-height:1.45'
                     }, activityNode)
                 ])
-            ], 180),
+            ], 180, 'tvg-summary-grid'),
 
             panel('今日儿童额度', '这里显示的是根据经过 N1 的联网活动估算的使用时长，不等同于真实亮屏或观看时间。', [
                 E('div', {
@@ -857,7 +888,7 @@ return view.extend({
             ], 'margin-top:16px'),
 
             panel('观看模式', '儿童模式按额度和时段管理；家长模式持续生效且不消耗儿童额度，直到手动切回；锁定是否真的断网取决于“正式控制”是否开启。', [
-                buttonRow(modeButtons),
+                buttonRow(modeButtons, 'tvg-mode-row'),
                 parentNoticeNode
             ]),
 
@@ -867,7 +898,7 @@ return view.extend({
                     reward30Button,
                     reward60Button,
                     undoButton
-                ]),
+                ], 'tvg-reward-row'),
                 rewardLimitNode
             ]),
 
@@ -875,17 +906,17 @@ return view.extend({
                 grid([
                     metric('当前候选', shadowValueNode, shadowNoteNode, false),
                     metric('网络活动强度', trafficValueNode, trafficNoteNode, false)
-                ], 220),
+                ], 220, 'tvg-smart-grid'),
                 detailBlock('手工标注与样本', [
                     E('div', {
-                        'style': 'padding:12px;border:1px solid var(--border-color-medium,#ddd);border-radius:9px;' +
-                            'background:var(--background-color-high,#fafafa);margin-bottom:10px'
+                        'class': 'tvg-soft-box',
+                        'style': 'margin-bottom:10px'
                     }, [calTitle, calDetail, calProgress, calHint]),
                     E('p', {
                         'class': 'description',
                         'style': 'line-height:1.55'
                     }, '日常使用不需要逐个标注 App。默认选“通用采样”；具体 App 只作为算法泛化验证标签。'),
-                    buttonRow([appSelect, sceneSelect, startCalibration, stopCalibration]),
+                    buttonRow([appSelect, sceneSelect, startCalibration, stopCalibration], 'tvg-calibration-row'),
                     detailBlock('查看最近原始样本', [samplePreview], false)
                 ], s.calibration_phase === 'running' || s.calibration_phase === 'finishing')
             ]),
@@ -912,16 +943,16 @@ return view.extend({
             ]),
 
             detailBlock('高级网络诊断', [
-                E('div', { 'style': 'display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px' }, [
+                E('div', { 'class': 'tvg-advanced-grid' }, [
                     E('div', {
-                        'style': 'padding:12px;border:1px solid var(--border-color-medium,#ddd);border-radius:9px'
+                        'class': 'tvg-soft-box'
                     }, [
                         E('strong', {}, '电视向 N1 发包'),
                         E('div', { 'style': 'margin-top:6px' }, trafficNodes.outgoing),
                         E('div', { 'class': 'description', 'style': 'margin-top:4px' }, trafficNodes.outgoingProtocol)
                     ]),
                     E('div', {
-                        'style': 'padding:12px;border:1px solid var(--border-color-medium,#ddd);border-radius:9px'
+                        'class': 'tvg-soft-box'
                     }, [
                         E('strong', {}, '实验回程观测'),
                         E('div', { 'style': 'margin-top:6px' }, trafficNodes.replyStatus),
@@ -955,7 +986,7 @@ return view.extend({
                             'font-size:.82rem',
                             'padding:10px',
                             'border-radius:8px',
-                            'background:var(--background-color-high,#f7f7f7)'
+                            'background:rgba(127,127,127,.08)'
                         ].join(';')
                     }, events || '暂无原始记录')
                 ], false)
@@ -989,7 +1020,7 @@ return view.extend({
         this._calibrationPoll = L.bind(this.refreshCalibration, this);
         poll.add(this._calibrationPoll, 2);
 
-        return E('div', {}, page);
+        return E('div', { 'class': 'tvg-root' }, page);
     },
 
     handleSave: null,
