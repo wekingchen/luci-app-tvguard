@@ -25,6 +25,11 @@ create() {
         "$IPT" -t raw -A "$RAW" -p udp -m comment --comment TVG_UDP
     has "$RAW" -j "$GATE" ||
         "$IPT" -t raw -A "$RAW" -j "$GATE"
+    # Configure the gate before adding its PREROUTING entry.
+    # No temporary unguarded window during first initialization.
+    if ! has "$GATE" -j RETURN && ! has "$GATE" -j DROP; then
+        gate "$(policy)"
+    fi
     has PREROUTING -i "$IFACE" -s "$IP" -j "$RAW" ||
         "$IPT" -t raw -I PREROUTING 1 -i "$IFACE" -s "$IP" -j "$RAW"
 }
