@@ -15,6 +15,7 @@ case "${2:-}" in
     tvguard.main.interface) echo br-lan ;;
     tvguard.main.enforce) echo "${MOCK_ENFORCE:-0}" ;;
     tvguard.main.allow_enforcement) echo "${MOCK_ARMED:-0}" ;;
+    tvguard.main.observe_reply) echo "${MOCK_OBSERVE_REPLY:-0}" ;;
     *) exit 1 ;;
 esac
 EOS
@@ -62,7 +63,8 @@ elif op=="-L":
     if chain not in rules: sys.exit(1)
     print(f"Chain {chain} (1 references)")
     print(" pkts bytes target prot opt in out source destination")
-    count={"TVG_COUNT":(200,4096),"TVG_TCP":(120,1024),"TVG_UDP":(70,3000)}
+    count={"TVG_COUNT":(200,4096),"TVG_TCP":(120,1024),"TVG_UDP":(70,3000),
+           "TVG_RX_LAN":(75,45000),"TVG_RX_LOCAL":(30,12000)}
     for r in rules[chain]:
         label=next((r[i+1] for i,a in enumerate(r[:-1]) if a=="--comment"),"OTHER")
         pp,bb=count.get(label,(0,0))
@@ -77,11 +79,15 @@ python3 - "$TMP/state.json" <<'PY'
 import json,sys
 p=sys.argv[1]
 # A non-TVG rule that must survive the full lifecycle.
-json.dump({"chains":{"PREROUTING":[["-s","203.0.113.5","-j","OTHER"]]}},open(p,"w"))
+json.dump({"chains":{
+    "PREROUTING":[["-s","203.0.113.5","-j","OTHER"]],
+    "OUTPUT":[["-d","203.0.113.6","-j","OTHER_OUTPUT"]]
+}},open(p,"w"))
 PY
 export MOCK_IPT_STATE="$TMP/state.json"
 export MOCK_ENFORCE=0
 export MOCK_ARMED=0
+export MOCK_OBSERVE_REPLY=0
 
 # A disposable test copy has a mock IPT and PATH; installed binary is fixed.
 FW="$TMP/tvguard-fw"
@@ -98,6 +104,11 @@ export PATH
 sh "$FW" sync
 [ "$(sh "$FW" inspect)" = allowed ]
 [ "$(sh "$FW" sample)" = '200 4096 120 1024 70 3000' ]
+[ "$(sh "$FW" inspect-reply)" = disabled ]
+if sh "$FW" sample-reply >/dev/null 2>&1; then
+    echo "ERROR: reply sampled while disabled" >&2
+    exit 1
+fi
 sh "$FW" sync
 python3 - "$TMP/state.json" <<'PY'
 import json,sys
@@ -107,6 +118,22 @@ assert sum(1 for x in c["TVG_RAW"] if "TVG_COUNT" in x)==1
 assert sum(1 for x in c["TVG_RAW"] if "TVG_TCP" in x)==1
 assert sum(1 for x in c["TVG_RAW"] if "TVG_UDP" in x)==1
 PY
+# Opt-in reply observer: two independent no-verdict rules, no duplicate hooks.
+export MOCK_OBSERVE_REPLY=1
+sh "$FW" sync
+[ "$(sh "$FW" inspect-reply)" = ready ]
+[ "$(sh "$FW" sample-reply)" = '75 45000 30 12000' ]
+sh "$FW" sync
+python3 - "$TMP/state.json" <<'PY'
+import json,sys
+c=json.load(open(sys.argv[1]))["chains"]
+pr=[r for r in c["PREROUTING"] if "TVG_RX_LAN" in r]
+lo=[r for r in c["OUTPUT"] if "TVG_RX_LOCAL" in r]
+assert len(pr)==1 and len(lo)==1,(pr,lo)
+assert "-j" not in pr[0] and "-j" not in lo[0],(pr,lo)
+assert len(c["PREROUTING"])==3 and len(c["OUTPUT"])==2,c
+PY
+
 sh "$FW" gate 1
 [ "$(sh "$FW" inspect)" = blocked ]
 sh "$FW" gate 0
@@ -118,11 +145,28 @@ export MOCK_ARMED=0
 sh "$FW" sync
 [ "$(sh "$FW" inspect)" = allowed ]
 
+# Disabling the observer must remove ONLY its own two rules; keep the gate.
+export MOCK_OBSERVE_REPLY=0
+sh "$FW" sync
+[ "$(sh "$FW" inspect-reply)" = disabled ]
+[ "$(sh "$FW" inspect)" = allowed ]
+python3 - "$TMP/state.json" <<'PY'
+import json,sys
+c=json.load(open(sys.argv[1]))["chains"]
+assert all("TVG_RX_LAN" not in r for r in c["PREROUTING"]), c
+assert all("TVG_RX_LOCAL" not in r for r in c["OUTPUT"]), c
+PY
+# Re-enable then uninstall to cover cleanup of both passive hooks.
+export MOCK_OBSERVE_REPLY=1
+sh "$FW" sync
 sh "$FW" remove
 [ "$(sh "$FW" inspect)" = absent ]
 python3 - "$TMP/state.json" <<'PY'
 import json,sys
 c=json.load(open(sys.argv[1]))["chains"]
-assert c=={"PREROUTING":[["-s","203.0.113.5","-j","OTHER"]]},c
+assert c=={
+    "PREROUTING":[["-s","203.0.113.5","-j","OTHER"]],
+    "OUTPUT":[["-d","203.0.113.6","-j","OTHER_OUTPUT"]],
+},c
 PY
-echo "PASS: gate, sample, idempotent reload, unarmed safety and isolated removal"
+echo "PASS: gate, opt-in passive reply telemetry, duplicate avoidance, safety and isolated removal"
