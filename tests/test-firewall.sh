@@ -157,9 +157,13 @@ sh "$FW" gate 1
 sh "$FW" gate 0
 [ "$(sh "$FW" inspect)" = allowed ]
 
-# Isolation audit failure must refuse observer creation without touching core.
+# Isolation audit failure must refuse ANY core mutation without changing
+# the already-valid core state.
 export MOCK_ISOLATION=unsafe
-sh "$FW" sync
+if sh "$FW" sync >/dev/null 2>&1; then
+    echo "ERROR: unsafe isolation audit allowed core sync" >&2
+    exit 1
+fi
 [ "$(sh "$FW" inspect-reply)" = unavailable ]
 [ "$(sh "$FW" inspect)" = allowed ]
 export MOCK_ISOLATION=ok
@@ -168,9 +172,10 @@ export MOCK_ISOLATION=ok
 sh "$FW" sync
 [ "$(sh "$FW" inspect-reply)" = ready ]
 [ "$(sh "$FW" sample-reply)" = '75 45000 30 12000' ]
-# If the post-install audit becomes unsafe, observer-only rules roll back.
+# If the audit becomes unsafe, observer-only maintenance rolls back its
+# own hooks without touching the valid core gate.
 export MOCK_ISOLATION=unsafe
-sh "$FW" sync
+sh "$FW" sync-reply
 [ "$(sh "$FW" inspect-reply)" = unavailable ]
 [ "$(sh "$FW" inspect)" = allowed ]
 export MOCK_ISOLATION=ok
