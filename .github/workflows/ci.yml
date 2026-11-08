@@ -51,6 +51,8 @@ jobs:
         run: dash tests/test-isolation-audit.sh
       - name: Verify package ownership and uninstall isolation
         run: dash tests/test-package-safety.sh
+      - name: Verify firewall include cannot fail proxy reload
+        run: dash tests/test-firewall-include.sh
       - name: Exercise mock firewall3 rule lifecycle
         run: |
           set -eu
