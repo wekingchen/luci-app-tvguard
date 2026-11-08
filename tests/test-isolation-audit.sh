@@ -81,6 +81,37 @@ EOF
 -A TVG_GATE -j DROP
 EOF
         ;;
+    broad_core:nat|broad_core:mangle|broad_core:filter)
+        :
+        ;;
+    broad_core:raw)
+        cat <<'EOF'
+-N TVG_RAW
+-N TVG_GATE
+-A PREROUTING -i br-lan -j TVG_RAW
+-A TVG_RAW -m comment --comment TVG_COUNT
+-A TVG_RAW -p tcp -m comment --comment TVG_TCP
+-A TVG_RAW -p udp -m comment --comment TVG_UDP
+-A TVG_RAW -j TVG_GATE
+-A TVG_GATE -j RETURN
+EOF
+        ;;
+    duplicate_core:nat|duplicate_core:mangle|duplicate_core:filter)
+        :
+        ;;
+    duplicate_core:raw)
+        cat <<'EOF'
+-N TVG_RAW
+-N TVG_GATE
+-A PREROUTING -i br-lan -s 192.168.101.76/32 -j TVG_RAW
+-A PREROUTING -i br-lan -s 192.168.101.76/32 -j TVG_RAW
+-A TVG_RAW -m comment --comment TVG_COUNT
+-A TVG_RAW -p tcp -m comment --comment TVG_TCP
+-A TVG_RAW -p udp -m comment --comment TVG_UDP
+-A TVG_RAW -j TVG_GATE
+-A TVG_GATE -j RETURN
+EOF
+        ;;
     *)
         exit 2
         ;;
@@ -103,7 +134,7 @@ chmod +x "$AUDIT"
 export TVG_AUDIT_CASE=ok
 [ "$(sh "$AUDIT")" = ok ]
 
-for bad in tvg_nat passive_target unexpected_chain extra_gate; do
+for bad in tvg_nat passive_target unexpected_chain extra_gate broad_core duplicate_core; do
     export TVG_AUDIT_CASE="$bad"
     if sh "$AUDIT" >"$TMP/out" 2>"$TMP/err"; then
         echo "FAIL: audit accepted unsafe case $bad" >&2
