@@ -46,7 +46,28 @@ iptables -t raw -S PREROUTING | grep TVG
 
 ## 四、代理不干扰验收（下一轮只需做一次）
 
-不需要逐个测试视频 App。升级候选版后，先保持 `enforce=0`、`allow_enforcement=0`、`observe_reply=0`，验证：
+不需要逐个测试视频 App。升级候选版后，先保持 `enforce=0`、`allow_enforcement=0`、`observe_reply=0`，直接运行：
+
+```sh
+/usr/libexec/tvguard-compat-check
+```
+
+正常结果核心字段：
+
+```text
+result=PASS
+proxy_rules_unchanged=1
+isolation_audit=ok
+gate=allowed
+enforce=0
+allow_enforcement=0
+observe_reply=0
+reply_coverage=unverified
+```
+
+这个命令不会 reload 全局 firewall，也不会调用任何代理服务；它只读取四张表，执行一次 TV Guard 自身的隔离同步，再确认**所有非 TVG 规则逐字未变**。
+
+需要拆分诊断时，再分别执行：
 
 ```sh
 /usr/libexec/tvguard-status isolation
@@ -56,7 +77,7 @@ uci -q get tvguard.main.allow_enforcement
 uci -q get tvguard.main.observe_reply
 ```
 
-期望依次为 `ok`、`allowed`、`0`、`0`、`0`。
+对应应为 `ok`、`allowed`、`0`、`0`、`0`。
 
 只有第一项为精确 `ok` 时，后续才允许考虑正式控制。`unsafe:*` 或 `unavailable:*` 都必须视为未通过；TV Guard 的 fw3 include 即便自身同步失败，也不应让全局 firewall reload 返回失败。
 
