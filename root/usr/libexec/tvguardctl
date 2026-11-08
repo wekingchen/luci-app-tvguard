@@ -201,28 +201,87 @@ rollover() {
 }
 tick() {
     previous_blocked="$BLOCKED"
-    count="$("$FW" count 2>/dev/null || echo '')"
-    case "$count" in ''|*[!0-9]*) count=0;; esac
-    if [ "$count" -lt "$LAST_COUNT" ]; then
-        # Firewall was reloaded; do not infer a counter decrease as silence.
-        LAST_COUNT="$count"
+    sample="$("$FW" sample)" || { echo "TV Guard packet sample unavailable" >&2; return 1; }
+    set -- $sample
+    [ "$#" -eq 6 ] || { echo "Invalid packet sample" >&2; return 1; }
+    for number in "$@"; do
+        case "$number" in ''|*[!0-9]*) echo "Non-numeric packet counter" >&2; return 1;; esac
+    done
+    count="$1"
+    bytes="$2"
+    tcp_count="$3"
+    udp_count="$5"
+
+    dt=0
+    if [ "$LAST_EPOCH" -gt 0 ]; then
+        dt=$((NOW - LAST_EPOCH))
     fi
-    delta=$((count - LAST_COUNT))
+    # Avoid charging startup, stopped daemon, NTP jumps, or FW3 counter resets.
+    if [ "$dt" -lt 1 ] || [ "$dt" -gt 20 ] ||
+       [ "$count" -lt "$LAST_COUNT" ] ||
+       [ "$bytes" -lt "$LAST_BYTE_COUNT" ] ||
+       [ "$tcp_count" -lt "$LAST_TCP_COUNT" ] ||
+       [ "$udp_count" -lt "$LAST_UDP_COUNT" ]; then
+        dt=0
+    fi
+
+    PPS=0
+    TCP_PPS=0
+    UDP_PPS=0
+    BYTES_PER_S=0
+    TRAFFIC_CLASS=unknown
+    if [ "$dt" -gt 0 ]; then
+        dp=$((count - LAST_COUNT))
+        db=$((bytes - LAST_BYTE_COUNT))
+        d_tcp=$((tcp_count - LAST_TCP_COUNT))
+        d_udp=$((udp_count - LAST_UDP_COUNT))
+        PPS=$((dp / dt))
+        TCP_PPS=$((d_tcp / dt))
+        UDP_PPS=$((d_udp / dt))
+        BYTES_PER_S=$((db / dt))
+        if [ "$dp" -gt 0 ]; then LAST_PACKET_EPOCH="$NOW"; fi
+        # Network intensity is NOT proof of foreground app or media playback.
+        if [ "$dp" -eq 0 ]; then
+            TRAFFIC_CLASS=no_packets
+        elif [ "$PPS" -le 20 ]; then
+            TRAFFIC_CLASS=low_traffic
+        elif [ "$PPS" -lt 100 ]; then
+            TRAFFIC_CLASS=medium_traffic
+        else
+            TRAFFIC_CLASS=high_traffic
+        fi
+    fi
+
     LAST_COUNT="$count"
-    if [ "$delta" -gt 0 ]; then
-        LAST_PACKET_EPOCH="$NOW"
-    fi
+    LAST_BYTE_COUNT="$bytes"
+    LAST_TCP_COUNT="$tcp_count"
+    LAST_UDP_COUNT="$udp_count"
     if [ "$LAST_PACKET_EPOCH" -gt 0 ] &&
        [ $((NOW - LAST_PACKET_EPOCH)) -lt "$SILENCE" ]; then
         ACTIVITY=active
     else
         ACTIVITY=silent
     fi
-    dt=$((NOW - LAST_EPOCH))
-    [ "$dt" -ge 0 ] || dt=0
-    [ "$dt" -le 20 ] || dt=20
-    # A blocked device still sends packets into RAW: never charge blocked traffic.
-    if [ "$MODE" = child ] && [ "$ACTIVITY" = active ]; then
+
+    if [ "$CAL_LABEL" != none ]; then
+        if [ "$NOW" -lt "$CAL_UNTIL" ] && [ "$dt" -gt 0 ]; then
+            # Explicitly labeled by a parent; these samples never automatically
+            # grant "verified idle" exemptions or change today's quota.
+            printf '%s,%s,%s,%s,%s,%s\n' "$NOW" "$CAL_LABEL" \
+                "$PPS" "$TCP_PPS" "$UDP_PPS" "$BYTES_PER_S" >> "$DIR/calibration.csv"
+            if [ "$(wc -c < "$DIR/calibration.csv")" -gt 262144 ]; then
+                tail -n 1500 "$DIR/calibration.csv" > "$DIR/calibration.tmp"
+                mv -f "$DIR/calibration.tmp" "$DIR/calibration.csv"
+            fi
+        elif [ "$NOW" -ge "$CAL_UNTIL" ]; then
+            CAL_LABEL=none
+            CAL_UNTIL=0
+        fi
+    fi
+
+    # Count children's network-use session, not claimed screen time.
+    # Both manual lock and quota exhaustion exclude blocked packets from billing.
+    if [ "$MODE" = child ] && [ "$ACTIVITY" = active ] && [ "$dt" -gt 0 ]; then
         if [ "$ENFORCE" != 1 ] || [ "$BLOCKED" != 1 ]; then
             USED_S=$((USED_S + dt))
         fi
