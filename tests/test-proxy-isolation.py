@@ -86,6 +86,12 @@ require(not re.search(r"procd_add_reload_trigger[^\n]*\bfirewall\b", init_text),
 require("/etc/init.d/firewall" not in init_text,
         "tvguard init script must not invoke the global firewall service")
 
+fw_include = (ROOT / "root/usr/libexec/tvguard-firewall-include").read_text(encoding="utf-8")
+require("if ! /usr/libexec/tvguard-fw sync; then" in fw_include,
+        "firewall include must explicitly contain TV Guard sync failure")
+require(re.search(r"\bexit\s+0\b", fw_include) is not None,
+        "firewall include must always return success to global firewall reload")
+
 # Package scripts may add/delete only their own firewall include section and must
 # not restart/reload the global firewall or proxy services.
 postinst = (ROOT / "ipkg/postinst").read_text(encoding="utf-8")
