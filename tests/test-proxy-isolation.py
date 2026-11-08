@@ -74,14 +74,17 @@ for path, text in RUNTIME:
 compat = (ROOT / "root/usr/libexec/tvguard-compat-check").read_text(encoding="utf-8")
 compat_code = "\n".join(line for line in compat.splitlines()
                          if not line.lstrip().startswith("#"))
-# Compatibility checker may only read tables or report iptables version.
-for line in compat_code.splitlines():
-    if '"$IPT"' not in line:
-        continue
-    stripped = line.strip()
-    allowed_read = ('"$IPT" -w 2 -t "$table" -S' in stripped or
-                    '"$IPT" --version' in stripped)
-    require(allowed_read, f"compat checker contains non-read-only iptables use: {stripped}")
+# Compatibility checker is a read-only iptables consumer. Existence checks are
+# fine; any iptables mutation switch is a CI failure.
+require('"$IPT" -w 2 -t "$table" -S' in compat_code,
+        "compat checker must snapshot tables with bounded-lock -S reads")
+require('"$IPT" --version' in compat_code,
+        "compat checker may report iptables version")
+for switch in ("-A", "-I", "-D", "-R", "-F", "-X", "-N", "-P", "-Z"):
+    if re.search(r'["$]IPT[^\n]*\s' + re.escape(switch) + r'(?:\s|["\'])', compat_code):
+        errors.append(f"compat checker contains forbidden iptables write switch {switch}")
+require("iptables-restore" not in compat_code,
+        "compat checker must not use iptables-restore")
 
 # Runtime scripts must not reconfigure or restart existing proxy stacks.
 proxy_words = (
