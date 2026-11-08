@@ -52,7 +52,13 @@ return view.extend({
         var s = result[0], events = result[1];
         var mode = { child: '儿童模式', parent: '家长模式', locked: '手动锁定' }[s.mode] || '未知';
         var activity = { active: '检测到网络活动', silent: '网络静默', unknown: '尚未检测' }[s.activity] || '未知';
-        var blocks = s.enforce ? (s.blocked ? '已封禁' : '允许联网') : '观察模式：不会封禁';
+        var fwState = {
+            blocked: 'N1 上的 TV Guard 规则正在丢弃电视数据包',
+            allowed: 'N1 上的 TV Guard 规则允许电视数据包继续处理',
+            absent: '未找到 TV Guard 入口规则',
+            unknown: '无法核实当前 TV Guard 防火墙规则'
+        }[s.firewall_state] || '未知';
+        var blocks = (s.enforce ? '正式控制' : '观察模式') + ' · ' + fwState;
         var page = [
             E('h2', 'TV Guard · 电视时间管理'),
             E('p', { 'class': 'alert-message warning' },
