@@ -1,9 +1,11 @@
 #!/bin/sh
-# Build an architecture-independent development IPK without an OpenWrt SDK.
-# This is a smoke-test package, not a verified firmware-specific release.
+# Build an OpenWrt/opkg-compatible IPK (gzip-compressed GNU tar outer container).
+# Do NOT use GNU 'ar': its Debian-format archive has failed on older opkg.
+# Development artifact only; not a validated N1 production release.
 set -eu
+
 ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
-VERSION="${1:-0.1.0}"
+VERSION="${1:-0.1.1}"
 OUT="$ROOT/dist"
 PACKAGE="luci-app-tvguard"
 ARCH="all"
@@ -25,6 +27,16 @@ for f in \
     chmod 755 "$WORK/data/$f"
 done
 
+# Preserve executable bits and archive files as root:root regardless of CI UID.
+# GNU tar is available on the Ubuntu runners used by this repository.
+TAR_FLAGS="--format=gnu --numeric-owner --owner=0 --group=0 --sort=name --mtime=@0"
+(
+    cd "$WORK/data"
+    # shellcheck disable=SC2086
+    tar $TAR_FLAGS -cf - . | gzip -n > "$WORK/data.tar.gz"
+)
+INSTALLED_SIZE="$(gzip -cd "$WORK/data.tar.gz" | wc -c | tr -d ' ')"
+
 cat > "$WORK/control/control" <<EOF
 Package: $PACKAGE
 Version: $VERSION-1
@@ -32,6 +44,7 @@ Architecture: $ARCH
 Maintainer: TV Guard contributors
 Section: luci
 Priority: optional
+Installed-Size: $INSTALLED_SIZE
 Depends: luci-base, rpcd
 Description: TV Guard LuCI and shadow time-control service for firewall3 / iptables-legacy
 EOF
@@ -40,16 +53,21 @@ cp "$ROOT/ipkg/postinst" "$ROOT/ipkg/prerm" "$ROOT/ipkg/conffiles" "$WORK/contro
 chmod 755 "$WORK/control/postinst" "$WORK/control/prerm"
 
 (
-    cd "$WORK/data"
-    tar -czf "$WORK/data.tar.gz" .
     cd "$WORK/control"
-    tar -czf "$WORK/control.tar.gz" .
+    # shellcheck disable=SC2086
+    tar $TAR_FLAGS -cf - . | gzip -n > "$WORK/control.tar.gz"
 )
 printf '2.0\n' > "$WORK/debian-binary"
+
 OUTPUT="$OUT/${PACKAGE}_${VERSION}-1_${ARCH}.ipk"
+rm -f "$OUTPUT"
 (
     cd "$WORK"
-    ar rcs "$OUTPUT" debian-binary control.tar.gz data.tar.gz
+    # OpenWrt's scripts/ipkg-build creates a *gzip-compressed tar* outer IPK.
+    # shellcheck disable=SC2086
+    tar $TAR_FLAGS -cf - ./debian-binary ./data.tar.gz ./control.tar.gz |
+        gzip -n > "$OUTPUT"
 )
+
 echo "$OUTPUT"
-ar t "$OUTPUT"
+tar -tzf "$OUTPUT"
