@@ -13,6 +13,55 @@ case "$IP" in ''|*[!0-9.]* ) echo "invalid TV IPv4 address" >&2; exit 2;; esac
 case "$IFACE" in ''|*[!a-zA-Z0-9_.:-]* ) echo "invalid interface" >&2; exit 2;; esac
 
 has() { "$IPT" -t raw -C "$@" >/dev/null 2>&1; }
+
+# Passive reply-observation hooks. They have NO -j target and never ACCEPT,
+# RETURN, DROP, MARK or alter routing. Disabled until explicitly authorized
+# through tvguard.main.observe_reply=1 after platform-specific validation.
+reply_enabled() {
+    [ "$(uci -q get tvguard.main.observe_reply || echo 0)" = 1 ]
+}
+reply_rules_present() {
+    has PREROUTING -i "$IFACE" -d "$IP" -m comment --comment TVG_RX_LAN &&
+    has OUTPUT -o "$IFACE" -d "$IP" -m comment --comment TVG_RX_LOCAL
+}
+add_reply_rules() {
+    has PREROUTING -i "$IFACE" -d "$IP" -m comment --comment TVG_RX_LAN ||
+        "$IPT" -t raw -I PREROUTING 1 -i "$IFACE" -d "$IP" -m comment --comment TVG_RX_LAN || return 1
+    has OUTPUT -o "$IFACE" -d "$IP" -m comment --comment TVG_RX_LOCAL ||
+        "$IPT" -t raw -I OUTPUT 1 -o "$IFACE" -d "$IP" -m comment --comment TVG_RX_LOCAL || return 1
+}
+remove_reply_rules() {
+    while has PREROUTING -i "$IFACE" -d "$IP" -m comment --comment TVG_RX_LAN; do
+        "$IPT" -t raw -D PREROUTING -i "$IFACE" -d "$IP" -m comment --comment TVG_RX_LAN || return 1
+    done
+    while has OUTPUT -o "$IFACE" -d "$IP" -m comment --comment TVG_RX_LOCAL; do
+        "$IPT" -t raw -D OUTPUT -o "$IFACE" -d "$IP" -m comment --comment TVG_RX_LOCAL || return 1
+    done
+}
+sync_reply_rules() {
+    if reply_enabled; then
+        # Optional diagnostic must not break the existing TVG gate if an older
+        # firmware lacks the raw OUTPUT capability or the table was reset.
+        if ! add_reply_rules; then
+            remove_reply_rules || :
+            echo "TV Guard: passive reply observation unavailable" >&2
+        fi
+    else
+        remove_reply_rules
+    fi
+}
+read_reply_count() {
+    "$IPT" -t raw -L "$1" -n -v -x 2>/dev/null |
+        awk -v label="$2" '
+        index($0, "/* " label " */") {
+            if (found++) exit 2
+            packets=$1; bytes=$2
+        }
+        END {
+            if (found!=1 || packets !~ /^[0-9]+$/ || bytes !~ /^[0-9]+$/) exit 1
+            print packets, bytes
+        }'
+}
 create() {
     "$IPT" -t raw -N "$RAW" 2>/dev/null || :
     "$IPT" -t raw -N "$GATE" 2>/dev/null || :
@@ -32,6 +81,8 @@ create() {
     fi
     has PREROUTING -i "$IFACE" -s "$IP" -j "$RAW" ||
         "$IPT" -t raw -I PREROUTING 1 -i "$IFACE" -s "$IP" -j "$RAW"
+    # Best-effort observer: never introduces a forwarding decision.
+    sync_reply_rules
 }
 gate() {
     case "$1" in 0) TARGET=RETURN;; 1) TARGET=DROP;; *) exit 2;; esac
@@ -100,7 +151,25 @@ case "${1:-}" in
         "$IPT" -t raw -L "$RAW" -n -v -x 2>/dev/null |
             awk '/TVG_COUNT/ {print $1; found=1; exit} END {if (!found) exit 1}'
         ;;
+    inspect-reply)
+        if ! reply_enabled; then
+            echo disabled
+        elif reply_rules_present; then
+            echo ready
+        else
+            echo unavailable
+        fi
+        ;;
+    sample-reply)
+        # Output: prerouting_reply_packets bytes local_output_packets bytes.
+        # No return-path telemetry is accepted without BOTH matching hooks.
+        reply_enabled && reply_rules_present || exit 1
+        lan="$(read_reply_count PREROUTING TVG_RX_LAN)" || exit 1
+        local="$(read_reply_count OUTPUT TVG_RX_LOCAL)" || exit 1
+        printf '%s %s\n' "$lan" "$local"
+        ;;
     remove)
+        remove_reply_rules
         while has PREROUTING -i "$IFACE" -s "$IP" -j "$RAW"; do
             "$IPT" -t raw -D PREROUTING -i "$IFACE" -s "$IP" -j "$RAW"
         done
@@ -109,5 +178,5 @@ case "${1:-}" in
         "$IPT" -t raw -F "$GATE" 2>/dev/null || :
         "$IPT" -t raw -X "$GATE" 2>/dev/null || :
         ;;
-    *) echo "usage: tvguard-fw {sync|gate 0|gate 1|sample|count|inspect|remove}" >&2; exit 2 ;;
+    *) echo "usage: tvguard-fw {sync|gate 0|gate 1|sample|count|inspect|inspect-reply|sample-reply|remove}" >&2; exit 2 ;;
 esac
