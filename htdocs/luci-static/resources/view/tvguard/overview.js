@@ -187,7 +187,7 @@ function eventName(value) {
         calibration_start: '开始标注',
         calibration_end: '标注结束',
         daily_reset: '每日重置',
-        parent_expired: '家长授权结束',
+        parent_expired: '旧版定时家长模式结束',
         enforcement: '控制策略',
         recovery_lock: '恢复保护'
     }[value] || '系统记录';
@@ -312,13 +312,16 @@ return view.extend({
             return;
 
         var parentLeft = Math.max(0, Number(state.parent_until || 0) - Number(state.server_epoch || 0));
+        var legacyTimedParent = state.mode === 'parent' && Number(state.parent_until || 0) > 0;
         var modeName = {
             child: '儿童模式',
             parent: '家长模式',
             locked: '已锁定'
         }[state.mode] || '未知模式';
-        var modeNote = state.mode === 'parent' && parentLeft > 0 ?
-            '家长授权剩余 ' + duration(parentLeft) :
+        var modeNote = state.mode === 'parent' ?
+            (legacyTimedParent ?
+                '旧版定时家长模式 · 剩余 ' + duration(parentLeft) :
+                '不消耗儿童额度，不受儿童时段限制；直到手动切回儿童模式') :
             (state.mode === 'locked' ?
                 (state.enforce ? '正式控制下会阻断电视联网' : '观察模式下只记录锁定意图，不断网') :
                 childPolicyNote(state));
@@ -344,10 +347,16 @@ return view.extend({
 
         n.parentNotice.style.display = state.mode === 'parent' ? '' : 'none';
         n.parentNotice.textContent = state.mode === 'parent' ?
-            '家长模式进行中 · 预计剩余 ' + duration(parentLeft) : '';
+            (legacyTimedParent ?
+                '旧版定时家长模式进行中 · 剩余 ' + duration(parentLeft) +
+                    '；可点“切换为长期家长模式”改用新版语义' :
+                '家长模式持续生效，直到手动切回儿童模式') : '';
 
         n.childButton.disabled = state.mode === 'child';
         n.childButton.textContent = state.mode === 'child' ? '儿童模式 · 当前' : '儿童模式';
+        n.parentButton.disabled = state.mode === 'parent' && !legacyTimedParent;
+        n.parentButton.textContent = legacyTimedParent ? '切换为长期家长模式' :
+            (state.mode === 'parent' ? '家长模式 · 当前' : '家长模式');
         n.lockButton.disabled = state.mode === 'locked';
         n.lockButton.textContent = state.mode === 'locked' ? '已锁定 · 当前' : '立即锁定';
 
@@ -540,8 +549,11 @@ return view.extend({
         }[s.mode] || '未知模式';
 
         var parentLeft = Math.max(0, Number(s.parent_until || 0) - Number(s.server_epoch || 0));
-        var modeNote = s.mode === 'parent' && parentLeft > 0 ?
-            '家长授权剩余 ' + duration(parentLeft) :
+        var legacyTimedParent = s.mode === 'parent' && Number(s.parent_until || 0) > 0;
+        var modeNote = s.mode === 'parent' ?
+            (legacyTimedParent ?
+                '旧版定时家长模式 · 剩余 ' + duration(parentLeft) :
+                '不消耗儿童额度，不受儿童时段限制；直到手动切回儿童模式') :
             (s.mode === 'locked' ?
                 (s.enforce ? '正式控制下会阻断电视联网' : '观察模式下只记录锁定意图，不断网') :
                 childPolicyNote(s));
@@ -680,6 +692,15 @@ return view.extend({
             s.mode === 'child' ? '儿童模式 · 当前' : '儿童模式',
             ['mode', 'child'], { disabled: s.mode === 'child', primary: s.mode === 'child' }
         );
+        var parentModeButton = this.actionButton(
+            legacyTimedParent ? '切换为长期家长模式' :
+                (s.mode === 'parent' ? '家长模式 · 当前' : '家长模式'),
+            ['mode', 'parent'], {
+                disabled: s.mode === 'parent' && !legacyTimedParent,
+                primary: s.mode === 'parent' && !legacyTimedParent,
+                title: '家长模式不消耗儿童额度，也不受儿童可用时段限制'
+            }
+        );
         var lockModeButton = this.actionButton(
             s.mode === 'locked' ? '已锁定 · 当前' : '立即锁定',
             ['mode', 'locked'], {
@@ -692,9 +713,7 @@ return view.extend({
         );
         var modeButtons = [
             childModeButton,
-            this.actionButton('家长 30 分钟', ['mode', 'parent', '30']),
-            this.actionButton('家长 60 分钟', ['mode', 'parent', '60']),
-            this.actionButton('家长 120 分钟', ['mode', 'parent', '120']),
+            parentModeButton,
             lockModeButton
         ];
 
@@ -739,7 +758,11 @@ return view.extend({
         var parentNoticeNode = E('div', {
             'class': 'alert-message success',
             'style': 'margin:12px 0 0;' + (s.mode === 'parent' ? '' : 'display:none')
-        }, s.mode === 'parent' ? '家长模式进行中 · 预计剩余 ' + duration(parentLeft) : '');
+        }, s.mode === 'parent' ?
+            (legacyTimedParent ?
+                '旧版定时家长模式进行中 · 剩余 ' + duration(parentLeft) +
+                    '；可切换为新版长期家长模式' :
+                '家长模式持续生效，直到手动切回儿童模式') : '');
         var reward15Button = this.actionButton('+15 分钟', ['bonus', '15']);
         var reward30Button = this.actionButton('+30 分钟', ['bonus', '30']);
         var reward60Button = this.actionButton('+60 分钟', ['bonus', '60']);
@@ -772,6 +795,7 @@ return view.extend({
             quotaBonus: quotaBonusNode,
             parentNotice: parentNoticeNode,
             childButton: childModeButton,
+            parentButton: parentModeButton,
             lockButton: lockModeButton,
             undoButton: undoButton,
             rewardLimit: rewardLimitNode,
@@ -832,12 +856,12 @@ return view.extend({
                 ])
             ], 'margin-top:16px'),
 
-            panel('观看模式', '日常最常用的操作。家长模式不会消耗儿童额度；锁定是否真的断网取决于“正式控制”是否开启。', [
+            panel('观看模式', '儿童模式按额度和时段管理；家长模式持续生效且不消耗儿童额度，直到手动切回；锁定是否真的断网取决于“正式控制”是否开启。', [
                 buttonRow(modeButtons),
                 parentNoticeNode
             ]),
 
-            panel('儿童时间奖励', '奖励只增加今天的儿童额度，不改变模式；如果点错，可以撤销最近一笔奖励。', [
+            panel('儿童奖励时间', '孩子临时多看一会儿就加奖励时间。奖励只增加今天的儿童额度，不改变模式；如果点错，可以撤销最近一笔奖励。', [
                 buttonRow([
                     reward15Button,
                     reward30Button,
