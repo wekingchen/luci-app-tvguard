@@ -1,0 +1,99 @@
+#!/bin/sh
+# Read-only runtime isolation audit for TV Guard.
+# It never writes firewall state. Exit 0 only when all TVG_* rules stay inside
+# the intended raw-table namespace and passive observers have no verdict target.
+set -eu
+PATH=/usr/sbin:/usr/bin:/sbin:/bin
+export PATH
+
+IPT=/usr/sbin/iptables
+[ -x "$IPT" ] || IPT="$(command -v iptables 2>/dev/null || true)"
+[ -n "$IPT" ] && [ -x "$IPT" ] || {
+    echo "unavailable:iptables"
+    exit 2
+}
+
+fail() {
+    echo "unsafe:$1"
+    exit 1
+}
+
+# TV Guard must never own rules or chains in tables used by transparent proxy
+# routing/NAT. Missing optional tables are ignored; any TVG marker is a failure.
+for table in nat mangle filter; do
+    dump="$("$IPT" -t "$table" -S 2>/dev/null || true)"
+    if printf '%s
+' "$dump" | grep -q 'TVG_'; then
+        fail "tvg_marker_in_$table"
+    fi
+done
+
+raw="$("$IPT" -t raw -S 2>/dev/null)" || {
+    echo "unavailable:raw_table"
+    exit 2
+}
+
+# Only two custom chains are permitted.
+for chain in $(printf '%s
+' "$raw" | awk '$1=="-N" && $2 ~ /^TVG_/ {print $2}'); do
+    case "$chain" in
+        TVG_RAW|TVG_GATE) : ;;
+        *) fail "unexpected_chain_$chain" ;;
+    esac
+done
+
+# Every TVG rule must fit the small, explicit vocabulary below. Parsing tokens
+# instead of exact strings tolerates iptables printing x.x.x.x or x.x.x.x/32.
+printf '%s
+' "$raw" | awk '
+function die(msg) { print msg; exit 1 }
+index($0,"TVG_")==0 { next }
+$1=="-N" && ($2=="TVG_RAW" || $2=="TVG_GATE") { next }
+$1=="-A" && $2=="TVG_RAW" {
+    if ($3=="-m" && $4=="comment" && $5=="--comment" &&
+        ($6=="TVG_COUNT") && NF==6) next
+    if ($3=="-p" && ($4=="tcp" || $4=="udp") &&
+        $5=="-m" && $6=="comment" && $7=="--comment" &&
+        (($4=="tcp" && $8=="TVG_TCP") || ($4=="udp" && $8=="TVG_UDP")) &&
+        NF==8) next
+    if ($3=="-j" && $4=="TVG_GATE" && NF==4) next
+    die("unexpected_tvg_raw_rule")
+}
+$1=="-A" && $2=="TVG_GATE" {
+    if ($3=="-j" && ($4=="RETURN" || $4=="DROP") && NF==4) next
+    die("unexpected_tvg_gate_rule")
+}
+$1=="-A" && ($2=="PREROUTING" || $2=="OUTPUT") {
+    # Core hook may jump only into TVG_RAW.
+    for (i=1;i<=NF;i++)
+        if ($i=="TVG_RAW") {
+            if ($2!="PREROUTING") die("core_hook_wrong_chain")
+            next
+        }
+    # Passive reply hooks are comments only. Any -j/-g is forbidden.
+    passive=0
+    for (i=1;i<=NF;i++)
+        if ($i=="TVG_RX_LAN" || $i=="TVG_RX_LOCAL") passive=1
+    if (passive) {
+        for (i=1;i<=NF;i++)
+            if ($i=="-j" || $i=="-g") die("passive_hook_has_target")
+        next
+    }
+}
+{ die("unexpected_tvg_rule") }
+' >/tmp/tvguard-isolation-audit.$$ 2>&1 || {
+    reason="$(tail -n 1 /tmp/tvguard-isolation-audit.$$ 2>/dev/null || echo unexpected_rule)"
+    rm -f /tmp/tvguard-isolation-audit.$$
+    fail "$reason"
+}
+rm -f /tmp/tvguard-isolation-audit.$$
+
+# Exactly one gate verdict is expected whenever the chain exists.
+if printf '%s
+' "$raw" | grep -q '^-N TVG_GATE$'; then
+    gate_count="$(printf '%s
+' "$raw" | awk '$1=="-A" && $2=="TVG_GATE" {n++} END {print n+0}')"
+    [ "$gate_count" -eq 1 ] || fail "gate_rule_count_$gate_count"
+fi
+
+echo "ok"
