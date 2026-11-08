@@ -298,7 +298,15 @@ case "$1" in
         apply_gate
         ;;
     enforce)
-        case "${2:-}" in on) ENFORCE=1;; off) ENFORCE=0;; *) exit 2;; esac
+        case "${2:-}" in
+            on)
+                [ "$(uci -q get tvguard.main.allow_enforcement || echo 0)" = 1 ] ||
+                    { echo "observer-only build: enable allow_enforcement=1 explicitly in UCI after testing" >&2; exit 2; }
+                ENFORCE=1
+                ;;
+            off) ENFORCE=0 ;;
+            *) exit 2 ;;
+        esac
         uci set tvguard.main.enforce="$ENFORCE"
         uci commit tvguard
         event enforcement "enforce=$ENFORCE"
