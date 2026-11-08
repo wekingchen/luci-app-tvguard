@@ -26,6 +26,7 @@ cat > "$TMP/fw" <<'EOFW'
 #!/bin/sh
 case "$1" in
 sync) exit 0 ;;
+sync-reply) echo called >> "$TVGUARD_TEST_REPLY_REPAIR_LOG" ;;
 gate) printf '%s\n' "$2" > "$TVGUARD_TEST_GATE" ;;
 inspect) case "$(cat "$TVGUARD_TEST_GATE")" in 1) echo blocked;; 0) echo allowed;; *) echo unknown;; esac ;;
 sample) cat "$TVGUARD_TEST_SAMPLE" ;;
@@ -37,9 +38,11 @@ EOFW
 chmod +x "$TMP/bin/uci" "$TMP/fw"
 echo '0 0 0 0 0 0' > "$TMP/sample"
 echo '0 0 0 0' > "$TMP/reply"
+: > "$TMP/repair.log"
 echo 9 > "$TMP/gate"
 export TVGUARD_TEST_SAMPLE="$TMP/sample"
 export TVGUARD_TEST_REPLY="$TMP/reply"
+export TVGUARD_TEST_REPLY_REPAIR_LOG="$TMP/repair.log"
 export TVGUARD_TEST_OBSERVER=disabled
 export TVGUARD_TEST_GATE="$TMP/gate"
 # Rewrite a disposable copy only. Production controller has no env path overrides.
@@ -200,6 +203,16 @@ sh "$CTL" tick
 status
 check 'assert s["reply_observer"] == "disabled" and s["reply_prerouting_bps"] == 0'
 check 'assert s["reply_local_bps"] == 0 and s["reply_coverage"] == "unverified"'
+
+# Missing reply counters after FW3 reload must request an OBSERVER-ONLY repair
+# at most once per minute. No call to the gate is made by sync-reply.
+export TVGUARD_TEST_OBSERVER=unavailable
+sh "$CTL" tick
+status
+check 'assert s["reply_observer"] == "unavailable" and s["reply_coverage"] == "unverified"'
+test "$(wc -l < "$TMP/repair.log")" -eq 1
+sh "$CTL" tick
+test "$(wc -l < "$TMP/repair.log")" -eq 1
 
 # No invalid labels or hidden enforcement bypass.
 if sh "$CTL" calibrate unknown > "$TMP/out" 2>&1; then exit 1; fi
