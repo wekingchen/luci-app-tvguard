@@ -39,6 +39,8 @@ jobs:
               console.log('JS syntax OK:', p);
           }
           JS
+      - name: Execute LuCI page with mock DOM and calibrated states
+        run: node tests/test-ui.js
       - name: Exercise controller in mock FW3 environment
         run: |
           set -eu
@@ -74,16 +76,16 @@ jobs:
       - name: Build and validate OpenWrt-compatible development IPK
         run: |
           set -eu
-          sh scripts/build-ipk.sh 0.1.2
-          PKG=dist/luci-app-tvguard_0.1.2-1_all.ipk
+          sh scripts/build-ipk.sh 0.1.3
+          PKG=dist/luci-app-tvguard_0.1.3-1_all.ipk
           test -f "$PKG"
           # OpenWrt ipkg-build uses gzip-compressed tar, not Debian ar.
           test "$(od -An -tx1 -N2 "$PKG" | tr -d ' \n')" = 1f8b
           tar -tzf "$PKG" | grep -q './control.tar.gz'
-          python3 scripts/verify-ipk.py "$PKG" 0.1.2
+          python3 scripts/verify-ipk.py "$PKG" 0.1.3
       - name: Upload development IPK
         uses: actions/upload-artifact@v4
         with:
-          name: tvguard-v0.1.2-calibration-progress-ipk
+          name: tvguard-v0.1.3-calibration-progress-ipk
           path: dist/*.ipk
           if-no-files-found: error
