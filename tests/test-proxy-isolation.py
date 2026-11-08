@@ -78,6 +78,14 @@ for path, text in RUNTIME:
         if re.search(pattern, text):
             errors.append(f"{path.relative_to(ROOT)} contains forbidden runtime operation: {pattern}")
 
+# The daemon must not subscribe to global firewall reload events; fw3's
+# isolated include is sufficient to restore TVG-owned raw rules.
+init_text = (ROOT / "root/etc/init.d/tvguard").read_text(encoding="utf-8")
+require(not re.search(r"procd_add_reload_trigger[^\n]*\bfirewall\b", init_text),
+        "tvguard daemon must not subscribe to global firewall reload trigger")
+require("/etc/init.d/firewall" not in init_text,
+        "tvguard init script must not invoke the global firewall service")
+
 # Package scripts may add/delete only their own firewall include section and must
 # not restart/reload the global firewall or proxy services.
 postinst = (ROOT / "ipkg/postinst").read_text(encoding="utf-8")
