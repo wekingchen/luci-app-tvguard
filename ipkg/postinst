@@ -1,0 +1,17 @@
+#!/bin/sh
+[ -n "$IPKG_INSTROOT" ] && exit 0
+for path in /etc/init.d/tvguard /usr/libexec/tvguardctl /usr/libexec/tvguardd /usr/libexec/tvguard-status /usr/libexec/tvguard-fw /usr/libexec/tvguard-firewall-include; do
+    chmod 755 "$path" 2>/dev/null || :
+done
+if ! uci -q get firewall.tvguard >/dev/null; then
+    uci set firewall.tvguard=include
+    uci set firewall.tvguard.type='script'
+    uci set firewall.tvguard.path='/usr/libexec/tvguard-firewall-include'
+    uci set firewall.tvguard.enabled='1'
+    uci set firewall.tvguard.reload='1'
+    uci commit firewall
+fi
+/etc/init.d/rpcd reload 2>/dev/null || :
+/etc/init.d/tvguard enable
+/etc/init.d/tvguard start
+exit 0
