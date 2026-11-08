@@ -11,7 +11,8 @@ if [ "${1:-}" = -q ]; then shift; fi
 case "${1:-}" in
 get)
     case "${2:-}" in
-        tvguard.main.enforce|tvguard.main.allow_enforcement) echo 0 ;;
+        tvguard.main.enforce) echo 0 ;;
+        tvguard.main.allow_enforcement) echo "${TVGUARD_TEST_ARMED:-0}" ;;
         tvguard.main.weekday_minutes) echo 60 ;;
         tvguard.main.weekend_minutes) echo 120 ;;
         tvguard.main.max_bonus_minutes) echo 120 ;;
@@ -35,7 +36,15 @@ sample-reply) cat "$TVGUARD_TEST_REPLY" ;;
 *) exit 2 ;;
 esac
 EOFW
-chmod +x "$TMP/bin/uci" "$TMP/fw"
+cat > "$TMP/audit" <<'EOAUDIT'
+#!/bin/sh
+printf '%s\n' "${TVGUARD_TEST_AUDIT:-ok}"
+case "${TVGUARD_TEST_AUDIT:-ok}" in
+    ok) exit 0 ;;
+    *) exit 1 ;;
+esac
+EOAUDIT
+chmod +x "$TMP/bin/uci" "$TMP/fw" "$TMP/audit"
 echo '0 0 0 0 0 0' > "$TMP/sample"
 echo '0 0 0 0' > "$TMP/reply"
 : > "$TMP/repair.log"
@@ -44,6 +53,8 @@ export TVGUARD_TEST_SAMPLE="$TMP/sample"
 export TVGUARD_TEST_REPLY="$TMP/reply"
 export TVGUARD_TEST_REPLY_REPAIR_LOG="$TMP/repair.log"
 export TVGUARD_TEST_OBSERVER=disabled
+export TVGUARD_TEST_ARMED=0
+export TVGUARD_TEST_AUDIT=ok
 export TVGUARD_TEST_GATE="$TMP/gate"
 # Rewrite a disposable copy only. Production controller has no env path overrides.
 CTL="$TMP/controller"
@@ -55,6 +66,7 @@ s=Path(src).read_text()
 mapping={
     'PATH=/usr/sbin:/usr/bin:/sbin:/bin': 'PATH='+root+'/bin:/usr/sbin:/usr/bin:/sbin:/bin',
     'FW=/usr/libexec/tvguard-fw': 'FW='+root+'/fw',
+    'AUDIT=/usr/libexec/tvguard-isolation-audit': 'AUDIT='+root+'/audit',
     'RUN=/var/run/tvguard.state': 'RUN='+root+'/run/runtime',
     'DIR=/etc/tvguard': 'DIR='+root+'/state',
     'LOCK=/var/run/tvguard.lock': 'LOCK='+root+'/run/lock',
@@ -255,6 +267,20 @@ test "$(wc -l < "$TMP/repair.log")" -eq 1
 # No invalid labels or hidden enforcement bypass.
 if sh "$CTL" calibrate unknown > "$TMP/out" 2>&1; then exit 1; fi
 if sh "$CTL" calibrate playing 'bad-app;rm' > "$TMP/out" 2>&1; then exit 1; fi
+
+# First safety key still blocks formal enforcement.
 if sh "$CTL" enforce on > "$TMP/out" 2>&1; then exit 1; fi
+grep -q 'allow_enforcement=1' "$TMP/out"
+
+# Even with the explicit admin key armed, a non-ok live isolation audit blocks
+# enforcement before UCI/gate mutation.
+export TVGUARD_TEST_ARMED=1
+export TVGUARD_TEST_AUDIT='unsafe:test_violation'
+if sh "$CTL" enforce on > "$TMP/out" 2>&1; then
+    echo "FAIL: unsafe isolation audit allowed enforcement" >&2
+    exit 1
+fi
+grep -q 'proxy isolation audit is not ok' "$TMP/out"
 test "$(cat "$TMP/gate")" = 0
-echo "PASS: syntax, mode, rewards, startup timebase, telemetry, labels, fail-safe"
+
+echo "PASS: modes, billing, telemetry, calibration and two-key + live-audit enforcement safety"
