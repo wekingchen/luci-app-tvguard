@@ -42,7 +42,7 @@ jobs:
       - name: Exercise controller in mock FW3 environment
         run: |
           set -eu
-          dash tests/test-controller.sh
+          dash -x tests/test-controller.sh
       - name: Exercise mock firewall3 rule lifecycle
         run: |
           set -eu
