@@ -34,17 +34,19 @@ read_table() {
 # TV Guard must never own rules or chains in tables used by transparent routing
 # or NAT. Missing optional tables are ignored; any TVG marker is a failure.
 for table in nat mangle filter; do
-    dump="$(read_table "$table" 2>/dev/null || true)"
-    if printf '%s
-' "$dump" | grep -q 'TVG_'; then
+    if ! dump="$(read_table "$table" 2>/dev/null)"; then
+        echo "unavailable:${table}_table"
+        exit 2
+    fi
+    if printf '%s\n' "$dump" | grep -q 'TVG_'; then
         fail "tvg_marker_in_$table"
     fi
 done
 
-raw="$(read_table raw 2>/dev/null)" || {
+if ! raw="$(read_table raw 2>/dev/null)"; then
     echo "unavailable:raw_table"
     exit 2
-}
+fi
 
 tmp="/tmp/tvguard-isolation-audit.$$"
 trap 'rm -f "$tmp"' EXIT HUP INT TERM
