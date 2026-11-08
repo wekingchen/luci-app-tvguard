@@ -93,13 +93,18 @@ check 'assert s["enforce"] == 0 and s["armed"] == 0 and s["mode"] == "child"'
 check 'assert s["pps"] == 0 and s["calibration_label"] == "none"'
 check 'assert s["reply_observer"] == "disabled" and s["reply_coverage"] == "unverified"'
 check 'assert s["reply_prerouting_pps"] == 0 and s["reply_local_pps"] == 0'
+check 'assert s["bonus_undo_available"] == 0'
 
 sh "$CTL" bonus 15
 status
 check 'assert s["bonus_seconds"] == 900 and s["remaining_seconds"] >= 900'
+check 'assert s["bonus_undo_available"] == 1'
+sh "$CTL" bonus 30
+status
+check 'assert s["bonus_seconds"] == 2700 and s["bonus_undo_available"] == 1'
 sh "$CTL" bonus undo
 status
-check 'assert s["bonus_seconds"] == 0'
+check 'assert s["bonus_seconds"] == 900 and s["bonus_undo_available"] == 0'
 if sh "$CTL" bonus undo > "$TMP/out" 2>&1; then exit 1; fi
 if sh "$CTL" bonus 999 > "$TMP/out" 2>&1; then exit 1; fi
 
