@@ -104,6 +104,8 @@ const updates = [
     assert.match(source, /tvg-summary-grid\{grid-template-columns:repeat\(2,minmax\(0,1fr\)\)/);
     assert.match(source, /tvg-mode-row>\.btn:last-child\{grid-column:1\/-1/);
     assert.match(source, /background:rgba\(127,127,127,\.08\)/);
+    assert.match(source, /metric\('儿童剩余'/);
+    assert.match(source, /tvg-state-note-good/);
     assert.doesNotMatch(source, /background:var\(--background-color-high,#fafafa\)/);
     assert.equal(polls.size, 1);
     assert.equal(page._calibrationNodes.start.disabled, false);
@@ -170,7 +172,7 @@ const updates = [
     page.updateOverviewUI(state);
     assert.equal(page._uiSummary.mode, '家长模式');
     assert.equal(page._uiSummary.quotaPercent, 50);
-    assert.match(page._overviewNodes.modeNote.textContent, /直到手动切回儿童模式/);
+    assert.match(page._overviewNodes.modeNote.textContent, /不计儿童额度/);
     assert.match(page._overviewNodes.parentNotice.textContent, /持续生效/);
     assert.equal(page._overviewNodes.parentNotice.style.display, '');
     assert.equal(page._overviewNodes.parentButton.disabled, true);
