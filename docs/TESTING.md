@@ -44,7 +44,46 @@ iptables -t raw -S PREROUTING | grep TVG
 10. 检查停服务时的策略保持，卸载时所有 TVG 规则均被清除而不触碰其他链。
 11. 若使用电视前台场景推断，必须标注“疑似”，且不得直接启用不可信的免计时规则。
 
-## 四、正式封禁前的放行路径
+## 四、可选回程观测的安全测试（下一轮，尚未真机执行）
+
+当前开发分支已经增加两处无动作目标的回程计数，但必须保留 `observe_reply=0`，直到完成兼容性测试。**无需安装 tcpdump/conntrack，不要改变现有 SSR、PassWall、OpenClash 或主路由设置。**
+
+安全起点：`enforce=0`、`allow_enforcement=0`，且观察端默认关闭。真实 N1 上先备份配置和 RAW 规则，再经人工确认才测试：
+
+```sh
+uci -q get tvguard.main.observe_reply
+/usr/libexec/tvguard-fw inspect-reply
+/usr/libexec/tvguardctl status
+```
+
+未来明确允许启用时的最小化步骤（**开发记录，并非当前用户待办**）：
+
+```sh
+uci export tvguard > /root/tvguard-before-reply-observe.bak
+iptables-save -t raw > /root/tvguard-before-reply-raw.rules
+uci set tvguard.main.observe_reply='1'
+uci commit tvguard
+/usr/libexec/tvguard-fw sync
+/usr/libexec/tvguard-fw inspect-reply
+/usr/libexec/tvguard-fw sample-reply
+/usr/libexec/tvguardctl status
+```
+
+确认 `TVG_RX_LAN`、`TVG_RX_LOCAL` 都没有 `-j` 或其他目标，且原有 TVG_GATE 为 allowed。注意 `ready` 只意味着两条规则存在；`reply_coverage=unverified` 不会因为有回程流量而变成已验证。
+
+快速撤回观测规则：
+
+```sh
+uci set tvguard.main.observe_reply='0'
+uci commit tvguard
+/usr/libexec/tvguard-fw sync
+/usr/libexec/tvguard-fw inspect-reply
+/usr/libexec/tvguard-fw inspect
+```
+
+预期第一项为 `disabled`、第二项为 `allowed`。禁止使用 `iptables -F`、`iptables -t raw -F` 等影响其他服务的命令。
+
+## 五、正式封禁前的放行路径
 
 本开发版本存在额外上锁开关：
 ```sh
@@ -55,7 +94,7 @@ uci -q get tvguard.main.allow_enforcement
 
 后续验证通过后才会提供受控的“启用”流程及失败回滚步骤；当前版本不建议开启强制模式。
 
-## 五、恢复与卸载
+## 六、恢复与卸载
 
 已安装且希望保持电视可联网时，需先检查其它插件和原先的旧封禁规则。TV Guard 自身可用以下操作退出拦截：
 ```sh
@@ -66,10 +105,10 @@ uci -q get tvguard.main.allow_enforcement
 
 卸载由 `prerm` 停止服务并移除 TVG 专用链；**不能使用 `iptables -F` 清空防火墙**。
 
-## 六、仍未解决的功能限制
+## 七、仍未解决的功能限制
 
 - 当前计时主要依据网络活动会话，尚无经证实的“小米系统首页 / App 首页 / 视频暂停”可信自动识别。
 - 不区分电视是大人还是孩子，家长必须主动切换家长模式。
 - N1 单网口旁路由仅能观察经过它的 IPv4 流量；电视绕过 N1 时控制无效。
 - 不基于 PPS 单阈值直接判断免计时。
-- 尚未对 LEDE R26.11.3 的实际 rpcd、LuCI、fw3 重载、opkg 安装进行真机验收。
+- 已完成 v0.1.1 的部分 N1 实机初测，但后续开发包及新增回程观测尚未完整验收；CI 通过不能替代 N1 测试。
