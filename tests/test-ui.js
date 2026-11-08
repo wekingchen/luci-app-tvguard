@@ -93,15 +93,26 @@ const updates = [
     assert.equal(polls.size, 1);
     assert.equal(page._calibrationNodes.start.disabled, false);
     assert.equal(page._calibrationNodes.stop.disabled, true);
+    assert.equal(page._uiSummary.mode, '儿童模式');
+    assert.equal(page._uiSummary.control, '观察模式');
+    assert.equal(page._uiSummary.isolationSafe, true);
+    assert.equal(page._uiSummary.canEnableEnforcement, false);
     assert.match(page._isolationStatus.label, /通过/);
     assert.match(page._isolationStatus.label, /nat \/ mangle \/ filter/);
 
     page.render([state, '', '', {code: 1, text: 'unsafe:test_violation'}]);
+    assert.equal(page._uiSummary.isolationSafe, false);
+    assert.equal(page._uiSummary.canEnableEnforcement, false);
     assert.match(page._isolationStatus.label, /异常/);
     assert.match(page._isolationStatus.label, /unsafe:test_violation/);
     page.render([state, '', '', {code: 2, text: 'unavailable:raw_table'}]);
     assert.match(page._isolationStatus.label, /无法验证/);
     assert.match(page._isolationStatus.label, /不等于已确认安全/);
+    // Armed + safe is the only front-end state that permits formal control.
+    state.armed = 1;
+    page.render([state, '', '', {code: 0, text: 'ok'}]);
+    assert.equal(page._uiSummary.canEnableEnforcement, true);
+    state.armed = 0;
     // Restore normal render for the remaining interaction checks.
     page.render([state, '', '', {code: 0, text: 'ok'}]);
     assert.match(page._trafficNodes.outgoing.textContent, /8 PPS/);
@@ -133,7 +144,7 @@ const updates = [
         assert.equal(n.scene.disabled, active);
         assert.ok(n.title.textContent.length > 0);
     }
-    assert.equal(page._calibrationNodes.title.textContent, '等待开始采样');
+    assert.equal(page._calibrationNodes.title.textContent, '未在采样');
 
     Object.assign(state, updates[0]);
     await page.refreshCalibration();
@@ -152,5 +163,5 @@ const updates = [
     await stopped.props.click();
     assert.ok(commands.some(([n, args]) => n === '/usr/libexec/tvguardctl' && args.join(' ') === 'calibrate stop'));
     assert.equal(reloads, 1);
-    console.log('PASS: LuCI page render, calibration phases, polling, sample refresh and button dispatch');
+    console.log('PASS: LuCI hierarchy, safety summary, calibration phases, polling and button dispatch');
 })().catch(err => { console.error(err); process.exitCode = 1; });
