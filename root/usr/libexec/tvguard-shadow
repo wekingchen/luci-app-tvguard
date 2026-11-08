@@ -1,60 +1,109 @@
 #!/bin/sh
-# TV Guard shadow-only network fingerprint suggestion.
-# This program NEVER changes quota, modes or firewall policy.
+# Conservative shadow-only fingerprint hint. NEVER affects billing or firewall.
 # Usage: tvguard-shadow PPS TCP_PPS UDP_PPS BYTES_PER_S
+# Evidence gate: 3 independent sessions for ALL 3 app scenes; abstain if the
+# current window can match more than one observed scene.
 set -eu
 PATH=/usr/sbin:/usr/bin:/sbin:/bin
 export PATH
 CSV=/etc/tvguard/calibration-v3.csv
-for n in "$@"; do
-    case "$n" in ''|*[!0-9]*) echo 'unknown none 0'; exit 0 ;; esac
+
+[ "$#" -eq 4 ] || { echo 'unknown none 0'; exit 0; }
+for number in "$@"; do
+    case "$number" in ''|*[!0-9]*) echo 'unknown none 0'; exit 0 ;; esac
 done
-[ "$#" -eq 4 ] && [ -s "$CSV" ] || { echo 'unknown none 0'; exit 0; }
+[ -s "$CSV" ] || { echo 'unknown none 0'; exit 0; }
+
 awk -F, -v p="$1" -v t="$2" -v u="$3" -v b="$4" '
-function abs(v) { return v<0?-v:v }
-function max(a,b) { return a>b?a:b }
+function abs(x) { return x < 0 ? -x : x }
+function lo(a,b) { return a < b ? a : b }
+function hi(a,b) { return a > b ? a : b }
+function in_envelope(k) {
+    # Permit minor sampling jitter but not novel, untrained traffic profiles.
+    return p >= pmin[k]-5 && p <= pmax[k]+5 &&
+           t >= tmin[k]-3 && t <= tmax[k]+3 &&
+           u >= umin[k]-5 && u <= umax[k]+5 &&
+           b >= bmin[k]-4096 && b <= bmax[k]+4096
+}
+function distinct_from(k) {
+    # Require a substantial difference from at least one whole observed
+    # rival range, not merely a smaller distance to another group mean.
+    return p < pmin[k]-10 || p > pmax[k]+10 ||
+           t < tmin[k]-5 || t > tmax[k]+5 ||
+           u < umin[k]-10 || u > umax[k]+10 ||
+           b < bmin[k]-10240 || b > bmax[k]+10240
+}
+function ready(k) { return n[k]>=18 && sess_n[k]>=3 }
+function output(label,app) {
+    # The third field is an evidence indicator, NOT classifier accuracy.
+    # Deliberately fixed at 0: do not present unsupported probabilities.
+    print label " " app " 0"
+}
 $3 ~ /^(playing|paused|app_home|system_home|sleep)$/ &&
 $4 ~ /^(general|tencent|iqiyi|mango|other|system)$/ &&
-$5 ~ /^[0-9]+$/ && $6 ~ /^[0-9]+$/ && $7 ~ /^[0-9]+$/ &&
-$8 ~ /^[0-9]+$/ {
-    k=$3 SUBSEP $4
+$2 ~ /^[0-9]+-[0-9]+$/ &&
+$5 ~ /^[0-9]+$/ && $6 ~ /^[0-9]+$/ &&
+$7 ~ /^[0-9]+$/ && $8 ~ /^[0-9]+$/ {
+    k=$4 SUBSEP $3
     n[k]++
-    sp[k]+=$5; st[k]+=$6; su[k]+=$7; sb[k]+=$8
-    sq[k]+=$5*$5
+    if (n[k]==1) {
+        pmin[k]=pmax[k]=$5
+        tmin[k]=tmax[k]=$6
+        umin[k]=umax[k]=$7
+        bmin[k]=bmax[k]=$8
+    }
+    else {
+        pmin[k]=lo(pmin[k],$5); pmax[k]=hi(pmax[k],$5)
+        tmin[k]=lo(tmin[k],$6); tmax[k]=hi(tmax[k],$6)
+        umin[k]=lo(umin[k],$7); umax[k]=hi(umax[k],$7)
+        bmin[k]=lo(bmin[k],$8); bmax[k]=hi(bmax[k],$8)
+    }
     sessions[k SUBSEP $2]=1
+    video_apps[$4]=1
 }
 END {
-    best=1e10; second=1e10; bestKey=""; eligible=0
-    for (key in sessions) {
-        split(key,fields,SUBSEP)
-        k=fields[1] SUBSEP fields[2]
-        nSessions[k]++
+    for (x in sessions) {
+        split(x,part,SUBSEP)
+        k=part[1] SUBSEP part[2]
+        sess_n[k]++
     }
-    for (k in n) {
-        # At least 3 independent 120-second calibrations per scene/app.
-        if (n[k]<18 || nSessions[k]<3) continue
-        ap=sp[k]/n[k]; at=st[k]/n[k]; au=su[k]/n[k]; ab=sb[k]/n[k]
-        variance=sq[k]/n[k]-ap*ap
-        if (variance<0) variance=0
-        if (sqrt(variance)/max(20,ap)>0.70) continue
-        eligible++
-        # Normalized distances: source packet frequency matters most.
-        d=abs(p-ap)/max(20,ap)
-        d+=0.45*abs(t-at)/max(5,at)
-        d+=0.45*abs(u-au)/max(5,au)
-        d+=0.10*abs(b-ab)/max(1000,ab)
-        if (d<best) {
-            second=best
-            best=d
-            bestKey=k
+    matches=0
+    complete_apps=0
+    for (app in video_apps) {
+        if (app=="system") continue
+        play=app SUBSEP "playing"
+        pause=app SUBSEP "paused"
+        home=app SUBSEP "app_home"
+        # With only one/two scene classes, arbitrary packet fingerprints
+        # can look convincing while the unmeasured scene is identical.
+        if (!ready(play) || !ready(pause) || !ready(home)) continue
+        complete_apps++
+        if (in_envelope(play) && distinct_from(pause) && distinct_from(home)) {
+            matches++; label="playing"; selected=app
         }
-        else if (d<second) second=d
+        if (in_envelope(pause) && distinct_from(play) && distinct_from(home)) {
+            matches++; label="paused"; selected=app
+        }
+        if (in_envelope(home) && distinct_from(play) && distinct_from(pause)) {
+            matches++; label="app_home"; selected=app
+        }
     }
-    # No confident assignment from just one prototype or overlapping samples.
-    if (eligible<2 || best>=0.50 || second-best<0.30) {
-        print "unknown none 0"
-        exit
+    # For system home, require a complete video-app reference set and
+    # separation from EVERY comparable video state, not just "low PPS".
+    system="system" SUBSEP "system_home"
+    if (complete_apps>0 && ready(system) && in_envelope(system)) {
+        distinct=1
+        for (app in video_apps) {
+            if (app=="system") continue
+            play=app SUBSEP "playing"
+            pause=app SUBSEP "paused"
+            home=app SUBSEP "app_home"
+            if (!ready(play) || !ready(pause) || !ready(home)) continue
+            if (!distinct_from(play) || !distinct_from(pause) || !distinct_from(home))
+                distinct=0
+        }
+        if (distinct) { matches++; label="system_home"; selected="system" }
     }
-    split(bestKey,parts,SUBSEP)
-    printf "%s %s %d\n",parts[1],parts[2],int((1-best/0.50)*100)
+    if (matches==1) output(label,selected)
+    else output("unknown","none")
 }' "$CSV"
