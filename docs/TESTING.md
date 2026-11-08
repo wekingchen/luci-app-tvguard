@@ -104,7 +104,7 @@ uci export tvguard > /root/tvguard-before-reply-observe.bak
 iptables-save -t raw > /root/tvguard-before-reply-raw.rules
 uci set tvguard.main.observe_reply='1'
 uci commit tvguard
-/usr/libexec/tvguard-fw sync
+/usr/libexec/tvguard-fw sync-reply
 /usr/libexec/tvguard-fw inspect-reply
 /usr/libexec/tvguard-fw sample-reply
 /usr/libexec/tvguardctl status
@@ -117,7 +117,7 @@ uci commit tvguard
 ```sh
 uci set tvguard.main.observe_reply='0'
 uci commit tvguard
-/usr/libexec/tvguard-fw sync
+/usr/libexec/tvguard-fw sync-reply
 /usr/libexec/tvguard-fw inspect-reply
 /usr/libexec/tvguard-fw inspect
 ```
