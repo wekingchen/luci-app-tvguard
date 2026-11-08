@@ -115,11 +115,38 @@ check 'assert s["used_seconds"] >= 9 and s["used_seconds"] <= 11, s'
 check 'assert s["pps"] > 0 and s["tcp_pps"] > 0 and s["udp_pps"] > 0, s'
 check 'assert s["traffic_class"] in ("high_traffic","medium_traffic","low_traffic")'
 check 'assert s["calibration_label"] == "playing" and s["calibration_app"] == "tencent" and s["calibration_session"] != "none"'
+check 'assert s["calibration_phase"] == "running" and s["calibration_active"] == 1'
+check 'assert s["calibration_samples"] == 1 and 0 <= s["calibration_elapsed_seconds"] <= 120'
+check 'assert s["calibration_remaining_seconds"] > 0 and 0 <= s["calibration_percent"] < 100'
+check 'assert s["server_epoch"] > 0'
+if sh "$CTL" calibrate paused tencent > "$TMP/out" 2>&1; then
+    echo "FAIL: a new session replaced an active calibration" >&2
+    exit 1
+fi
 test -s "$TMP/state/calibration-v3.csv"
 grep -q ',playing,tencent,' "$TMP/state/calibration-v3.csv"
+# Simulate a completed 120-second calibration without sleeping.
+python3 - "$TMP/run/runtime" <<'PY'
+from pathlib import Path
+import sys
+p=Path(sys.argv[1])
+lines=p.read_text().splitlines()
+p.write_text('\n'.join('CAL_UNTIL=1' if line.startswith('CAL_UNTIL=') else line for line in lines)+'\n')
+PY
+sh "$CTL" tick
+status
+check 'assert s["calibration_label"] == "none" and s["calibration_app"] == "none" and s["calibration_session"] == "none"'
+check 'assert s["calibration_phase"] == "completed" and s["calibration_active"] == 0'
+check 'assert s["calibration_last_label"] == "playing" and s["calibration_last_app"] == "tencent"'
+check 'assert s["calibration_last_samples"] == 1 and s["calibration_last_result"] == "completed"'
+grep -q 'calibration_end' "$TMP/state/events.log"
+# Manual stop must also persist a reason without overwriting the completed CSV.
+sh "$CTL" calibrate paused iqiyi
 sh "$CTL" calibrate stop
 status
-check 'assert s["calibration_label"] == "none"'
+check 'assert s["calibration_phase"] == "stopped" and s["calibration_last_app"] == "iqiyi"'
+check 'assert s["calibration_last_samples"] == 0 and s["calibration_session"] == "none"'
+if sh "$CTL" calibrate stop > "$TMP/out" 2>&1; then exit 1; fi
 
 # No invalid labels or hidden enforcement bypass.
 if sh "$CTL" calibrate unknown > "$TMP/out" 2>&1; then exit 1; fi
