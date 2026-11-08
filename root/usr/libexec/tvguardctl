@@ -24,12 +24,15 @@ config() {
     ALLOW_START="$(uci -q get tvguard.main.allow_start || echo 08:00)"
     ALLOW_END="$(uci -q get tvguard.main.allow_end || echo 21:00)"
     case "$ENFORCE" in 0|1) :;; *) ENFORCE=0;; esac
+    # Deliberate two-key safety interlock: a stray enforce=1 is not enough.
+    [ "$ARMED" = 1 ] || ENFORCE=0
     for n in WEEKDAY WEEKEND BONUS_MAX SILENCE; do
         eval "v=\$$n"
         case "$v" in ''|*[!0-9]*) echo "invalid numeric configuration: $n" >&2; exit 2;; esac
     done
 }
 defaults() {
+    STATE_PRESENT=0
     TODAY="$(date +%Y-%m-%d)"
     MODE=child
     PARENT_UNTIL=0
@@ -60,10 +63,18 @@ load_state() {
     # Only root-written files; never load untrusted input from a web request.
     if [ -r "$RUN" ]; then
         . "$RUN"
+        STATE_PRESENT=1
     elif [ -r "$STATE" ]; then
         . "$STATE"
+        STATE_PRESENT=1
     fi
     case "$MODE" in child|parent|locked) :;; *) MODE=locked;; esac
+    # An enforced installation must not turn corruption/lost state into a
+    # fresh, unspent child allowance after power failure.
+    if [ "$ENFORCE" = 1 ] && [ "$STATE_PRESENT" = 0 ]; then
+        MODE=locked
+        BLOCKED=1
+    fi
 }
 save_runtime() {
     temp="${RUN}.$$"
@@ -330,6 +341,9 @@ case "${1:-}" in
         load_state
         NOW="$(date +%s)"
         rollover
+        if [ "$ENFORCE" = 1 ] && [ "$STATE_PRESENT" = 0 ]; then
+            event recovery_lock "持久状态缺失，强制锁定直至家长确认"
+        fi
         ;;
     *) echo "usage: tvguardctl {status|log|calibration|tick|sync|mode|bonus|calibrate|enforce}" >&2; exit 2 ;;
 esac
