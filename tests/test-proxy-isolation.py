@@ -17,6 +17,12 @@ for base in ("root/usr/libexec", "root/etc/init.d", "ipkg"):
         if path.is_file():
             RUNTIME.append((path, path.read_text(encoding="utf-8", errors="replace")))
 
+# Shell comments are documentation, not executable operations.
+FW_CODE = "\n".join(
+    line for line in FW.splitlines()
+    if not line.lstrip().startswith("#")
+)
+
 errors = []
 
 def require(cond, message):
@@ -36,7 +42,7 @@ for token in (
     "TPROXY", "REDIRECT", "DNAT", "SNAT", "MASQUERADE",
     "MARK", "CONNMARK", "NOTRACK", "CT --notrack",
 ):
-    require(token not in FW, f"forbidden firewall token in tvguard-fw: {token}")
+    require(token not in FW_CODE, f"forbidden firewall token in tvguard-fw: {token}")
 
 # No global-chain flush/delete. TV Guard may only flush/delete its own chains.
 for line in FW.splitlines():
