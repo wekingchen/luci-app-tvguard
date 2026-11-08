@@ -43,6 +43,10 @@ jobs:
         run: |
           set -eu
           dash tests/test-controller.sh
+      - name: Exercise mock firewall3 rule lifecycle
+        run: |
+          set -eu
+          dash tests/test-firewall.sh
       - name: Check intended safeguards
         shell: bash
         run: |
