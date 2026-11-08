@@ -27,7 +27,7 @@ cat > "$TMP/fw" <<'EOFW'
 case "$1" in
 sync) exit 0 ;;
 gate) printf '%s\n' "$2" > "$TVGUARD_TEST_GATE" ;;
-inspect) if [ "$(cat "$TVGUARD_TEST_GATE")" = 1 ]; then echo blocked; else echo allowed; fi ;;
+inspect) case "$(cat "$TVGUARD_TEST_GATE")" in 1) echo blocked;; 0) echo allowed;; *) echo unknown;; esac ;;
 sample) cat "$TVGUARD_TEST_SAMPLE" ;;
 *) exit 2 ;;
 esac
