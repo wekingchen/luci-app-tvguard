@@ -57,9 +57,9 @@ jobs:
         run: |
           set -eu
           sh scripts/build-ipk.sh 0.1.0
-          test -f dist/luci-app-tvguard0.1.0-1_all.ipk
-          ar t dist/luci-app-tvguard0.1.0-1_all.ipk | grep -q data.tar.gz
-          ar p dist/luci-app-tvguard0.1.0-1_all.ipk data.tar.gz |
+          test -f dist/luci-app-tvguard_0.1.0-1_all.ipk
+          ar t dist/luci-app-tvguard_0.1.0-1_all.ipk | grep -q data.tar.gz
+          ar p dist/luci-app-tvguard_0.1.0-1_all.ipk data.tar.gz |
             tar tzf - | grep -q './usr/libexec/tvguardctl'
       - name: Upload development IPK
         uses: actions/upload-artifact@v4
