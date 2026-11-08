@@ -49,6 +49,8 @@ jobs:
         run: python3 tests/test-proxy-isolation.py
       - name: Exercise read-only runtime isolation audit
         run: dash tests/test-isolation-audit.sh
+      - name: Verify package ownership and uninstall isolation
+        run: dash tests/test-package-safety.sh
       - name: Exercise mock firewall3 rule lifecycle
         run: |
           set -eu
