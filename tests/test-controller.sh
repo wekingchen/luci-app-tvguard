@@ -29,13 +29,18 @@ sync) exit 0 ;;
 gate) printf '%s\n' "$2" > "$TVGUARD_TEST_GATE" ;;
 inspect) case "$(cat "$TVGUARD_TEST_GATE")" in 1) echo blocked;; 0) echo allowed;; *) echo unknown;; esac ;;
 sample) cat "$TVGUARD_TEST_SAMPLE" ;;
+inspect-reply) echo "${TVGUARD_TEST_OBSERVER:-disabled}" ;;
+sample-reply) cat "$TVGUARD_TEST_REPLY" ;;
 *) exit 2 ;;
 esac
 EOFW
 chmod +x "$TMP/bin/uci" "$TMP/fw"
 echo '0 0 0 0 0 0' > "$TMP/sample"
+echo '0 0 0 0' > "$TMP/reply"
 echo 9 > "$TMP/gate"
 export TVGUARD_TEST_SAMPLE="$TMP/sample"
+export TVGUARD_TEST_REPLY="$TMP/reply"
+export TVGUARD_TEST_OBSERVER=disabled
 export TVGUARD_TEST_GATE="$TMP/gate"
 # Rewrite a disposable copy only. Production controller has no env path overrides.
 CTL="$TMP/controller"
@@ -71,6 +76,8 @@ sh "$CTL" sync
 status
 check 'assert s["enforce"] == 0 and s["armed"] == 0 and s["mode"] == "child"'
 check 'assert s["pps"] == 0 and s["calibration_label"] == "none"'
+check 'assert s["reply_observer"] == "disabled" and s["reply_coverage"] == "unverified"'
+check 'assert s["reply_prerouting_pps"] == 0 and s["reply_local_pps"] == 0'
 
 sh "$CTL" bonus 15
 status
@@ -147,6 +154,52 @@ status
 check 'assert s["calibration_phase"] == "stopped" and s["calibration_last_app"] == "iqiyi"'
 check 'assert s["calibration_last_samples"] == 0 and s["calibration_session"] == "none"'
 if sh "$CTL" calibrate stop > "$TMP/out" 2>&1; then exit 1; fi
+
+# Optional passive reply observation is independent from outgoing billing.
+# The first snapshot only primes baselines; it must not fabricate a burst.
+export TVGUARD_TEST_OBSERVER=ready
+echo '100 10000 200 20000' > "$TMP/reply"
+sh "$CTL" tick
+status
+check 'assert s["reply_observer"] == "ready" and s["reply_sample_status"] == "warming_up"'
+check 'assert s["reply_prerouting_pps"] == 0 and s["reply_local_pps"] == 0'
+
+python3 - "$TMP/run/runtime" <<'PY'
+from pathlib import Path
+import sys,time
+p=Path(sys.argv[1])
+lines=p.read_text().splitlines()
+lines=['RX_LAST_EPOCH='+str(int(time.time())-10) if line.startswith('RX_LAST_EPOCH=') else line for line in lines]
+p.write_text('\n'.join(lines)+'\n')
+PY
+echo '170 17000 260 29000' > "$TMP/reply"
+sh "$CTL" tick
+status
+check 'assert s["reply_observer"] == "ready" and s["reply_sample_status"] == "observed"'
+check 'assert s["reply_prerouting_pps"] == 7 and s["reply_prerouting_bps"] == 700, s'
+check 'assert s["reply_local_pps"] == 6 and s["reply_local_bps"] == 900, s'
+check 'assert s["reply_coverage"] == "unverified" and s["enforce"] == 0 and s["armed"] == 0'
+
+# FW3 counter reset: never display a huge bogus negative or positive rate.
+python3 - "$TMP/run/runtime" <<'PY'
+from pathlib import Path
+import sys,time
+p=Path(sys.argv[1])
+lines=p.read_text().splitlines()
+lines=['RX_LAST_EPOCH='+str(int(time.time())-10) if line.startswith('RX_LAST_EPOCH=') else line for line in lines]
+p.write_text('\n'.join(lines)+'\n')
+PY
+echo '2 50 3 60' > "$TMP/reply"
+sh "$CTL" tick
+status
+check 'assert s["reply_sample_status"] == "warming_up" and s["reply_prerouting_pps"] == 0'
+check 'assert s["reply_local_pps"] == 0'
+
+export TVGUARD_TEST_OBSERVER=disabled
+sh "$CTL" tick
+status
+check 'assert s["reply_observer"] == "disabled" and s["reply_prerouting_bps"] == 0'
+check 'assert s["reply_local_bps"] == 0 and s["reply_coverage"] == "unverified"'
 
 # No invalid labels or hidden enforcement bypass.
 if sh "$CTL" calibrate unknown > "$TMP/out" 2>&1; then exit 1; fi
