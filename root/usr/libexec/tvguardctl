@@ -302,10 +302,11 @@ status() {
     case "$firewall_state" in blocked|allowed|absent|unknown) :;; *) firewall_state=unknown;; esac
     actual=0
     [ "$firewall_state" = blocked ] && actual=1
-    printf '{"date":"%s","mode":"%s","activity":"%s","enforce":%s,"armed":%s,"would_block":%s,"blocked":%s,"firewall_state":"%s","used_seconds":%s,"quota_seconds":%s,"bonus_seconds":%s,"remaining_seconds":%s,"parent_until":%s,"last_packet_epoch":%s,"packet_counter":%s}\n' \
+    printf '{"date":"%s","mode":"%s","activity":"%s","enforce":%s,"armed":%s,"would_block":%s,"blocked":%s,"firewall_state":"%s","used_seconds":%s,"quota_seconds":%s,"bonus_seconds":%s,"remaining_seconds":%s,"parent_until":%s,"last_packet_epoch":%s,"packet_counter":%s,"pps":%s,"tcp_pps":%s,"udp_pps":%s,"bytes_per_second":%s,"traffic_class":"%s","calibration_label":"%s","calibration_until":%s}\n' \
         "$TODAY" "$MODE" "$ACTIVITY" "$ENFORCE" "$ARMED" "$BLOCKED" "$actual" "$firewall_state" \
         "$USED_S" "$LIMIT_S" "$BONUS_S" "$left" "$PARENT_UNTIL" \
-        "$LAST_PACKET_EPOCH" "$LAST_COUNT"
+        "$LAST_PACKET_EPOCH" "$LAST_COUNT" "$PPS" "$TCP_PPS" "$UDP_PPS" \
+        "$BYTES_PER_S" "$TRAFFIC_CLASS" "$CAL_LABEL" "$CAL_UNTIL"
 }
 mkdir -p /var/run "$DIR"
 config
@@ -318,13 +319,16 @@ case "${1:-}" in
     log)
         tail -n 80 "$EVENTS" 2>/dev/null || :
         exit 0 ;;
-    tick|mode|bonus|enforce|sync)
+    calibration)
+        tail -n 80 "$DIR/calibration.csv" 2>/dev/null || :
+        exit 0 ;;
+    tick|mode|bonus|enforce|sync|calibrate)
         lock
         load_state
         NOW="$(date +%s)"
         rollover
         ;;
-    *) echo "usage: tvguardctl {status|log|tick|sync|mode child|mode parent 30/60/120|mode locked|bonus 15/30/60|bonus undo|enforce on/off}" >&2; exit 2 ;;
+    *) echo "usage: tvguardctl {status|log|calibration|tick|sync|mode|bonus|calibrate|enforce}" >&2; exit 2 ;;
 esac
 
 case "$1" in
@@ -379,6 +383,23 @@ case "$1" in
         save_runtime
         persist
         apply_gate
+        ;;
+    calibrate)
+        case "${2:-}" in
+            playing|paused|app_home|system_home|sleep)
+                CAL_LABEL="$2"
+                CAL_UNTIL=$((NOW + 120))
+                event calibration_start "手工标注 $CAL_LABEL：120 秒"
+                ;;
+            stop)
+                CAL_LABEL=none
+                CAL_UNTIL=0
+                event calibration_stop "结束手工标注"
+                ;;
+            *) echo "invalid calibration label" >&2; exit 2 ;;
+        esac
+        save_runtime
+        persist
         ;;
     enforce)
         case "${2:-}" in
