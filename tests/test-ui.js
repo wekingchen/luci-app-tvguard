@@ -129,9 +129,9 @@ const updates = [
     assert.equal(page._eventSummary[1].title, '撤销奖励');
     assert.equal(page._eventSummary[1].note, '已撤销最近一笔奖励');
     assert.equal(page._eventSummary[2].title, '标注结束');
-    assert.match(page._eventSummary[0].note, /通用采样/);
-    assert.match(page._eventSummary[0].note, /正常播放/);
-    assert.match(page._eventSummary[0].note, /11 条样本/);
+    assert.match(page._eventSummary[2].note, /通用采样/);
+    assert.match(page._eventSummary[2].note, /正常播放/);
+    assert.match(page._eventSummary[2].note, /11 条样本/);
     assert.equal(page._eventSummary[3].title, '开始标注');
     assert.match(page._eventSummary[3].note, /记录 120 秒/);
     assert.equal(page._eventSummary[4].title, '控制策略');
