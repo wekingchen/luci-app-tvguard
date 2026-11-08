@@ -23,6 +23,9 @@ return view.extend({
             }),
             fs.exec('/usr/libexec/tvguard-status', ['log']).then(function(r) {
                 return r.stdout || '';
+            }),
+            fs.exec('/usr/libexec/tvguard-status', ['calibration']).then(function(r) {
+                return r.stdout || '';
             })
         ]);
     },
@@ -49,7 +52,7 @@ return view.extend({
     },
 
     render: function(result) {
-        var s = result[0], events = result[1];
+        var s = result[0], events = result[1], samples = result[2];
         var mode = { child: '儿童模式', parent: '家长模式', locked: '手动锁定' }[s.mode] || '未知';
         var activity = { active: '检测到网络活动', silent: '网络静默', unknown: '尚未检测' }[s.activity] || '未知';
         var fwState = {
@@ -68,6 +71,30 @@ return view.extend({
                 E('p', [ E('strong', '网络状态：'), activity ]),
                 E('p', [ E('strong', '防火墙状态：'), blocks ]),
                 E('p', [ E('strong', '日期：'), s.date ])
+            ]),
+            panel('网络采样与手工校准（观察模式）', [
+                E('p', { 'class': 'description' },
+                    '这些只是网络活动统计，不能证明电视目前属于哪个视频 App、是否暂停或是否有人观看。校准标签由家长手动确认，绝不自动免计时。'),
+                E('p', [ E('strong', '最近 10 秒总包频率：'), String(s.pps || 0) + ' PPS' ]),
+                E('p', [
+                    E('strong', 'TCP：'), String(s.tcp_pps || 0) + ' PPS · ',
+                    E('strong', 'UDP：'), String(s.udp_pps || 0) + ' PPS · ',
+                    E('strong', '速率：'), String(s.bytes_per_second || 0) + ' B/s'
+                ]),
+                E('p', [ E('strong', '网络强度：'), String(s.traffic_class || 'unknown') ]),
+                E('p', [ E('strong', '当前校准：'),
+                    s.calibration_label !== 'none' ?
+                    s.calibration_label + '，结束于 ' +
+                        new Date(Number(s.calibration_until) * 1000).toLocaleTimeString() : '未开启' ]),
+                E('p', '开始采样前，请确保电视已处于对应状态；每次手工标注持续 120 秒。'),
+                this.actionButton('标注：正在播放', ['calibrate', 'playing'], '电视确实正在播放视频吗？现在开始记录 120 秒网络指纹。'),
+                this.actionButton('标注：视频暂停', ['calibrate', 'paused'], '电视确实停在暂停画面吗？现在开始记录 120 秒。'),
+                this.actionButton('标注：App 首页', ['calibrate', 'app_home'], '电视确实停留在视频 App 首页且没有主动播放吗？'),
+                this.actionButton('标注：小米系统首页', ['calibrate', 'system_home'], '电视确实停在小米电视系统首页且未操作吗？'),
+                this.actionButton('标注：熄屏待机', ['calibrate', 'sleep'], '电视确实已熄屏待机吗？'),
+                this.actionButton('停止校准', ['calibrate', 'stop'], '结束本次校准吗？'),
+                E('pre', { 'style': 'max-height:160px;overflow:auto;white-space:pre-wrap;word-break:break-word' },
+                  (samples || '').split('\n').slice(-12).join('\n') || '暂无标注样本')
             ]),
             panel('今日儿童额度', [
                 E('p', [ E('strong', '已计时：'), minutes(s.used_seconds) + ' 分钟' ]),
