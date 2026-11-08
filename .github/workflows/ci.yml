@@ -59,6 +59,8 @@ jobs:
         run: dash tests/test-firewall-include.sh
       - name: Exercise one-shot proxy compatibility checker
         run: dash tests/test-compat-check.sh
+      - name: Exercise firewall reload policy unit tests
+        run: dash tests/test-firewall-policy.sh
       - name: Exercise mock firewall3 rule lifecycle
         run: |
           set -eu
