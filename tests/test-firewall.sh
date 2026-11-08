@@ -80,8 +80,18 @@ import json,sys
 p=sys.argv[1]
 # A non-TVG rule that must survive the full lifecycle.
 json.dump({"chains":{
-    "PREROUTING":[["-s","203.0.113.5","-j","OTHER"]],
-    "OUTPUT":[["-d","203.0.113.6","-j","OTHER_OUTPUT"]]
+    "PREROUTING":[
+        ["-s","203.0.113.5","-j","PROXY_RAW_A"],
+        ["-d","198.51.100.8","-j","PROXY_RAW_B"]
+    ],
+    "OUTPUT":[
+        ["-d","203.0.113.6","-j","PROXY_OUT_A"],
+        ["-s","198.51.100.9","-j","PROXY_OUT_B"]
+    ],
+    "PROXY_RAW_A":[["-m","comment","--comment","existing_proxy_rule_a"]],
+    "PROXY_RAW_B":[["-m","comment","--comment","existing_proxy_rule_b"]],
+    "PROXY_OUT_A":[["-m","comment","--comment","existing_proxy_out_a"]],
+    "PROXY_OUT_B":[["-m","comment","--comment","existing_proxy_out_b"]]
 }},open(p,"w"))
 PY
 export MOCK_IPT_STATE="$TMP/state.json"
@@ -113,13 +123,30 @@ sh "$FW" sync
 python3 - "$TMP/state.json" <<'PY'
 import json,sys
 c=json.load(open(sys.argv[1]))["chains"]
-assert len(c["PREROUTING"])==2, c["PREROUTING"]
+assert len(c["PREROUTING"])==3, c["PREROUTING"]
+# Existing proxy-like rules keep their relative order and exact arguments.
+assert c["PREROUTING"][-2:]==[
+    ["-s","203.0.113.5","-j","PROXY_RAW_A"],
+    ["-d","198.51.100.8","-j","PROXY_RAW_B"],
+],c["PREROUTING"]
+assert c["OUTPUT"]==[
+    ["-d","203.0.113.6","-j","PROXY_OUT_A"],
+    ["-s","198.51.100.9","-j","PROXY_OUT_B"],
+],c["OUTPUT"]
 assert sum(1 for x in c["TVG_RAW"] if "TVG_COUNT" in x)==1
 assert sum(1 for x in c["TVG_RAW"] if "TVG_TCP" in x)==1
 assert sum(1 for x in c["TVG_RAW"] if "TVG_UDP" in x)==1
 PY
-# Opt-in reply observer: two independent no-verdict rules, no duplicate hooks.
+# Gate changes are deliberately decoupled from the optional observer.
+# Even with the option set, direct mode/quota changes must not create observer rules.
 export MOCK_OBSERVE_REPLY=1
+sh "$FW" gate 1
+[ "$(sh "$FW" inspect)" = blocked ]
+[ "$(sh "$FW" inspect-reply)" = unavailable ]
+sh "$FW" gate 0
+[ "$(sh "$FW" inspect)" = allowed ]
+
+# Opt-in reply observer: two independent no-verdict rules, no duplicate hooks.
 sh "$FW" sync
 [ "$(sh "$FW" inspect-reply)" = ready ]
 [ "$(sh "$FW" sample-reply)" = '75 45000 30 12000' ]
@@ -131,7 +158,15 @@ pr=[r for r in c["PREROUTING"] if "TVG_RX_LAN" in r]
 lo=[r for r in c["OUTPUT"] if "TVG_RX_LOCAL" in r]
 assert len(pr)==1 and len(lo)==1,(pr,lo)
 assert "-j" not in pr[0] and "-j" not in lo[0],(pr,lo)
-assert len(c["PREROUTING"])==3 and len(c["OUTPUT"])==2,c
+assert len(c["PREROUTING"])==4 and len(c["OUTPUT"])==3,c
+assert c["PREROUTING"][-2:]==[
+    ["-s","203.0.113.5","-j","PROXY_RAW_A"],
+    ["-d","198.51.100.8","-j","PROXY_RAW_B"],
+],c
+assert c["OUTPUT"][-2:]==[
+    ["-d","203.0.113.6","-j","PROXY_OUT_A"],
+    ["-s","198.51.100.9","-j","PROXY_OUT_B"],
+],c
 PY
 
 sh "$FW" gate 1
@@ -181,8 +216,18 @@ python3 - "$TMP/state.json" <<'PY'
 import json,sys
 c=json.load(open(sys.argv[1]))["chains"]
 assert c=={
-    "PREROUTING":[["-s","203.0.113.5","-j","OTHER"]],
-    "OUTPUT":[["-d","203.0.113.6","-j","OTHER_OUTPUT"]],
+    "PREROUTING":[
+        ["-s","203.0.113.5","-j","PROXY_RAW_A"],
+        ["-d","198.51.100.8","-j","PROXY_RAW_B"],
+    ],
+    "OUTPUT":[
+        ["-d","203.0.113.6","-j","PROXY_OUT_A"],
+        ["-s","198.51.100.9","-j","PROXY_OUT_B"],
+    ],
+    "PROXY_RAW_A":[["-m","comment","--comment","existing_proxy_rule_a"]],
+    "PROXY_RAW_B":[["-m","comment","--comment","existing_proxy_rule_b"]],
+    "PROXY_OUT_A":[["-m","comment","--comment","existing_proxy_out_a"]],
+    "PROXY_OUT_B":[["-m","comment","--comment","existing_proxy_out_b"]],
 },c
 PY
 echo "PASS: gate, opt-in passive reply telemetry, duplicate avoidance, safety and isolated removal"
