@@ -1,7 +1,15 @@
 #!/bin/sh
 [ -n "$IPKG_INSTROOT" ] && exit 0
+
 /etc/init.d/tvguard stop 2>/dev/null || :
 /usr/libexec/tvguard-fw remove 2>/dev/null || :
-uci -q delete firewall.tvguard 2>/dev/null || :
-uci commit firewall
+
+# Delete only a section that is provably ours. A same-named foreign section is
+# left untouched even when the package is removed.
+if [ "$(uci -q get firewall.tvguard 2>/dev/null || true)" = include ] &&
+   [ "$(uci -q get firewall.tvguard.type 2>/dev/null || true)" = script ] &&
+   [ "$(uci -q get firewall.tvguard.path 2>/dev/null || true)" = /usr/libexec/tvguard-firewall-include ]; then
+    uci -q delete firewall.tvguard 2>/dev/null || :
+    uci commit firewall
+fi
 exit 0
