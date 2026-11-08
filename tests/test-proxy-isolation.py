@@ -30,8 +30,8 @@ def require(cond, message):
         errors.append(message)
 
 # All actual iptables invocations must pass through one hardcoded raw wrapper.
-require('raw_ipt() { "$IPT" -t raw "$@"; }' in FW,
-        "tvguard-fw must expose exactly the raw-table wrapper")
+require('raw_ipt() { "$IPT" -w 2 -t raw "$@"; }' in FW,
+        "tvguard-fw must expose exactly the raw-table wrapper with bounded xtables wait")
 direct_calls = [line.strip() for line in FW.splitlines()
                 if re.match(r'^\s*"\$IPT"\s', line)]
 require(not direct_calls, f"direct iptables calls bypass raw_ipt: {direct_calls}")
