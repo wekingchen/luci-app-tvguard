@@ -3,6 +3,8 @@ config tvguard 'main'
     option interface 'br-lan'
     option enforce '0'
     option allow_enforcement '0'
+    # Experimental passive reply telemetry; disabled until N1-specific testing.
+    option observe_reply '0'
     option weekday_minutes '60'
     option weekend_minutes '120'
     option max_bonus_minutes '120'
