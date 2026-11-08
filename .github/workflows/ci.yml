@@ -39,6 +39,10 @@ jobs:
               console.log('JS syntax OK:', p);
           }
           JS
+      - name: Exercise controller in mock FW3 environment
+        run: |
+          set -eu
+          dash tests/test-controller.sh
       - name: Check intended safeguards
         shell: bash
         run: |
