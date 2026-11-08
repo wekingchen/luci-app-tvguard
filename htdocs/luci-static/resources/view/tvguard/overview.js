@@ -134,6 +134,8 @@ function responsiveStyles() {
         '.tvg-button-row{display:flex;flex-wrap:wrap;gap:8px;align-items:center;}',
         '.tvg-button-row>.btn{margin:0;min-height:36px;}',
         '.tvg-soft-box{padding:12px;border:1px solid rgba(127,127,127,.32);border-radius:9px;background:rgba(127,127,127,.08);}',
+        '.tvg-state-note{padding:10px 12px;border:1px solid rgba(127,127,127,.4);border-radius:9px;background:rgba(127,127,127,.06);line-height:1.45;}',
+        '.tvg-state-note-good{border-color:rgba(46,204,113,.72);}',
         '.tvg-advanced-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;}',
         '.tvg-root details>summary{line-height:1.4;}',
         '@media(max-width:700px){',
@@ -312,6 +314,14 @@ function childPolicyNote(state) {
     return '儿童额度会按联网活动估算消耗';
 }
 
+function childPolicySummary(state) {
+    if (state.policy_reason === 'quota')
+        return '儿童额度已用完';
+    if (state.policy_reason === 'window')
+        return '当前不在允许时段';
+    return '按儿童额度和时段管理';
+}
+
 return view.extend({
     load: function() {
         return Promise.all([
@@ -352,10 +362,10 @@ return view.extend({
         var modeNote = state.mode === 'parent' ?
             (legacyTimedParent ?
                 '旧版定时家长模式 · 剩余 ' + duration(parentLeft) :
-                '不消耗儿童额度，不受儿童时段限制；直到手动切回儿童模式') :
+                '不计儿童额度 · 不受儿童时段限制') :
             (state.mode === 'locked' ?
-                (state.enforce ? '正式控制下会阻断电视联网' : '观察模式下只记录锁定意图，不断网') :
-                childPolicyNote(state));
+                (state.enforce ? '正式控制下会断网' : '观察模式下不会断网') :
+                childPolicySummary(state));
         var activityName = {
             active: '检测到联网活动',
             silent: '当前网络静默',
@@ -584,10 +594,10 @@ return view.extend({
         var modeNote = s.mode === 'parent' ?
             (legacyTimedParent ?
                 '旧版定时家长模式 · 剩余 ' + duration(parentLeft) :
-                '不消耗儿童额度，不受儿童时段限制；直到手动切回儿童模式') :
+                '不计儿童额度 · 不受儿童时段限制') :
             (s.mode === 'locked' ?
-                (s.enforce ? '正式控制下会阻断电视联网' : '观察模式下只记录锁定意图，不断网') :
-                childPolicyNote(s));
+                (s.enforce ? '正式控制下会断网' : '观察模式下不会断网') :
+                childPolicySummary(s));
 
         var controlName = s.enforce ? '正式控制' : '观察模式';
         var controlNote = s.enforce ?
@@ -621,9 +631,9 @@ return view.extend({
         }
         else {
             statusBanner = E('div', {
-                'class': 'alert-message success',
-                'style': 'margin:0 0 16px;line-height:1.55'
-            }, '当前为观察模式：可以计时、切换模式和记录奖励，但 TV Guard 不会主动断开电视网络。');
+                'class': 'tvg-state-note tvg-state-note-good',
+                'style': 'margin:0 0 14px'
+            }, '当前为观察模式：可以计时、切换模式和记录奖励，但不会主动断开电视网络。');
         }
 
         var appSelect = E('select', {
@@ -787,8 +797,8 @@ return view.extend({
         var quotaBonusNode = E('span', { 'class': 'description' },
             '今日奖励 +' + minutes(s.bonus_seconds) + ' 分钟');
         var parentNoticeNode = E('div', {
-            'class': 'alert-message success',
-            'style': 'margin:12px 0 0;' + (s.mode === 'parent' ? '' : 'display:none')
+            'class': 'tvg-state-note tvg-state-note-good',
+            'style': 'margin:10px 0 0;' + (s.mode === 'parent' ? '' : 'display:none')
         }, s.mode === 'parent' ?
             (legacyTimedParent ?
                 '旧版定时家长模式进行中 · 剩余 ' + duration(parentLeft) +
@@ -856,7 +866,7 @@ return view.extend({
             statusBanner,
 
             grid([
-                metric('今日剩余', remainingNode, '儿童额度剩余', true),
+                metric('儿童剩余', remainingNode, '今日儿童额度', true),
                 metric('当前模式', modeNode, modeNoteNode, false),
                 metric('控制状态', controlName, controlNote, false),
                 E('div', {
@@ -887,7 +897,7 @@ return view.extend({
                 ])
             ], 'margin-top:16px'),
 
-            panel('观看模式', '儿童模式按额度和时段管理；家长模式持续生效且不消耗儿童额度，直到手动切回；锁定是否真的断网取决于“正式控制”是否开启。', [
+            panel('观看模式', '儿童模式按额度和时段；家长模式不计儿童额度，持续到手动切回；锁定是否真正断网取决于正式控制是否开启。', [
                 buttonRow(modeButtons, 'tvg-mode-row'),
                 parentNoticeNode
             ]),
