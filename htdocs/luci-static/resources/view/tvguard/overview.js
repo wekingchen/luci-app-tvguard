@@ -156,6 +156,103 @@ function shadowName(value) {
     }[value] || '暂时无法判断';
 }
 
+function sceneName(value) {
+    return {
+        playing: '正常播放',
+        paused: '视频暂停',
+        app_home: '应用首页闲置',
+        system_home: '小米系统首页闲置',
+        sleep: '熄屏待机',
+        none: '未选择'
+    }[value] || '未知场景';
+}
+
+function appName(value) {
+    return {
+        general: '通用采样',
+        tencent: '腾讯极光',
+        iqiyi: '爱奇艺',
+        mango: '芒果 TV',
+        other: '其他视频应用',
+        system: '电视系统',
+        none: '未标注'
+    }[value] || '未知标签';
+}
+
+function eventName(value) {
+    return {
+        mode: '模式切换',
+        reward: '时间奖励',
+        reward_revoke: '撤销奖励',
+        calibration_start: '开始标注',
+        calibration_end: '标注结束',
+        daily_reset: '每日重置',
+        parent_expired: '家长授权结束',
+        enforcement: '控制策略',
+        recovery_lock: '恢复保护'
+    }[value] || '系统记录';
+}
+
+function eventNote(type, note) {
+    var value = String(note || '');
+    if (type === 'mode') {
+        if (value.indexOf('child') >= 0)
+            return '已切换为儿童模式';
+        if (value.indexOf('parent') >= 0)
+            return '已切换为家长模式';
+        if (value.indexOf('locked') >= 0)
+            return '已切换为锁定模式';
+    }
+    if (type === 'enforcement') {
+        if (value.indexOf('enforce=1') >= 0)
+            return '已开启正式网络控制';
+        if (value.indexOf('enforce=0') >= 0)
+            return '已关闭正式网络控制，恢复观察模式';
+    }
+    return value || '—';
+}
+
+function parseEvents(raw) {
+    var rows = [];
+    String(raw || '').split('\n').forEach(function(line) {
+        if (!line)
+            return;
+        var parts = line.split('|');
+        if (parts.length < 4)
+            return;
+        var epoch = Number(parts[0]) || 0;
+        var type = parts[2];
+        var note = parts.slice(3).join('|');
+        rows.push({
+            epoch: epoch,
+            type: type,
+            title: eventName(type),
+            note: eventNote(type, note)
+        });
+    });
+    return rows.slice(-12).reverse();
+}
+
+function renderEvents(rows) {
+    if (!rows.length)
+        return E('div', { 'class': 'description' }, '暂无操作记录');
+
+    return E('div', {}, rows.map(function(row) {
+        var time = row.epoch > 0 ?
+            new Date(row.epoch * 1000).toLocaleString() : '时间未知';
+        return E('div', {
+            'style': 'display:grid;grid-template-columns:minmax(110px,auto) 1fr;' +
+                'gap:10px;padding:9px 0;border-bottom:1px solid var(--border-color-medium,#ddd)'
+        }, [
+            E('div', { 'class': 'description', 'style': 'white-space:nowrap' }, time),
+            E('div', {}, [
+                E('strong', {}, row.title),
+                E('div', { 'class': 'description', 'style': 'margin-top:3px;line-height:1.45' }, row.note)
+            ])
+        ]);
+    }));
+}
+
 function childPolicyNote(state) {
     if (state.policy_reason === 'quota')
         return state.enforce ? '今日儿童额度已用完，正式控制会阻断联网' : '今日儿童额度已用完；观察模式下仍不会断网';
@@ -314,7 +411,8 @@ return view.extend({
         n.bar.style.display = active || phase === 'completed' ? '' : 'none';
 
         if (phase === 'running') {
-            n.title.textContent = '正在记录 · ' + state.calibration_app + ' / ' + state.calibration_label;
+            n.title.textContent = '正在记录 · ' + appName(state.calibration_app) +
+                ' · ' + sceneName(state.calibration_label);
             n.detail.textContent = '已进行 ' + elapsed + ' / 120 秒 · 剩余 ' + remaining +
                 ' 秒 · 已保存 ' + count + ' 条样本';
             n.hint.textContent = '保持电视当前状态不变即可，页面会自动更新。';
@@ -327,8 +425,8 @@ return view.extend({
         else if (phase === 'completed' || phase === 'stopped' || phase === 'interrupted') {
             n.title.textContent = phase === 'completed' ? '本次标注已完成' :
                 (phase === 'stopped' ? '本次标注已提前结束' : '本次标注被中断');
-            n.detail.textContent = '场景：' + state.calibration_last_label +
-                ' · 标签：' + state.calibration_last_app +
+            n.detail.textContent = '场景：' + sceneName(state.calibration_last_label) +
+                ' · 标签：' + appName(state.calibration_last_app) +
                 ' · 保存 ' + String(state.calibration_last_samples || 0) + ' 条样本';
             n.hint.textContent = phase === 'completed' ?
                 '数据已保存。一次标注只用于验证算法，不代表系统已经学会自动判断。' :
@@ -392,6 +490,7 @@ return view.extend({
         var cls = options.danger ? 'btn cbi-button-negative' :
             (options.primary ? 'btn cbi-button-positive' : 'btn cbi-button-action');
         var attrs = {
+            'type': 'button',
             'class': cls,
             'style': 'min-height:36px;margin:0',
             'click': ui.createHandlerFn(this, 'handleAction', args, options.confirm || null)
@@ -466,6 +565,7 @@ return view.extend({
 
         var appSelect = E('select', {
             'class': 'cbi-input-select',
+            'aria-label': '标注应用标签',
             'style': 'min-width:190px;flex:1'
         }, [
             E('option', { 'value': 'general' }, '通用采样（推荐）'),
@@ -477,6 +577,7 @@ return view.extend({
 
         var sceneSelect = E('select', {
             'class': 'cbi-input-select',
+            'aria-label': '标注电视场景',
             'style': 'min-width:170px;flex:1'
         }, [
             E('option', { 'value': 'playing' }, '正常播放'),
@@ -487,6 +588,7 @@ return view.extend({
         ]);
 
         var startCalibration = E('button', {
+            'type': 'button',
             'class': 'btn cbi-button-action',
             'style': 'min-height:36px',
             'click': ui.createHandlerFn(this, function(ev) {
@@ -664,6 +766,9 @@ return view.extend({
             trafficNote: trafficNoteNode
         };
 
+        var parsedEvents = parseEvents(events);
+        this._eventSummary = parsedEvents;
+
         var page = [
             E('div', { 'style': 'margin-bottom:14px' }, [
                 E('h2', { 'style': 'margin-bottom:4px' }, 'TV Guard · 电视时间管理'),
@@ -795,18 +900,21 @@ return view.extend({
             ], false),
 
             detailBlock('最近操作记录', [
-                E('pre', {
-                    'style': [
-                        'max-height:240px',
-                        'overflow:auto',
-                        'white-space:pre-wrap',
-                        'word-break:break-word',
-                        'font-size:.85rem',
-                        'padding:10px',
-                        'border-radius:8px',
-                        'background:var(--background-color-high,#f7f7f7)'
-                    ].join(';')
-                }, events || '暂无操作记录')
+                renderEvents(parsedEvents),
+                detailBlock('查看原始记录', [
+                    E('pre', {
+                        'style': [
+                            'max-height:180px',
+                            'overflow:auto',
+                            'white-space:pre-wrap',
+                            'word-break:break-word',
+                            'font-size:.82rem',
+                            'padding:10px',
+                            'border-radius:8px',
+                            'background:var(--background-color-high,#f7f7f7)'
+                        ].join(';')
+                    }, events || '暂无原始记录')
+                ], false)
             ], false)
         ];
 
