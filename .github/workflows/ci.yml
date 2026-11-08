@@ -81,6 +81,7 @@ jobs:
           grep -q 'TVG_RX_LAN' root/usr/libexec/tvguard-fw
           grep -q 'TVG_RX_LOCAL' root/usr/libexec/tvguard-fw
           grep -q 'reply_coverage' root/usr/libexec/tvguardctl
+          grep -q 'proxy isolation audit is not ok' root/usr/libexec/tvguardctl
           grep -q 'isolation)' root/usr/libexec/tvguard-status
           grep -q 'tvguard-isolation-audit' scripts/build-ipk.sh
 
