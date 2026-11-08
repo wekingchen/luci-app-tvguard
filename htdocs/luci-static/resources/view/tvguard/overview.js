@@ -608,11 +608,6 @@ return view.extend({
             ]),
 
             detailBlock('高级网络诊断', [
-                grid([
-                    metric('电视发出', '', '', false),
-                    metric('回程观测', '', '', false)
-                ], 220),
-                E('div', { 'style': 'margin-top:-88px;pointer-events:none;opacity:0' }, ''),
                 E('div', { 'style': 'display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px' }, [
                     E('div', {
                         'style': 'padding:12px;border:1px solid var(--border-color-medium,#ddd);border-radius:9px'
