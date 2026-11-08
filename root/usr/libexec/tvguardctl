@@ -12,6 +12,8 @@ LOCK="${TVGUARD_LOCK:-/var/run/tvguard.lock}"
 
 config() {
     ENFORCE="$(uci -q get tvguard.main.enforce || echo 0)"
+    ARMED="$(uci -q get tvguard.main.allow_enforcement || echo 0)"
+    case "$ARMED" in 0|1) :;; *) ARMED=0;; esac
     WEEKDAY="$(uci -q get tvguard.main.weekday_minutes || echo 60)"
     WEEKEND="$(uci -q get tvguard.main.weekend_minutes || echo 120)"
     BONUS_MAX="$(uci -q get tvguard.main.max_bonus_minutes || echo 120)"
@@ -219,8 +221,8 @@ status() {
     case "$firewall_state" in blocked|allowed|absent|unknown) :;; *) firewall_state=unknown;; esac
     actual=0
     [ "$firewall_state" = blocked ] && actual=1
-    printf '{"date":"%s","mode":"%s","activity":"%s","enforce":%s,"would_block":%s,"blocked":%s,"firewall_state":"%s","used_seconds":%s,"quota_seconds":%s,"bonus_seconds":%s,"remaining_seconds":%s,"parent_until":%s,"last_packet_epoch":%s,"packet_counter":%s}\n' \
-        "$TODAY" "$MODE" "$ACTIVITY" "$ENFORCE" "$BLOCKED" "$actual" "$firewall_state" \
+    printf '{"date":"%s","mode":"%s","activity":"%s","enforce":%s,"armed":%s,"would_block":%s,"blocked":%s,"firewall_state":"%s","used_seconds":%s,"quota_seconds":%s,"bonus_seconds":%s,"remaining_seconds":%s,"parent_until":%s,"last_packet_epoch":%s,"packet_counter":%s}\n' \
+        "$TODAY" "$MODE" "$ACTIVITY" "$ENFORCE" "$ARMED" "$BLOCKED" "$actual" "$firewall_state" \
         "$USED_S" "$LIMIT_S" "$BONUS_S" "$left" "$PARENT_UNTIL" \
         "$LAST_PACKET_EPOCH" "$LAST_COUNT"
 }
@@ -300,7 +302,7 @@ case "$1" in
     enforce)
         case "${2:-}" in
             on)
-                [ "$(uci -q get tvguard.main.allow_enforcement || echo 0)" = 1 ] ||
+                [ "$ARMED" = 1 ] ||
                     { echo "observer-only build: enable allow_enforcement=1 explicitly in UCI after testing" >&2; exit 2; }
                 ENFORCE=1
                 ;;
