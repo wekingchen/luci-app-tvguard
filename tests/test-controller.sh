@@ -114,9 +114,9 @@ status
 check 'assert s["used_seconds"] >= 9 and s["used_seconds"] <= 11, s'
 check 'assert s["pps"] > 0 and s["tcp_pps"] > 0 and s["udp_pps"] > 0, s'
 check 'assert s["traffic_class"] in ("high_traffic","medium_traffic","low_traffic")'
-check 'assert s["calibration_label"] == "playing" and s["calibration_app"] == "tencent"'
-test -s "$TMP/state/calibration-v2.csv"
-grep -q ',playing,tencent,' "$TMP/state/calibration-v2.csv"
+check 'assert s["calibration_label"] == "playing" and s["calibration_app"] == "tencent" and s["calibration_session"] != "none"'
+test -s "$TMP/state/calibration-v3.csv"
+grep -q ',playing,tencent,' "$TMP/state/calibration-v3.csv"
 sh "$CTL" calibrate stop
 status
 check 'assert s["calibration_label"] == "none"'
