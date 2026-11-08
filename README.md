@@ -27,6 +27,21 @@
 - 家长模式可以主动授权，不扣儿童额度。
 - 不增加智能插座，也不安装电视端 App。
 
+## 代理工具隔离是硬约束
+
+TV Guard 的网络控制实现遵循以下不可越界规则：
+
+- 所有 iptables 写操作统一经过一个硬编码的 `raw` 表入口，并使用短时 xtables 锁等待；禁止写 `nat`、`mangle`、`filter`。
+- 禁止 `TPROXY`、`REDIRECT`、`MARK/CONNMARK`、`DNAT/SNAT`、`NOTRACK`、策略路由修改、网络 sysctl 修改和全局链清空。
+- 核心入口必须同时限定 **电视 IPv4 + br-lan**；正式封禁只可能命中这台电视经过 N1 的 IPv4 流量。
+- 回程观测规则没有 `-j` / `-g` 判决目标，只计数；默认关闭，而且不参与儿童计时或 gate。
+- TV Guard daemon 不订阅全局 firewall reload，不重启/重载代理服务，也不调用全局 firewall restart/reload。
+- 安装和卸载只操作经路径/type 校验确认属于 TV Guard 的 `firewall.tvguard` include；同名外部 section 会被保留。
+- 运行时只读隔离审计会检查 TVG 规则是否越界；异常时实验观测拒绝启用，核心规则也拒绝继续修改。
+- CI 会扫描并拒绝任何未来引入的代理表、策略路由、全局链或代理服务操作。
+
+这些约束用于保证 TV Guard **不重新配置现有代理工具，也不改变其他设备的代理路径**。正式封禁开启后，电视自身被 TV Guard 阻断时当然不会再把该电视流量交给代理，这是产品的预期控制结果，不属于代理配置被修改。
+
 ## 保护开关
 
 `/etc/config/tvguard` 中默认：
@@ -45,7 +60,8 @@ option observe_reply '0'
 
 - 代码：[PR #1](https://github.com/wekingchen/luci-app-tvguard/pull/1)
 - 构建：PR Checks 下 `package` 产出开发版 IPK（具体版本以相应 Action 产物为准）；N1 早期包安装已验证，后续版本仍需逐版验收。
-- 仓库 `tests/test-controller.sh` 测试额度、奖励和授权；`tests/test-firewall.sh` 在模拟 iptables 上测试幂等安装、重载与删除。还覆盖回程计数钩子的幂等性、策略隔离、计数器重置以及独立修复。
+- `tests/test-controller.sh` 验证额度、奖励以及“高回程流量不能影响计时/gate”；`tests/test-firewall.sh` 验证代理样例规则在同步、观测、gate 切换和卸载前后保持原样。
+- `tests/test-proxy-isolation.py` 是源码硬门禁；`tests/test-isolation-audit.sh` 验证 N1 运行时隔离审计；`tests/test-package-safety.sh` 验证安装/卸载不会取得或删除外部 firewall section。
 - 新增回程观测仅在开发分支和模拟环境中通过测试；当前用户 N1 无需升级、启用或采样。
 - [通用识别、验证方法及已知限制](docs/CALIBRATION.md)
 - [设计与已知限制](docs/DESIGN.md)
