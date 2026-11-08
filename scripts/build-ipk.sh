@@ -45,7 +45,7 @@ chmod 755 "$WORK/control/postinst" "$WORK/control/prerm"
     tar -czf "$WORK/control.tar.gz" .
 )
 printf '2.0\n' > "$WORK/debian-binary"
-OUTPUT="$OUT/$PACKAGE${VERSION}-1_$ARCH.ipk"
+OUTPUT="$OUT/${PACKAGE}_${VERSION}-1_${ARCH}.ipk"
 (
     cd "$WORK"
     ar rcs "$OUTPUT" debian-binary control.tar.gz data.tar.gz
