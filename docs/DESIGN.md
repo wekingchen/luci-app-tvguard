@@ -58,10 +58,11 @@ SSR 透明代理或正常路由
 3. 核心 hook 只能是 `PREROUTING -i br-lan -s <电视IPv4> -j TVG_RAW`。运行时审计拒绝宽匹配、重复 hook 或非电视地址。
 4. 允许状态下，`TVG_GATE -j RETURN` 只从 TVG 自有子链返回调用链，后续 raw/mangle/nat 规则继续执行。
 5. 回程观测仅允许电视目标地址的 target-free 计数规则；观测异常不能影响 `USED_S`、`ACTIVITY`、`BLOCKED`。
-6. procd 只监听 `tvguard` 配置，不监听全局 `firewall` trigger。fw3 重载只通过独立 include 恢复 TVG 专属规则。
-7. 安装/卸载前校验 `firewall.tvguard` 所有权；同名外部 section 不覆盖、不删除。
-8. `tvguard-isolation-audit` 只读扫描四张表。异常布局下核心写操作拒绝继续；卸载时只删除精确匹配的 TV hook，不 flush 所有权有争议的链。
-9. CI 同时运行源码隔离扫描、模拟代理规则保留测试、运行时审计测试和 package 所有权测试。
+6. procd 只监听 `tvguard` 配置，不监听全局 `firewall` trigger。fw3 重载只通过独立 include 恢复 TVG 专属规则；include 即使 TV Guard 同步失败也必须记录后 `exit 0`，不能使全局 firewall/代理 reload 失败。
+7. 正式 `enforce on` 在双开关之外必须实时执行隔离审计，只有精确 `ok` 才能进入控制；`unsafe` 或 `unavailable` 均拒绝。
+8. 安装/卸载前校验 `firewall.tvguard` 所有权；同名外部 section 不覆盖、不删除。
+9. `tvguard-isolation-audit` 只读扫描四张表。任何表无法读取都只能是 `unavailable`，不能按空表判安全；异常布局下核心写操作拒绝继续。
+10. CI 同时运行源码隔离扫描、模拟代理规则保留测试、运行时审计测试和 package 所有权测试。
 
 这套设计不能证明任意第三方固件/内核永远不存在实现层 bug，因此真实 N1 仍需验收；但 TV Guard 自身没有获得修改代理配置、代理表或其他客户端路由的代码路径。
 
