@@ -48,7 +48,6 @@ return view.extend({
         n.stop.disabled = !active;
         n.selection.disabled = active;
         n.scene.disabled = active;
-        n.status.style.display = '';
         n.bar.style.display = active || phase === 'completed' ? '' : 'none';
 
         if (phase === 'running') {
