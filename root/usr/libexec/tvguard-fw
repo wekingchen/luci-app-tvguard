@@ -81,8 +81,6 @@ create() {
     fi
     has PREROUTING -i "$IFACE" -s "$IP" -j "$RAW" ||
         "$IPT" -t raw -I PREROUTING 1 -i "$IFACE" -s "$IP" -j "$RAW"
-    # Best-effort observer: never introduces a forwarding decision.
-    sync_reply_rules
 }
 gate() {
     case "$1" in 0) TARGET=RETURN;; 1) TARGET=DROP;; *) exit 2;; esac
@@ -119,6 +117,9 @@ case "${1:-}" in
     sync)
         create
         gate "$(policy)"
+        # Full service/firewall sync may maintain the optional observer.
+        # Direct gate changes never call this path.
+        sync_reply_rules
         ;;
     sync-reply)
         # Repair only the passive observation hooks, never touch TVG_GATE.
