@@ -9,16 +9,13 @@ return view.extend({
     },
     render: function() {
         var m = new form.Map('tvguard', 'TV Guard 设置',
-            '请先在观察模式验证计时，再启用正式网络控制。修改设备 IP 或接口后需检查旧规则的清理。');
+            '请先在观察模式验证计时，再启用正式网络控制。当前版本固定已验证的电视 IP/接口，避免旧规则残留；不要在页面中修改它们。');
         var s = m.section(form.NamedSection, 'main', 'tvguard', '基础配置');
         s.addremove = false;
         s.anonymous = true;
         var o;
-        o = s.option(form.Value, 'ip', '电视 IPv4 地址');
-        o.datatype = 'ip4addr';
-        o.rmempty = false;
-        o = s.option(form.Value, 'interface', '电视流量进入 N1 的接口');
-        o.rmempty = false;
+        o = s.option(form.DummyValue, 'ip', '电视 IPv4 地址（只读）');
+        o = s.option(form.DummyValue, 'interface', '电视流量进入 N1 的接口（只读）');
         o = s.option(form.Value, 'weekday_minutes', '工作日基础额度（分钟）');
         o.datatype = 'range(0,600)';
         o.rmempty = false;
