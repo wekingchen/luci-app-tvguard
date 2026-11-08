@@ -54,6 +54,7 @@ defaults() {
     # Reply counters are diagnostics ONLY, never used for USED_S or gate.
     RX_STATE=disabled
     RX_SAMPLE_STATUS=disabled
+    RX_REPAIR_AFTER=0
     RX_LAST_EPOCH=0
     RX_LAST_LAN_COUNT=0
     RX_LAST_LAN_BYTES=0
@@ -124,6 +125,7 @@ UDP_PPS=$UDP_PPS
 BYTES_PER_S=$BYTES_PER_S
 RX_STATE=$RX_STATE
 RX_SAMPLE_STATUS=$RX_SAMPLE_STATUS
+RX_REPAIR_AFTER=$RX_REPAIR_AFTER
 RX_LAST_EPOCH=$RX_LAST_EPOCH
 RX_LAST_LAN_COUNT=$RX_LAST_LAN_COUNT
 RX_LAST_LAN_BYTES=$RX_LAST_LAN_BYTES
@@ -359,6 +361,15 @@ tick() {
     RX_STATE="$("$FW" inspect-reply 2>/dev/null || echo unavailable)"
     case "$RX_STATE" in ready|disabled|unavailable) :;; *) RX_STATE=unavailable;; esac
     RX_SAMPLE_STATUS="$RX_STATE"
+    if [ "$RX_STATE" = unavailable ] && [ "$NOW" -ge "$RX_REPAIR_AFTER" ]; then
+        # FW3 reload may remove only the passive hooks while TVG_GATE stays
+        # intact. Retry at most once a minute and NEVER sync a stale gate.
+        "$FW" sync-reply >/dev/null 2>&1 || :
+        RX_REPAIR_AFTER=$((NOW + 60))
+        RX_STATE="$("$FW" inspect-reply 2>/dev/null || echo unavailable)"
+        case "$RX_STATE" in ready|disabled|unavailable) :;; *) RX_STATE=unavailable;; esac
+        RX_SAMPLE_STATUS="$RX_STATE"
+    fi
     if [ "$RX_STATE" = ready ]; then
         reply_sample="$("$FW" sample-reply 2>/dev/null || echo '')"
         set -- $reply_sample
