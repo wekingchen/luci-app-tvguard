@@ -106,6 +106,7 @@ const updates = [
     assert.equal(page._calibrationNodes.selection.props['aria-label'], '标注应用标签');
     assert.equal(page._calibrationNodes.scene.props['aria-label'], '标注电视场景');
     assert.equal(page._overviewNodes.childButton.props.type, 'button');
+    assert.equal(page._overviewNodes.parentButton.props.type, 'button');
     assert.equal(page._overviewNodes.lockButton.props.type, 'button');
     assert.equal(page._uiSummary.mode, '儿童模式');
     assert.equal(page._uiSummary.control, '观察模式');
@@ -142,9 +143,10 @@ const updates = [
     page.render([state, '', '', {code: 0, text: 'ok'}]);
 
     // Main household-facing state must live-refresh, not only diagnostics.
+    // New parent mode is persistent and has no countdown.
     Object.assign(state, {
         mode: 'parent',
-        parent_until: 1600,
+        parent_until: 0,
         server_epoch: 1000,
         used_seconds: 3600,
         quota_seconds: 7200,
@@ -161,14 +163,29 @@ const updates = [
     page.updateOverviewUI(state);
     assert.equal(page._uiSummary.mode, '家长模式');
     assert.equal(page._uiSummary.quotaPercent, 50);
-    assert.match(page._overviewNodes.modeNote.textContent, /10 分钟/);
-    assert.match(page._overviewNodes.parentNotice.textContent, /家长模式进行中/);
+    assert.match(page._overviewNodes.modeNote.textContent, /直到手动切回儿童模式/);
+    assert.match(page._overviewNodes.parentNotice.textContent, /持续生效/);
     assert.equal(page._overviewNodes.parentNotice.style.display, '');
+    assert.equal(page._overviewNodes.parentButton.disabled, true);
+    assert.match(page._overviewNodes.parentButton.textContent, /当前/);
     assert.equal(page._overviewNodes.undoButton.disabled, false);
     assert.match(page._overviewNodes.rewardLimit.textContent, /15 \/ 120 分钟/);
     assert.equal(page._overviewNodes.rewardButtons[0].node.disabled, false);
     assert.match(page._overviewNodes.shadowValue.textContent, /疑似播放/);
     assert.match(page._overviewNodes.trafficNote.textContent, /2\.0 KB\/s/);
+
+    // A legacy timed parent session remains visibly temporary until it expires,
+    // and the parent button offers an explicit migration to the new semantics.
+    Object.assign(state, {
+        mode: 'parent',
+        parent_until: 1600,
+        server_epoch: 1000
+    });
+    page.updateOverviewUI(state);
+    assert.match(page._overviewNodes.modeNote.textContent, /旧版定时家长模式/);
+    assert.match(page._overviewNodes.modeNote.textContent, /10 分钟/);
+    assert.equal(page._overviewNodes.parentButton.disabled, false);
+    assert.equal(page._overviewNodes.parentButton.textContent, '切换为长期家长模式');
 
     Object.assign(state, {
         mode: 'child',
