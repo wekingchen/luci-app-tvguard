@@ -107,22 +107,23 @@ if 'LAST_EPOCH=' not in s: raise RuntimeError("no LAST_EPOCH")
 s='\n'.join('LAST_EPOCH='+str(int(time.time())-10) if x.startswith('LAST_EPOCH=') else x for x in s.splitlines())+'\n'
 p.write_text(s)
 PY
-sh "$CTL" calibrate playing
+sh "$CTL" calibrate playing tencent
 echo '1500 240000 170 27000 1280 193000' > "$TMP/sample"
 sh "$CTL" tick
 status
 check 'assert s["used_seconds"] >= 9 and s["used_seconds"] <= 11, s'
 check 'assert s["pps"] > 0 and s["tcp_pps"] > 0 and s["udp_pps"] > 0, s'
 check 'assert s["traffic_class"] in ("high_traffic","medium_traffic","low_traffic")'
-check 'assert s["calibration_label"] == "playing"'
-test -s "$TMP/state/calibration.csv"
-grep -q ',playing,' "$TMP/state/calibration.csv"
+check 'assert s["calibration_label"] == "playing" and s["calibration_app"] == "tencent"'
+test -s "$TMP/state/calibration-v2.csv"
+grep -q ',playing,tencent,' "$TMP/state/calibration-v2.csv"
 sh "$CTL" calibrate stop
 status
 check 'assert s["calibration_label"] == "none"'
 
 # No invalid labels or hidden enforcement bypass.
 if sh "$CTL" calibrate unknown > "$TMP/out" 2>&1; then exit 1; fi
+if sh "$CTL" calibrate playing 'bad-app;rm' > "$TMP/out" 2>&1; then exit 1; fi
 if sh "$CTL" enforce on > "$TMP/out" 2>&1; then exit 1; fi
 test "$(cat "$TMP/gate")" = 0
 echo "PASS: syntax, mode, rewards, startup timebase, telemetry, labels, fail-safe"
