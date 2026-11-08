@@ -136,6 +136,22 @@ PY
 
 sh "$FW" gate 1
 [ "$(sh "$FW" inspect)" = blocked ]
+# Passive hook recovery must not alter a blocked gate.
+python3 - "$TMP/state.json" <<'PY'
+import json,sys
+p=sys.argv[1]
+s=json.load(open(p))
+s["chains"]["PREROUTING"]=[
+    r for r in s["chains"]["PREROUTING"] if "TVG_RX_LAN" not in r]
+s["chains"]["OUTPUT"]=[
+    r for r in s["chains"]["OUTPUT"] if "TVG_RX_LOCAL" not in r]
+json.dump(s,open(p,"w"))
+PY
+[ "$(sh "$FW" inspect)" = blocked ]
+[ "$(sh "$FW" inspect-reply)" = unavailable ]
+sh "$FW" sync-reply
+[ "$(sh "$FW" inspect-reply)" = ready ]
+[ "$(sh "$FW" inspect)" = blocked ]
 sh "$FW" gate 0
 [ "$(sh "$FW" inspect)" = allowed ]
 
