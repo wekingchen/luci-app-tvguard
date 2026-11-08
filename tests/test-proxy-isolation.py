@@ -33,7 +33,7 @@ def require(cond, message):
 require('raw_ipt() { "$IPT" -t raw "$@"; }' in FW,
         "tvguard-fw must expose exactly the raw-table wrapper")
 direct_calls = [line.strip() for line in FW.splitlines()
-                if '"$IPT"' in line and not line.strip().startswith("raw_ipt()")]
+                if re.match(r'^\s*"\$IPT"\s', line)]
 require(not direct_calls, f"direct iptables calls bypass raw_ipt: {direct_calls}")
 
 # No proxy-sensitive table names or targets may appear in executable firewall code.
