@@ -41,6 +41,8 @@ jobs:
           JS
       - name: Execute LuCI page with mock DOM and calibrated states
         run: node tests/test-ui.js
+      - name: Validate LuCI settings hierarchy and safety
+        run: node tests/test-settings-ui.js
       - name: Exercise controller in mock FW3 environment
         run: |
           set -eu
