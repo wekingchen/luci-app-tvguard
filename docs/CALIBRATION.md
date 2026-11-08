@@ -50,7 +50,28 @@ TV Guard 管理的是 **小米电视这台设备**，而不是腾讯、爱奇艺
 timestamp,session_id,scene,app,pps,tcp_pps,udp_pps,outbound_bytes_per_second
 ```
 
-这份 CSV 仅为网络聚合统计，不记录视频内容、账号或观看画面。将其从 N1 拷到电脑后，使用：
+这份 CSV 仅为网络聚合统计，不记录视频内容、账号或观看画面。
+
+### 可选的方向性 v4 数据
+
+当前开发候选还预留了 `/etc/tvguard/calibration-v4.csv`。它**不会因为升级自动出现**，只有同时满足以下条件才写入：
+
+- 家长正在进行明确状态的 120 秒手工标注；
+- `observe_reply=1` 已由管理员在真实 N1 上单独启用；
+- 两个回程观测点都存在，且本轮已经建立有效的计数器差值（不是 warming-up / unavailable）。
+
+v4 每行 12 列：
+
+```text
+timestamp,session_id,scene,app,
+tx_pps,tx_tcp_pps,tx_udp_pps,tx_bytes_per_second,
+reply_prerouting_pps,reply_prerouting_bytes_per_second,
+reply_local_pps,reply_local_bytes_per_second
+```
+
+如果回程观测关闭或不可用，**不会写全 0 的 v4 假样本**。v4 当前只作为下一阶段判断“双向数据是否真能提高通用识别”的实验数据；现有 `USED_S`、`ACTIVITY`、`tvguard-shadow` 和防火墙都不读取它。
+
+将 v3 从 N1 拷到电脑后，使用：
 
 ```sh
 python3 scripts/evaluate-generalization.py calibration-v3.csv
