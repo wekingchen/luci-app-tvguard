@@ -49,6 +49,10 @@ jobs:
           dash tests/test-firewall.sh
       - name: Validate shadow recognition evidence policy
         run: python3 tests/test-calibration.py
+      - name: Test conservative shadow fingerprint suggestions
+        run: |
+          set -eu
+          dash tests/test-shadow.sh
       - name: Check intended safeguards
         shell: bash
         run: |
