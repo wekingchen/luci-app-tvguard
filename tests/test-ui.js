@@ -12,7 +12,7 @@ let state = {
     mode: 'child', activity: 'active', firewall_state: 'allowed',
     date: '2026-11-08', enforce: 0, armed: 0, blocked: 0,
     used_seconds: 123, quota_seconds: 7200, remaining_seconds: 7077,
-    bonus_seconds: 0, pps: 8, tcp_pps: 1, udp_pps: 7,
+    bonus_seconds: 0, bonus_undo_available: 0, pps: 8, tcp_pps: 1, udp_pps: 7,
     bytes_per_second: 2900, traffic_class: 'low_traffic',
     shadow_label: 'unknown', calibration_phase: 'idle',
     calibration_label: 'none', calibration_app: 'none',
@@ -115,6 +115,50 @@ const updates = [
     state.armed = 0;
     // Restore normal render for the remaining interaction checks.
     page.render([state, '', '', {code: 0, text: 'ok'}]);
+
+    // Main household-facing state must live-refresh, not only diagnostics.
+    Object.assign(state, {
+        mode: 'parent',
+        parent_until: 1600,
+        server_epoch: 1000,
+        used_seconds: 3600,
+        quota_seconds: 7200,
+        remaining_seconds: 3600,
+        bonus_seconds: 900,
+        bonus_undo_available: 1,
+        shadow_label: 'playing',
+        traffic_class: 'high_traffic',
+        pps: 120,
+        bytes_per_second: 2048
+    });
+    page.updateOverviewUI(state);
+    assert.equal(page._uiSummary.mode, '家长模式');
+    assert.equal(page._uiSummary.quotaPercent, 50);
+    assert.match(page._overviewNodes.modeNote.textContent, /10 分钟/);
+    assert.match(page._overviewNodes.parentNotice.textContent, /家长模式进行中/);
+    assert.equal(page._overviewNodes.parentNotice.style.display, '');
+    assert.equal(page._overviewNodes.undoButton.disabled, false);
+    assert.match(page._overviewNodes.shadowValue.textContent, /疑似播放/);
+    assert.match(page._overviewNodes.trafficNote.textContent, /2\.0 KB\/s/);
+
+    Object.assign(state, {
+        mode: 'child',
+        parent_until: 0,
+        server_epoch: 1000,
+        used_seconds: 123,
+        quota_seconds: 7200,
+        remaining_seconds: 7077,
+        bonus_seconds: 0,
+        bonus_undo_available: 0,
+        shadow_label: 'unknown',
+        traffic_class: 'low_traffic',
+        pps: 8,
+        bytes_per_second: 2900
+    });
+    page.updateOverviewUI(state);
+    assert.equal(page._overviewNodes.parentNotice.style.display, 'none');
+    assert.equal(page._overviewNodes.undoButton.disabled, true);
+
     assert.match(page._trafficNodes.outgoing.textContent, /8 PPS/);
     assert.match(page._trafficNodes.replyStatus.textContent, /未启用|暂不可用/);
     Object.assign(state, {
@@ -163,5 +207,5 @@ const updates = [
     await stopped.props.click();
     assert.ok(commands.some(([n, args]) => n === '/usr/libexec/tvguardctl' && args.join(' ') === 'calibrate stop'));
     assert.equal(reloads, 1);
-    console.log('PASS: LuCI hierarchy, safety summary, calibration phases, polling and button dispatch');
+    console.log('PASS: LuCI hierarchy, live household state, safety summary, calibration and actions');
 })().catch(err => { console.error(err); process.exitCode = 1; });
