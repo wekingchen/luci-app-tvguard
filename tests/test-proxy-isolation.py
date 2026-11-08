@@ -63,12 +63,25 @@ for path, text in RUNTIME:
         if not line.lstrip().startswith("#")
     )
     if rel not in ("root/usr/libexec/tvguard-fw",
-                   "root/usr/libexec/tvguard-isolation-audit"):
+                   "root/usr/libexec/tvguard-isolation-audit",
+                   "root/usr/libexec/tvguard-compat-check"):
         if re.search(r"(^|[\s/])iptables(?:-legacy)?([\s\"']|$)", executable):
-            errors.append(f"{rel} directly invokes iptables outside the firewall adapter/audit")
+            errors.append(f"{rel} directly invokes iptables outside approved firewall surfaces")
     if rel not in ("ipkg/postinst", "ipkg/prerm"):
         if re.search(r"\buci\s+(?:-q\s+)?(?:set|delete|add|rename)\s+firewall\.", executable):
             errors.append(f"{rel} mutates firewall UCI outside package ownership scripts")
+
+compat = (ROOT / "root/usr/libexec/tvguard-compat-check").read_text(encoding="utf-8")
+compat_code = "\n".join(line for line in compat.splitlines()
+                         if not line.lstrip().startswith("#"))
+# Compatibility checker may only read tables or report iptables version.
+for line in compat_code.splitlines():
+    if '"$IPT"' not in line:
+        continue
+    stripped = line.strip()
+    allowed_read = ('"$IPT" -w 2 -t "$table" -S' in stripped or
+                    '"$IPT" --version' in stripped)
+    require(allowed_read, f"compat checker contains non-read-only iptables use: {stripped}")
 
 # Runtime scripts must not reconfigure or restart existing proxy stacks.
 proxy_words = (
