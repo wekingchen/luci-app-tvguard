@@ -73,7 +73,14 @@ else:
     raise SystemExit("unknown mock action: "+repr(argv))
 commit()
 PY
-chmod +x "$TMP/bin/uci" "$TMP/iptables"
+cat > "$TMP/audit" <<'SH'
+#!/bin/sh
+case "${MOCK_ISOLATION:-ok}" in
+    ok) echo ok; exit 0 ;;
+    *) echo "unsafe:test"; exit 1 ;;
+esac
+SH
+chmod +x "$TMP/bin/uci" "$TMP/iptables" "$TMP/audit"
 
 python3 - "$TMP/state.json" <<'PY'
 import json,sys
@@ -98,6 +105,7 @@ export MOCK_IPT_STATE="$TMP/state.json"
 export MOCK_ENFORCE=0
 export MOCK_ARMED=0
 export MOCK_OBSERVE_REPLY=0
+export MOCK_ISOLATION=ok
 
 # A disposable test copy has a mock IPT and PATH; installed binary is fixed.
 FW="$TMP/tvguard-fw"
@@ -107,6 +115,7 @@ import sys
 src,dest,root=sys.argv[1:]
 s=Path(src).read_text()
 s=s.replace("IPT=/usr/sbin/iptables","IPT="+root+"/iptables",1)
+s=s.replace("AUDIT=/usr/libexec/tvguard-isolation-audit","AUDIT="+root+"/audit",1)
 Path(dest).write_text(s)
 PY
 PATH="$TMP/bin:/usr/sbin:/usr/bin:/sbin:/bin"
@@ -146,10 +155,25 @@ sh "$FW" gate 1
 sh "$FW" gate 0
 [ "$(sh "$FW" inspect)" = allowed ]
 
+# Isolation audit failure must refuse observer creation without touching core.
+export MOCK_ISOLATION=unsafe
+sh "$FW" sync
+[ "$(sh "$FW" inspect-reply)" = unavailable ]
+[ "$(sh "$FW" inspect)" = allowed ]
+export MOCK_ISOLATION=ok
+
 # Opt-in reply observer: two independent no-verdict rules, no duplicate hooks.
 sh "$FW" sync
 [ "$(sh "$FW" inspect-reply)" = ready ]
 [ "$(sh "$FW" sample-reply)" = '75 45000 30 12000' ]
+# If the post-install audit becomes unsafe, observer-only rules roll back.
+export MOCK_ISOLATION=unsafe
+sh "$FW" sync
+[ "$(sh "$FW" inspect-reply)" = unavailable ]
+[ "$(sh "$FW" inspect)" = allowed ]
+export MOCK_ISOLATION=ok
+sh "$FW" sync
+[ "$(sh "$FW" inspect-reply)" = ready ]
 sh "$FW" sync
 python3 - "$TMP/state.json" <<'PY'
 import json,sys
