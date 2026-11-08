@@ -1,0 +1,7 @@
+#!/bin/sh
+[ -n "$IPKG_INSTROOT" ] && exit 0
+/etc/init.d/tvguard stop 2>/dev/null || :
+/usr/libexec/tvguard-fw remove 2>/dev/null || :
+uci -q delete firewall.tvguard 2>/dev/null || :
+uci commit firewall
+exit 0
