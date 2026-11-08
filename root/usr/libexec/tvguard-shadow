@@ -1,0 +1,53 @@
+#!/bin/sh
+# TV Guard shadow-only network fingerprint suggestion.
+# This program NEVER changes quota, modes or firewall policy.
+# Usage: tvguard-shadow PPS TCP_PPS UDP_PPS BYTES_PER_S
+set -eu
+PATH=/usr/sbin:/usr/bin:/sbin:/bin
+export PATH
+CSV=/etc/tvguard/calibration-v2.csv
+for n in "$@"; do
+    case "$n" in ''|*[!0-9]*) echo 'unknown none 0'; exit 0 ;; esac
+done
+[ "$#" -eq 4 ] && [ -s "$CSV" ] || { echo 'unknown none 0'; exit 0; }
+awk -F, -v p="$1" -v t="$2" -v u="$3" -v b="$4" '
+function abs(v) { return v<0?-v:v }
+function max(a,b) { return a>b?a:b }
+$2 ~ /^(playing|paused|app_home|system_home|sleep)$/ &&
+$3 ~ /^(general|tencent|iqiyi|mango|other|system)$/ &&
+$4 ~ /^[0-9]+$/ && $5 ~ /^[0-9]+$/ && $6 ~ /^[0-9]+$/ &&
+$7 ~ /^[0-9]+$/ {
+    k=$2 SUBSEP $3
+    n[k]++
+    sp[k]+=$4; st[k]+=$5; su[k]+=$6; sb[k]+=$7
+    sq[k]+=$4*$4
+}
+END {
+    best=1e10; second=1e10; bestKey=""; eligible=0
+    for (k in n) {
+        if (n[k]<8) continue
+        ap=sp[k]/n[k]; at=st[k]/n[k]; au=su[k]/n[k]; ab=sb[k]/n[k]
+        variance=sq[k]/n[k]-ap*ap
+        if (variance<0) variance=0
+        if (sqrt(variance)/max(20,ap)>0.70) continue
+        eligible++
+        # Normalized distances: source packet frequency matters most.
+        d=abs(p-ap)/max(20,ap)
+        d+=0.45*abs(t-at)/max(5,at)
+        d+=0.45*abs(u-au)/max(5,au)
+        d+=0.10*abs(b-ab)/max(1000,ab)
+        if (d<best) {
+            second=best
+            best=d
+            bestKey=k
+        }
+        else if (d<second) second=d
+    }
+    # No confident assignment from just one prototype or overlapping samples.
+    if (eligible<2 || best>=0.50 || second-best<0.30) {
+        print "unknown none 0"
+        exit
+    }
+    split(bestKey,parts,SUBSEP)
+    printf "%s %s %d\n",parts[1],parts[2],int((1-best/0.50)*100)
+}' "$CSV"
