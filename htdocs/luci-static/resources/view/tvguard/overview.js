@@ -27,6 +27,14 @@ return view.extend({
             }),
             fs.exec('/usr/libexec/tvguard-status', ['calibration']).then(function(r) {
                 return r.stdout || '';
+            }),
+            fs.exec('/usr/libexec/tvguard-status', ['isolation']).then(function(r) {
+                return {
+                    code: Number(r.code || 0),
+                    text: String(r.stdout || r.stderr || '').trim()
+                };
+            }).catch(function(err) {
+                return { code: 2, text: 'unavailable:rpc' };
             })
         ]);
     },
@@ -154,6 +162,21 @@ return view.extend({
 
     render: function(result) {
         var s = result[0], events = result[1], samples = result[2];
+        var isolation = result[3] || { code: 2, text: 'unavailable' };
+        var isolationLabel, isolationClass;
+        if (isolation.code === 0 && isolation.text === 'ok') {
+            isolationLabel = '通过：TV Guard 规则仅位于允许的 raw 隔离范围，未发现进入 nat / mangle / filter。';
+            isolationClass = 'alert-message success';
+        }
+        else if (String(isolation.text || '').indexOf('unsafe:') === 0) {
+            isolationLabel = '异常：' + isolation.text + '。请勿启用任何实验观测或正式封禁。';
+            isolationClass = 'alert-message error';
+        }
+        else {
+            isolationLabel = '无法验证代理隔离状态：' + (isolation.text || 'unknown') +
+                '。这不等于已确认安全。';
+            isolationClass = 'alert-message warning';
+        }
         var mode = { child: '儿童模式', parent: '家长模式', locked: '手动锁定' }[s.mode] || '未知';
         var activity = { active: '检测到网络活动', silent: '网络静默', unknown: '尚未检测' }[s.activity] || '未知';
         var fwState = {
@@ -218,6 +241,7 @@ return view.extend({
                 E('p', [ E('strong', '使用模式：'), mode ]),
                 E('p', [ E('strong', '网络状态：'), activity ]),
                 E('p', [ E('strong', '防火墙状态：'), blocks ]),
+                E('p', { 'class': isolationClass }, isolationLabel),
                 E('p', [ E('strong', '日期：'), s.date ])
             ]),
             panel('网络采样与手工校准（观察模式）', [
@@ -298,6 +322,7 @@ return view.extend({
                 }, events || '尚无操作记录')
             ])
         ];
+        this._isolationStatus = { label: isolationLabel, cssClass: isolationClass };
         this.updateCalibrationUI(s);
         this.updateTrafficUI(s);
         if (this._calibrationPoll)
