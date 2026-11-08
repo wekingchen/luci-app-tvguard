@@ -73,7 +73,7 @@ return view.extend({
         }
         else {
             n.title.textContent = '等待开始采样';
-            n.detail.textContent = '选择电视应用与当前场景，点击开始后将自动显示进度。';
+            n.detail.textContent = '选择场景即可开始。应用名称只作为可选实验标签，不影响日常计时。';
             n.hint.textContent = '校准仅记录网络特征，不自动暂停计时，也不会封禁电视。';
         }
     },
@@ -132,6 +132,7 @@ return view.extend({
         }[s.firewall_state] || '未知';
         var blocks = (s.enforce ? '正式控制' : '观察模式') + ' · ' + fwState;
         var appSelect = E('select', { 'class': 'cbi-input-select', 'style': 'margin:4px' }, [
+            E('option', { 'value': 'general' }, '通用采样（不区分视频 App）'),
             E('option', { 'value': 'tencent' }, '腾讯极光'),
             E('option', { 'value': 'iqiyi' }, '爱奇艺'),
             E('option', { 'value': 'mango' }, '芒果 TV'),
@@ -181,7 +182,7 @@ return view.extend({
             ]),
             panel('网络采样与手工校准（观察模式）', [
                 E('p', { 'class': 'description' },
-                    '当前计数规则只统计从电视发出的 IPv4 包，并非完整的视频下载流量；不能证明前台 App、暂停或观看状态。校准标签由家长手动确认，绝不自动免计时。'),
+                    '当前计数规则只统计电视发出且经过 N1 的 IPv4 包，并非完整视频下载流量；无法可靠证明前台 App、暂停或观看状态。日常使用无需逐个标注应用。'),
                 E('p', [ E('strong', '电视发出包频率（最近 10 秒）：'), String(s.pps || 0) + ' PPS' ]),
                 E('p', [
                     E('strong', 'TCP：'), String(s.tcp_pps || 0) + ' PPS · ',
@@ -193,17 +194,17 @@ return view.extend({
                     ({ playing:'疑似播放', paused:'疑似暂停', app_home:'疑似应用首页',
                        system_home:'疑似小米系统首页', sleep:'疑似熄屏网络静默',
                        unknown:'无法判断' })[s.shadow_label] || '无法判断',
-                    ' · 参考应用：' + (s.shadow_app || 'none'),
+                    ' · 推断范围：' + ((s.shadow_app === 'general') ? '通用网络模式' : (s.shadow_app === 'system' ? '电视系统' : '未知')),
                     ' · ' + (s.shadow_label === 'unknown' ?
                         '当前证据不足或流量特征重叠' :
                         '通过已标注样本对比，仅供观察')
                 ]),
                 E('p', { 'class':'description' },
-                    '候选识别必须积累多次独立标注样本，且目前仅显示诊断结果，不会改变儿童计时或封禁策略。'),
+                    '影子识别已改为通用网络状态判断；不要求逐一训练每个视频应用。证据不足或特征重叠时显示无法判断，结果不改变儿童计时与封禁策略。'),
                 E('div', { 'style': 'padding:12px;margin:12px 0;border:1px solid #bbb;border-radius:8px' }, [
                     calTitle, calDetail, calProgress, calHint
                 ]),
-                E('p', '先在电视上打开并保持对应状态；请选择 App 和状态，手工标注 120 秒。只是采集样本，不会自动免计时。'),
+                E('p', '标注不是每个 App 的必做配置。默认使用“通用采样”；可选应用名称仅用于验证新算法能否泛化到其他播放器。标注 120 秒不会自动免计时。'),
                 E('div', { 'style': 'display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-bottom:8px' },
                     [appSelect, sceneSelect, startCalibration, stopCalibration]),
                 samplePreview
