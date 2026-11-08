@@ -57,6 +57,22 @@ function panel(title, subtitle, children, extraStyle) {
 }
 
 function metric(label, value, note, emphasis) {
+    var children = [
+        E('div', {
+            'class': 'description',
+            'style': 'margin-bottom:6px'
+        }, label),
+        E('div', {
+            'style': 'font-size:' + (emphasis ? '1.65rem' : '1.2rem') +
+                ';font-weight:700;line-height:1.2;overflow-wrap:anywhere'
+        }, value)
+    ];
+    if (note)
+        children.push(E('div', {
+            'class': 'description',
+            'style': 'margin-top:6px;line-height:1.45'
+        }, note));
+
     return E('div', {
         'style': [
             'min-width:0',
@@ -65,32 +81,27 @@ function metric(label, value, note, emphasis) {
             'border-radius:10px',
             'background:var(--background-color-high,#fafafa)'
         ].join(';')
-    }, [
-        E('div', {
-            'class': 'description',
-            'style': 'margin-bottom:6px'
-        }, label),
-        E('div', {
-            'style': 'font-size:' + (emphasis ? '1.65rem' : '1.2rem') +
-                ';font-weight:700;line-height:1.2;overflow-wrap:anywhere'
-        }, value),
-        note ? E('div', {
-            'class': 'description',
-            'style': 'margin-top:6px;line-height:1.45'
-        }, note) : null
-    ]);
+    }, children);
 }
 
 function badge(text, tone) {
     var palette = {
-        good: 'color:#1b5e20;background:#e8f5e9;border-color:#a5d6a7',
-        warn: 'color:#7a4b00;background:#fff8e1;border-color:#ffe082',
-        bad: 'color:#8b1a1a;background:#ffebee;border-color:#ef9a9a',
-        neutral: 'color:inherit;background:var(--background-color-high,#f5f5f5);border-color:var(--border-color-medium,#ddd)'
+        good: 'border-color:#66bb6a',
+        warn: 'border-color:#f9a825',
+        bad: 'border-color:#ef5350',
+        neutral: 'border-color:var(--border-color-medium,#bbb)'
     };
     return E('span', {
-        'style': 'display:inline-flex;align-items:center;padding:4px 9px;border:1px solid;border-radius:999px;' +
-            (palette[tone] || palette.neutral)
+        'style': [
+            'display:inline-flex',
+            'align-items:center',
+            'padding:4px 9px',
+            'border:1px solid',
+            'border-radius:999px',
+            'color:inherit',
+            'background:var(--background-color-high,transparent)',
+            palette[tone] || palette.neutral
+        ].join(';')
     }, text);
 }
 
@@ -300,14 +311,17 @@ return view.extend({
         options = options || {};
         var cls = options.danger ? 'btn cbi-button-negative' :
             (options.primary ? 'btn cbi-button-positive' : 'btn cbi-button-action');
-
-        return E('button', {
+        var attrs = {
             'class': cls,
-            'disabled': options.disabled ? 'disabled' : null,
             'style': 'min-height:36px;margin:0',
-            'title': options.title || null,
             'click': ui.createHandlerFn(this, 'handleAction', args, options.confirm || null)
-        }, label);
+        };
+        if (options.disabled)
+            attrs.disabled = 'disabled';
+        if (options.title)
+            attrs.title = options.title;
+
+        return E('button', attrs, label);
     },
 
     render: function(result) {
@@ -463,9 +477,7 @@ return view.extend({
         var modeButtons = [
             this.actionButton(s.mode === 'child' ? '儿童模式 · 当前' : '儿童模式',
                 ['mode', 'child'], { disabled: s.mode === 'child', primary: s.mode === 'child' }),
-            this.actionButton('家长 30 分钟', ['mode', 'parent', '30'], {
-                disabled: s.mode === 'parent' && parentLeft > 0 && parentLeft <= 30 * 60
-            }),
+            this.actionButton('家长 30 分钟', ['mode', 'parent', '30']),
             this.actionButton('家长 60 分钟', ['mode', 'parent', '60']),
             this.actionButton('家长 120 分钟', ['mode', 'parent', '120']),
             this.actionButton(s.mode === 'locked' ? '已锁定 · 当前' : '立即锁定',
