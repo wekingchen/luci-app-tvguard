@@ -5,7 +5,7 @@
 set -eu
 PATH=/usr/sbin:/usr/bin:/sbin:/bin
 export PATH
-CSV=/etc/tvguard/calibration-v2.csv
+CSV=/etc/tvguard/calibration-v3.csv
 for n in "$@"; do
     case "$n" in ''|*[!0-9]*) echo 'unknown none 0'; exit 0 ;; esac
 done
@@ -13,19 +13,26 @@ done
 awk -F, -v p="$1" -v t="$2" -v u="$3" -v b="$4" '
 function abs(v) { return v<0?-v:v }
 function max(a,b) { return a>b?a:b }
-$2 ~ /^(playing|paused|app_home|system_home|sleep)$/ &&
-$3 ~ /^(general|tencent|iqiyi|mango|other|system)$/ &&
-$4 ~ /^[0-9]+$/ && $5 ~ /^[0-9]+$/ && $6 ~ /^[0-9]+$/ &&
-$7 ~ /^[0-9]+$/ {
-    k=$2 SUBSEP $3
+$3 ~ /^(playing|paused|app_home|system_home|sleep)$/ &&
+$4 ~ /^(general|tencent|iqiyi|mango|other|system)$/ &&
+$5 ~ /^[0-9]+$/ && $6 ~ /^[0-9]+$/ && $7 ~ /^[0-9]+$/ &&
+$8 ~ /^[0-9]+$/ {
+    k=$3 SUBSEP $4
     n[k]++
-    sp[k]+=$4; st[k]+=$5; su[k]+=$6; sb[k]+=$7
-    sq[k]+=$4*$4
+    sp[k]+=$5; st[k]+=$6; su[k]+=$7; sb[k]+=$8
+    sq[k]+=$5*$5
+    sessions[k SUBSEP $2]=1
 }
 END {
     best=1e10; second=1e10; bestKey=""; eligible=0
+    for (key in sessions) {
+        split(key,fields,SUBSEP)
+        k=fields[1] SUBSEP fields[2]
+        nSessions[k]++
+    }
     for (k in n) {
-        if (n[k]<8) continue
+        # At least 3 independent 120-second calibrations per scene/app.
+        if (n[k]<18 || nSessions[k]<3) continue
         ap=sp[k]/n[k]; at=st[k]/n[k]; au=su[k]/n[k]; ab=sb[k]/n[k]
         variance=sq[k]/n[k]-ap*ap
         if (variance<0) variance=0
