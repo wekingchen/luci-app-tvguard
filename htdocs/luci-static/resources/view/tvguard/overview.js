@@ -4,22 +4,147 @@
 'require ui';
 'require poll';
 
-function minutes(seconds) {
-    return Math.ceil(Number(seconds || 0) / 60);
+function clamp(value, min, max) {
+    return Math.max(min, Math.min(max, Number(value) || 0));
 }
 
-function panel(title, children) {
-    return E('div', {
+function minutes(seconds) {
+    return Math.ceil(Math.max(0, Number(seconds) || 0) / 60);
+}
+
+function duration(seconds) {
+    var value = Math.max(0, Number(seconds) || 0);
+    if (value < 60)
+        return value > 0 ? '不足 1 分钟' : '0 分钟';
+    var m = Math.ceil(value / 60);
+    if (m < 60)
+        return m + ' 分钟';
+    var h = Math.floor(m / 60);
+    var rest = m % 60;
+    return h + ' 小时' + (rest ? ' ' + rest + ' 分钟' : '');
+}
+
+function byteRate(value) {
+    var n = Math.max(0, Number(value) || 0);
+    if (n >= 1024 * 1024)
+        return (n / 1024 / 1024).toFixed(1) + ' MB/s';
+    if (n >= 1024)
+        return (n / 1024).toFixed(1) + ' KB/s';
+    return n + ' B/s';
+}
+
+function panel(title, subtitle, children, extraStyle) {
+    return E('section', {
         'class': 'cbi-section',
-        'style': 'margin-bottom:16px;padding:14px;border:1px solid var(--border-color-medium,#ddd);border-radius:8px'
-    }, [ E('h3', title) ].concat(children));
+        'style': [
+            'margin:0 0 16px',
+            'padding:16px',
+            'border:1px solid var(--border-color-medium,#ddd)',
+            'border-radius:12px',
+            'box-shadow:0 1px 2px rgba(0,0,0,.04)',
+            extraStyle || ''
+        ].join(';')
+    }, [
+        E('div', { 'style': 'margin-bottom:12px' }, [
+            E('h3', { 'style': 'margin:0 0 4px;font-size:1.15rem' }, title),
+            subtitle ? E('div', {
+                'class': 'description',
+                'style': 'margin:0;line-height:1.55'
+            }, subtitle) : null
+        ])
+    ].concat(children || []));
+}
+
+function metric(label, value, note, emphasis) {
+    return E('div', {
+        'style': [
+            'min-width:0',
+            'padding:14px',
+            'border:1px solid var(--border-color-medium,#ddd)',
+            'border-radius:10px',
+            'background:var(--background-color-high,#fafafa)'
+        ].join(';')
+    }, [
+        E('div', {
+            'class': 'description',
+            'style': 'margin-bottom:6px'
+        }, label),
+        E('div', {
+            'style': 'font-size:' + (emphasis ? '1.65rem' : '1.2rem') +
+                ';font-weight:700;line-height:1.2;overflow-wrap:anywhere'
+        }, value),
+        note ? E('div', {
+            'class': 'description',
+            'style': 'margin-top:6px;line-height:1.45'
+        }, note) : null
+    ]);
+}
+
+function badge(text, tone) {
+    var palette = {
+        good: 'color:#1b5e20;background:#e8f5e9;border-color:#a5d6a7',
+        warn: 'color:#7a4b00;background:#fff8e1;border-color:#ffe082',
+        bad: 'color:#8b1a1a;background:#ffebee;border-color:#ef9a9a',
+        neutral: 'color:inherit;background:var(--background-color-high,#f5f5f5);border-color:var(--border-color-medium,#ddd)'
+    };
+    return E('span', {
+        'style': 'display:inline-flex;align-items:center;padding:4px 9px;border:1px solid;border-radius:999px;' +
+            (palette[tone] || palette.neutral)
+    }, text);
+}
+
+function detailBlock(summary, children, open) {
+    return E('details', {
+        'open': open ? 'open' : null,
+        'style': 'margin-top:12px;border-top:1px solid var(--border-color-medium,#ddd);padding-top:10px'
+    }, [
+        E('summary', {
+            'style': 'cursor:pointer;font-weight:600;padding:4px 0;user-select:none'
+        }, summary),
+        E('div', { 'style': 'padding-top:10px' }, children)
+    ]);
+}
+
+function grid(children, minWidth) {
+    return E('div', {
+        'style': 'display:grid;grid-template-columns:repeat(auto-fit,minmax(' +
+            (minWidth || 160) + 'px,1fr));gap:10px'
+    }, children);
+}
+
+function buttonRow(children) {
+    return E('div', {
+        'style': 'display:flex;flex-wrap:wrap;gap:8px;align-items:center'
+    }, children);
+}
+
+function trafficName(value) {
+    return {
+        no_packets: '无新数据',
+        low_traffic: '低',
+        medium_traffic: '中',
+        high_traffic: '高',
+        unknown: '未知'
+    }[value] || '未知';
+}
+
+function shadowName(value) {
+    return {
+        playing: '疑似播放',
+        paused: '疑似暂停',
+        app_home: '疑似应用首页',
+        system_home: '疑似系统首页',
+        sleep: '疑似待机',
+        unknown: '暂时无法判断'
+    }[value] || '暂时无法判断';
 }
 
 return view.extend({
     load: function() {
         return Promise.all([
             fs.exec('/usr/libexec/tvguard-status', ['status']).then(function(r) {
-                if (r.code) throw new Error(r.stderr || '读取状态失败');
+                if (r.code)
+                    throw new Error(r.stderr || '读取状态失败');
                 return JSON.parse(r.stdout);
             }),
             fs.exec('/usr/libexec/tvguard-status', ['log']).then(function(r) {
@@ -33,7 +158,7 @@ return view.extend({
                     code: Number(r.code || 0),
                     text: String(r.stdout || r.stderr || '').trim()
                 };
-            }).catch(function(err) {
+            }).catch(function() {
                 return { code: 2, text: 'unavailable:rpc' };
             })
         ]);
@@ -43,8 +168,9 @@ return view.extend({
         var n = this._trafficNodes;
         if (!n)
             return;
+
         n.outgoing.textContent = String(state.pps || 0) + ' PPS · ' +
-            String(state.bytes_per_second || 0) + ' B/s';
+            byteRate(state.bytes_per_second || 0);
         n.outgoingProtocol.textContent = 'TCP ' + String(state.tcp_pps || 0) +
             ' PPS · UDP ' + String(state.udp_pps || 0) + ' PPS';
 
@@ -52,19 +178,20 @@ return view.extend({
         if (observer === 'ready') {
             var status = {
                 observed: '检测到回程流量',
-                no_packets: '本次采样未检测到回程包',
-                warming_up: '采样基线建立中'
+                no_packets: '本次采样没有检测到回程包',
+                warming_up: '正在建立采样基线'
             }[state.reply_sample_status] || '等待采样';
-            n.replyStatus.textContent = status + '（路径是否完整仍未验证）';
-            n.prerouting.textContent = String(state.reply_prerouting_pps || 0) + ' PPS · ' +
-                String(state.reply_prerouting_bps || 0) + ' B/s';
-            n.local.textContent = String(state.reply_local_pps || 0) + ' PPS · ' +
-                String(state.reply_local_bps || 0) + ' B/s';
+
+            n.replyStatus.textContent = status + ' · 路径完整性仍未验证';
+            n.prerouting.textContent = String(state.reply_prerouting_pps || 0) +
+                ' PPS · ' + byteRate(state.reply_prerouting_bps || 0);
+            n.local.textContent = String(state.reply_local_pps || 0) +
+                ' PPS · ' + byteRate(state.reply_local_bps || 0);
         }
         else {
             n.replyStatus.textContent = observer === 'disabled' ?
-                '未启用；不影响现有电视计时。' :
-                '观测点暂不可用；不会把零流量解释为熄屏。';
+                '未启用（默认状态）' :
+                '观测点暂不可用；不会把 0 流量当作熄屏';
             n.prerouting.textContent = '—';
             n.local.textContent = '—';
         }
@@ -74,12 +201,13 @@ return view.extend({
         var n = this._calibrationNodes;
         if (!n)
             return;
+
         var phase = String(state.calibration_phase || 'idle');
         var active = phase === 'running' || phase === 'finishing';
-        var elapsed = Math.max(0, Math.min(120, Number(state.calibration_elapsed_seconds) || 0));
+        var elapsed = clamp(state.calibration_elapsed_seconds, 0, 120);
         var remaining = Math.max(0, Number(state.calibration_remaining_seconds) || 0);
         var count = Math.max(0, Number(state.calibration_samples) || 0);
-        var progress = Math.max(0, Math.min(100, Number(state.calibration_percent) || 0));
+        var progress = clamp(state.calibration_percent, 0, 100);
 
         n.bar.value = active ? progress : (phase === 'completed' ? 100 : 0);
         n.bar.setAttribute('aria-valuenow', String(n.bar.value));
@@ -90,30 +218,30 @@ return view.extend({
         n.bar.style.display = active || phase === 'completed' ? '' : 'none';
 
         if (phase === 'running') {
-            n.title.textContent = '正在采样 · ' + state.calibration_app + ' / ' + state.calibration_label;
-            n.detail.textContent = '已进行 ' + elapsed + ' / 120 秒 · 还剩 ' + remaining +
-                ' 秒 · 已记录 ' + count + ' 条样本（每约 10 秒一条）';
-            n.hint.textContent = '正在自动更新，无需停留或刷新页面；保持电视状态不变。';
+            n.title.textContent = '正在记录 · ' + state.calibration_app + ' / ' + state.calibration_label;
+            n.detail.textContent = '已进行 ' + elapsed + ' / 120 秒 · 剩余 ' + remaining +
+                ' 秒 · 已保存 ' + count + ' 条样本';
+            n.hint.textContent = '保持电视当前状态不变即可，页面会自动更新。';
         }
         else if (phase === 'finishing') {
-            n.title.textContent = '采样时间已到，正在汇总…';
-            n.detail.textContent = '已记录 ' + count + ' 条样本，等待后台下一次采样完成结算。';
-            n.hint.textContent = '正常情况下几秒后自动显示结果，无需重复点击开始。';
+            n.title.textContent = '采样结束，正在整理结果…';
+            n.detail.textContent = '已保存 ' + count + ' 条样本，等待后台完成最后一次结算。';
+            n.hint.textContent = '无需重复点击，结果会自动刷新。';
         }
         else if (phase === 'completed' || phase === 'stopped' || phase === 'interrupted') {
-            n.title.textContent = phase === 'completed' ? '本次采样已完成' :
-                (phase === 'stopped' ? '本次采样已手动停止' : '采样被中断');
-            n.detail.textContent = '应用/场景：' + state.calibration_last_app + ' / ' +
-                state.calibration_last_label + ' · 已保存 ' +
-                String(state.calibration_last_samples || 0) + ' 条样本';
+            n.title.textContent = phase === 'completed' ? '本次标注已完成' :
+                (phase === 'stopped' ? '本次标注已提前结束' : '本次标注被中断');
+            n.detail.textContent = '场景：' + state.calibration_last_label +
+                ' · 标签：' + state.calibration_last_app +
+                ' · 保存 ' + String(state.calibration_last_samples || 0) + ' 条样本';
             n.hint.textContent = phase === 'completed' ?
-                '采样数据已保存，可继续选择其他场景。一次标注不代表已能准确识别。' :
-                '本次结果已记录，后续可重新开始校准。';
+                '数据已保存。一次标注只用于验证算法，不代表系统已经学会自动判断。' :
+                '已有数据会保留，之后可以重新开始。';
         }
         else {
-            n.title.textContent = '等待开始采样';
-            n.detail.textContent = '选择场景即可开始。应用名称只作为可选实验标签，不影响日常计时。';
-            n.hint.textContent = '校准仅记录网络特征，不自动暂停计时，也不会封禁电视。';
+            n.title.textContent = '未在采样';
+            n.detail.textContent = '需要验证算法时再使用；日常管理电视不需要做这一步。';
+            n.hint.textContent = '标注只记录网络特征，不改变计时，也不会封禁电视。';
         }
     },
 
@@ -121,110 +249,202 @@ return view.extend({
         return fs.exec('/usr/libexec/tvguard-status', ['status']).then(L.bind(function(r) {
             if (r.code)
                 throw new Error(r.stderr || '后台状态读取失败');
+
             var s = JSON.parse(r.stdout);
             this.updateCalibrationUI(s);
             this.updateTrafficUI(s);
+
             var n = this._calibrationNodes;
             var session = s.calibration_last_session || 'none';
             if (n && session !== 'none' && n.lastSession !== session) {
                 n.lastSession = session;
                 return fs.exec('/usr/libexec/tvguard-status', ['calibration']).then(function(result) {
                     if (!result.code)
-                        n.samples.textContent = (result.stdout || '').split('\n').slice(-12).join('\n') || '暂无标注样本';
+                        n.samples.textContent = (result.stdout || '').split('\n').slice(-12).join('\n') ||
+                            '暂无标注样本';
                 });
             }
-        }, this)).catch(L.bind(function(err) {
+        }, this)).catch(L.bind(function() {
             if (this._calibrationNodes)
-                this._calibrationNodes.hint.textContent = '实时更新暂时失败，请检查 N1 连接；已有样本不会因此丢失。';
+                this._calibrationNodes.hint.textContent =
+                    '实时更新暂时失败；已有数据不会丢失，可稍后刷新页面。';
         }, this));
     },
 
     handleAction: function(args, warning, ev) {
-        if (!window.confirm(warning))
+        if (warning && !window.confirm(warning))
             return Promise.resolve();
+
+        var button = ev && ev.currentTarget ? ev.currentTarget : null;
+        if (button)
+            button.disabled = true;
 
         return fs.exec('/usr/libexec/tvguardctl', args).then(function(r) {
             if (r.code)
                 throw new Error(r.stderr || r.stdout || '操作失败');
             window.location.reload();
         }).catch(function(err) {
+            if (button)
+                button.disabled = false;
             ui.addNotification(null, E('p', {}, String(err)), 'error');
         });
     },
 
-    actionButton: function(label, args, prompt, danger) {
+    actionButton: function(label, args, options) {
+        options = options || {};
+        var cls = options.danger ? 'btn cbi-button-negative' :
+            (options.primary ? 'btn cbi-button-positive' : 'btn cbi-button-action');
+
         return E('button', {
-            'class': danger ? 'btn cbi-button-negative' : 'btn cbi-button-action',
-            'style': 'margin:4px 8px 4px 0',
-            'click': ui.createHandlerFn(this, 'handleAction', args, prompt)
+            'class': cls,
+            'disabled': options.disabled ? 'disabled' : null,
+            'style': 'min-height:36px;margin:0',
+            'title': options.title || null,
+            'click': ui.createHandlerFn(this, 'handleAction', args, options.confirm || null)
         }, label);
     },
 
     render: function(result) {
         var s = result[0], events = result[1], samples = result[2];
         var isolation = result[3] || { code: 2, text: 'unavailable' };
-        var isolationLabel, isolationClass;
-        if (isolation.code === 0 && isolation.text === 'ok') {
-            isolationLabel = '通过：TV Guard 规则仅位于允许的 raw 隔离范围，未发现进入 nat / mangle / filter。';
-            isolationClass = 'alert-message success';
+        var isolationText = String(isolation.text || 'unknown');
+        var isolationSafe = isolation.code === 0 && isolationText === 'ok';
+        var isolationTone = isolationSafe ? 'good' :
+            (isolationText.indexOf('unsafe:') === 0 ? 'bad' : 'warn');
+        var isolationShort = isolationSafe ? '代理隔离通过' :
+            (isolationTone === 'bad' ? '代理隔离异常' : '代理隔离未验证');
+
+        var modeName = {
+            child: '儿童模式',
+            parent: '家长模式',
+            locked: '已锁定'
+        }[s.mode] || '未知模式';
+
+        var parentLeft = Math.max(0, Number(s.parent_until || 0) - Number(s.server_epoch || 0));
+        var modeNote = s.mode === 'parent' && parentLeft > 0 ?
+            '家长授权剩余 ' + duration(parentLeft) :
+            (s.mode === 'locked' ?
+                (s.enforce ? '正式控制下会阻断电视联网' : '观察模式下只记录锁定意图，不断网') :
+                '儿童额度会按联网活动估算消耗');
+
+        var controlName = s.enforce ? '正式控制' : '观察模式';
+        var controlNote = s.enforce ?
+            '满足规则时会实际控制电视联网' :
+            '不会因为额度、锁定或时段主动断网';
+
+        var activityName = {
+            active: '检测到联网活动',
+            silent: '当前网络静默',
+            unknown: '等待首次采样'
+        }[s.activity] || '状态未知';
+
+        var quota = Math.max(0, Number(s.quota_seconds) || 0);
+        var used = Math.max(0, Number(s.used_seconds) || 0);
+        var quotaPercent = quota > 0 ? clamp(used * 100 / quota, 0, 100) : 0;
+
+        var statusBanner;
+        if (!isolationSafe) {
+            statusBanner = E('div', {
+                'class': isolationTone === 'bad' ? 'alert-message error' : 'alert-message warning',
+                'style': 'margin:0 0 16px;line-height:1.55'
+            }, isolationTone === 'bad' ?
+                '代理隔离检查发现异常。当前不要开启正式控制或实验回程观测。' :
+                '代理隔离状态暂时无法完整验证。未知状态不会被当作安全状态。');
         }
-        else if (String(isolation.text || '').indexOf('unsafe:') === 0) {
-            isolationLabel = '异常：' + isolation.text + '。请勿启用任何实验观测或正式封禁。';
-            isolationClass = 'alert-message error';
+        else if (s.enforce) {
+            statusBanner = E('div', {
+                'class': 'alert-message warning',
+                'style': 'margin:0 0 16px;line-height:1.55'
+            }, '正式网络控制已开启。TV Guard 可能按额度、时段或锁定状态阻断这台电视经过 N1 的 IPv4 流量。');
         }
         else {
-            isolationLabel = '无法验证代理隔离状态：' + (isolation.text || 'unknown') +
-                '。这不等于已确认安全。';
-            isolationClass = 'alert-message warning';
+            statusBanner = E('div', {
+                'class': 'alert-message success',
+                'style': 'margin:0 0 16px;line-height:1.55'
+            }, '当前为观察模式：可以计时、切换模式和记录奖励，但 TV Guard 不会主动断开电视网络。');
         }
-        var mode = { child: '儿童模式', parent: '家长模式', locked: '手动锁定' }[s.mode] || '未知';
-        var activity = { active: '检测到网络活动', silent: '网络静默', unknown: '尚未检测' }[s.activity] || '未知';
-        var fwState = {
-            blocked: 'N1 上的 TV Guard 规则正在丢弃电视数据包',
-            allowed: 'N1 上的 TV Guard 规则允许电视数据包继续处理',
-            absent: '未找到 TV Guard 入口规则',
-            unknown: '无法核实当前 TV Guard 防火墙规则'
-        }[s.firewall_state] || '未知';
-        var blocks = (s.enforce ? '正式控制' : '观察模式') + ' · ' + fwState;
-        var appSelect = E('select', { 'class': 'cbi-input-select', 'style': 'margin:4px' }, [
-            E('option', { 'value': 'general' }, '通用采样（不区分视频 App）'),
-            E('option', { 'value': 'tencent' }, '腾讯极光'),
-            E('option', { 'value': 'iqiyi' }, '爱奇艺'),
-            E('option', { 'value': 'mango' }, '芒果 TV'),
-            E('option', { 'value': 'other' }, '其他视频应用')
+
+        var appSelect = E('select', {
+            'class': 'cbi-input-select',
+            'style': 'min-width:190px;flex:1'
+        }, [
+            E('option', { 'value': 'general' }, '通用采样（推荐）'),
+            E('option', { 'value': 'tencent' }, '腾讯极光（验证标签）'),
+            E('option', { 'value': 'iqiyi' }, '爱奇艺（验证标签）'),
+            E('option', { 'value': 'mango' }, '芒果 TV（验证标签）'),
+            E('option', { 'value': 'other' }, '其他视频应用（验证标签）')
         ]);
-        var sceneSelect = E('select', { 'class': 'cbi-input-select', 'style': 'margin:4px' }, [
+
+        var sceneSelect = E('select', {
+            'class': 'cbi-input-select',
+            'style': 'min-width:170px;flex:1'
+        }, [
             E('option', { 'value': 'playing' }, '正常播放'),
             E('option', { 'value': 'paused' }, '视频暂停'),
             E('option', { 'value': 'app_home' }, '应用首页闲置'),
             E('option', { 'value': 'system_home' }, '小米系统首页闲置'),
             E('option', { 'value': 'sleep' }, '熄屏待机')
         ]);
+
         var startCalibration = E('button', {
             'class': 'btn cbi-button-action',
-            'click': ui.createHandlerFn(this, function() {
+            'style': 'min-height:36px',
+            'click': ui.createHandlerFn(this, function(ev) {
                 var label = sceneSelect.value, app = appSelect.value;
-                return this.handleAction(['calibrate', label, app],
-                    '请确认电视当前实际状态为“' + sceneSelect.options[sceneSelect.selectedIndex].text +
-                    '”。接下来记录 120 秒，期间不要操作遥控器。');
+                return this.handleAction(
+                    ['calibrate', label, app],
+                    '请确认电视当前确实处于“' +
+                        sceneSelect.options[sceneSelect.selectedIndex].text +
+                        '”。接下来会记录 120 秒，请暂时不要操作遥控器。',
+                    ev
+                );
             })
         }, '开始 120 秒标注');
-        var stopCalibration = this.actionButton('停止校准', ['calibrate', 'stop'], '提前结束本次采样吗？');
-        var calTitle = E('strong', {}, '等待开始采样');
-        var calDetail = E('div', { 'style': 'margin:8px 0' }, '');
-        var calProgress = E('progress', { 'max': '100', 'value': '0',
-            'style': 'width:100%;height:18px;display:none', 'role': 'progressbar',
-            'aria-valuemin': '0', 'aria-valuemax': '100', 'aria-valuenow': '0' });
-        var calHint = E('p', { 'class': 'description', 'style': 'margin-top:8px' }, '');
+
+        var stopCalibration = this.actionButton('提前结束', ['calibrate', 'stop'], {
+            title: '停止后已采到的数据仍会保留'
+        });
+        var calTitle = E('strong', {}, '未在采样');
+        var calDetail = E('div', { 'style': 'margin:7px 0' }, '');
+        var calProgress = E('progress', {
+            'max': '100',
+            'value': '0',
+            'style': 'width:100%;height:16px;display:none',
+            'role': 'progressbar',
+            'aria-valuemin': '0',
+            'aria-valuemax': '100',
+            'aria-valuenow': '0'
+        });
+        var calHint = E('p', {
+            'class': 'description',
+            'style': 'margin:7px 0 0;line-height:1.5'
+        }, '');
         var samplePreview = E('pre', {
-            'style': 'max-height:160px;overflow:auto;white-space:pre-wrap;word-break:break-word'
+            'style': [
+                'max-height:150px',
+                'overflow:auto',
+                'white-space:pre-wrap',
+                'word-break:break-word',
+                'font-size:.85rem',
+                'padding:10px',
+                'border-radius:8px',
+                'background:var(--background-color-high,#f7f7f7)'
+            ].join(';')
         }, (samples || '').split('\n').slice(-12).join('\n') || '暂无标注样本');
+
         this._calibrationNodes = {
-            title: calTitle, detail: calDetail, bar: calProgress, hint: calHint,
-            start: startCalibration, stop: stopCalibration, selection: appSelect,
-            scene: sceneSelect, samples: samplePreview,
+            title: calTitle,
+            detail: calDetail,
+            bar: calProgress,
+            hint: calHint,
+            start: startCalibration,
+            stop: stopCalibration,
+            selection: appSelect,
+            scene: sceneSelect,
+            samples: samplePreview,
             lastSession: s.calibration_last_session || 'none'
         };
+
         var trafficNodes = {
             outgoing: E('span', {}, '读取中…'),
             outgoingProtocol: E('span', {}, '读取中…'),
@@ -233,102 +453,230 @@ return view.extend({
             local: E('span', {}, '—')
         };
         this._trafficNodes = trafficNodes;
-        var page = [
-            E('h2', 'TV Guard · 电视时间管理'),
-            E('p', { 'class': 'alert-message warning' },
-                '当前版本仅按网络活动估算使用会话；尚不能可靠识别系统首页、App 首页或视频暂停。默认观察模式，不会自动断网。'),
-            panel('当前状态', [
-                E('p', [ E('strong', '使用模式：'), mode ]),
-                E('p', [ E('strong', '网络状态：'), activity ]),
-                E('p', [ E('strong', '防火墙状态：'), blocks ]),
-                E('p', { 'class': isolationClass }, isolationLabel),
-                E('p', [ E('strong', '日期：'), s.date ])
-            ]),
-            panel('网络采样与手工校准（观察模式）', [
-                E('p', { 'class': 'description' },
-                    '当前计数规则只统计电视发出且经过 N1 的 IPv4 包，并非完整视频下载流量；无法可靠证明前台 App、暂停或观看状态。日常使用无需逐个标注应用。'),
-                E('p', [ E('strong', '电视发出包频率（最近 10 秒）：'), String(s.pps || 0) + ' PPS' ]),
-                E('p', [
-                    E('strong', 'TCP：'), String(s.tcp_pps || 0) + ' PPS · ',
-                    E('strong', 'UDP：'), String(s.udp_pps || 0) + ' PPS · ',
-                    E('strong', '电视发出字节速率：'), String(s.bytes_per_second || 0) + ' B/s'
-                ]),
-                E('p', [ E('strong', '网络强度：'), String(s.traffic_class || 'unknown') ]),
-                E('p', [ E('strong', '网络指纹候选：'),
-                    ({ playing:'疑似播放', paused:'疑似暂停', app_home:'疑似应用首页',
-                       system_home:'疑似小米系统首页', sleep:'疑似熄屏网络静默',
-                       unknown:'无法判断' })[s.shadow_label] || '无法判断',
-                    ' · 推断范围：' + ((s.shadow_app === 'general') ? '通用网络模式' : (s.shadow_app === 'system' ? '电视系统' : '未知')),
-                    ' · ' + (s.shadow_label === 'unknown' ?
-                        '当前证据不足或流量特征重叠' :
-                        '通过已标注样本对比，仅供观察')
-                ]),
-                E('p', { 'class':'description' },
-                    '影子识别已改为通用网络状态判断；不要求逐一训练每个视频应用。证据不足或特征重叠时显示无法判断，结果不改变儿童计时与封禁策略。'),
-                E('div', { 'style': 'padding:12px;margin:12px 0;border:1px solid #bbb;border-radius:8px' }, [
-                    calTitle, calDetail, calProgress, calHint
-                ]),
-                E('p', '标注不是每个 App 的必做配置。默认使用“通用采样”；可选应用名称仅用于验证新算法能否泛化到其他播放器。标注 120 秒不会自动免计时。'),
-                E('div', { 'style': 'display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-bottom:8px' },
-                    [appSelect, sceneSelect, startCalibration, stopCalibration]),
-                samplePreview
-            ]),
-            panel('网络方向与回程观测（实验性）', [
-                E('p', [ E('strong', '电视向 N1 发包：'), trafficNodes.outgoing ]),
-                E('p', trafficNodes.outgoingProtocol),
-                E('p', [ E('strong', '回程观测状态：'), trafficNodes.replyStatus ]),
-                E('p', [ E('strong', '进入 N1、目标为电视的包：'), trafficNodes.prerouting ]),
-                E('p', [ E('strong', 'N1 本地产生、发往电视的包：'), trafficNodes.local ]),
-                E('p', { 'class': 'description' },
-                    '这两个观测点只计数，不放行、不封禁，也不影响今日额度。需要管理员单独启用，默认关闭；即使检测到回程包，也不能证明电视所有流量必经 N1。')
-            ]),
-            panel('今日儿童额度', [
-                E('p', [ E('strong', '已计时：'), minutes(s.used_seconds) + ' 分钟' ]),
-                E('p', [ E('strong', '当日额度：'), minutes(s.quota_seconds) + ' 分钟' ]),
-                E('p', [ E('strong', '剩余：'), minutes(s.remaining_seconds) + ' 分钟' ]),
-                E('p', [ E('strong', '今日奖励：'), '+' + minutes(s.bonus_seconds) + ' 分钟' ]),
-                E('p', { 'class': 'description' },
-                    '统计的是经过 N1 的联网活动推算的时长，并非真实屏幕观看时间。')
-            ]),
-            panel('观看模式', [
-                this.actionButton('儿童模式', ['mode', 'child'], '切换为儿童模式？'),
-                this.actionButton('家长 30 分钟', ['mode', 'parent', '30'], '授权家长观看 30 分钟？'),
-                this.actionButton('家长 60 分钟', ['mode', 'parent', '60'], '授权家长观看 60 分钟？'),
-                this.actionButton('家长 120 分钟', ['mode', 'parent', '120'], '授权家长观看 120 分钟？'),
-                this.actionButton('立即锁定', ['mode', 'locked'], '将电视切换为锁定模式？开启正式控制后会阻断联网。', true)
-            ]),
-            panel('儿童时间奖励', [
-                this.actionButton('+15 分钟', ['bonus', '15'], '确认奖励今天的儿童额度 15 分钟？'),
-                this.actionButton('+30 分钟', ['bonus', '30'], '确认奖励今天的儿童额度 30 分钟？'),
-                this.actionButton('+60 分钟', ['bonus', '60'], '确认奖励今天的儿童额度 60 分钟？'),
-                this.actionButton('撤销上次奖励', ['bonus', 'undo'], '撤销今日最后一笔未撤销的奖励？', true)
-            ]),
-            panel('执行策略', [
-                E('p', s.enforce ?
-                    '正式控制已开启。网络封禁仅覆盖经过 N1 的 IPv4 数据包。' :
-                    '目前只观察和计时，手动锁定也不会阻断电视。'),
-                s.enforce ?
-                    this.actionButton('关闭控制，恢复观察模式', ['enforce', 'off'],
-                        '确认关闭所有 TV Guard 自动封禁？', true) :
-                    (s.armed ?
-                        this.actionButton('开启正式网络控制', ['enforce', 'on'],
-                            '即将实际阻断经过 N1 的电视 IPv4 数据包。确认已完成现场测试并准备好恢复方案吗？', true) :
-                        E('p', { 'class': 'alert-message warning' },
-                            '正式控制尚未解锁。开发版默认只观察；待实机验证完成后，管理员才能通过 UCI 显式授权开启。'))
-            ]),
-            panel('最近操作记录', [
-                E('pre', {
-                    'style': 'max-height:250px;overflow:auto;white-space:pre-wrap;word-break:break-word'
-                }, events || '尚无操作记录')
-            ])
+
+        var modeButtons = [
+            this.actionButton(s.mode === 'child' ? '儿童模式 · 当前' : '儿童模式',
+                ['mode', 'child'], { disabled: s.mode === 'child', primary: s.mode === 'child' }),
+            this.actionButton('家长 30 分钟', ['mode', 'parent', '30'], {
+                disabled: s.mode === 'parent' && parentLeft > 0 && parentLeft <= 30 * 60
+            }),
+            this.actionButton('家长 60 分钟', ['mode', 'parent', '60']),
+            this.actionButton('家长 120 分钟', ['mode', 'parent', '120']),
+            this.actionButton(s.mode === 'locked' ? '已锁定 · 当前' : '立即锁定',
+                ['mode', 'locked'], {
+                    danger: true,
+                    disabled: s.mode === 'locked',
+                    confirm: '确认切换为锁定模式？' +
+                        (s.enforce ? '正式控制已开启，电视联网可能立即被阻断。' :
+                            '当前仍是观察模式，因此只记录锁定状态，不会断网。')
+                })
         ];
-        this._isolationStatus = { label: isolationLabel, cssClass: isolationClass };
+
+        var canEnable = !!s.armed && isolationSafe;
+        var enforcementAction;
+        if (s.enforce) {
+            enforcementAction = this.actionButton('关闭正式控制，回到观察模式', ['enforce', 'off'], {
+                primary: true,
+                confirm: '确认关闭 TV Guard 的实际网络控制？关闭后额度和锁定仍会继续记录，但不会主动断网。'
+            });
+        }
+        else if (canEnable) {
+            enforcementAction = this.actionButton('开启正式网络控制', ['enforce', 'on'], {
+                danger: true,
+                confirm: '这会让 TV Guard 开始实际控制这台电视经过 N1 的 IPv4 流量。请确认已经完成 N1 实机兼容验收并准备好恢复方案。'
+            });
+        }
+        else {
+            enforcementAction = this.actionButton('正式控制暂不可开启', ['enforce', 'on'], {
+                disabled: true,
+                title: !s.armed ? '尚未完成管理员解锁' : '代理隔离审计未通过'
+            });
+        }
+
+        var shadow = shadowName(s.shadow_label);
+        var shadowNote = s.shadow_label === 'unknown' ?
+            '当前证据不足或样本重叠，不做推断。' :
+            '仅作为实验候选，不会自动免计时。';
+
+        var page = [
+            E('div', { 'style': 'margin-bottom:14px' }, [
+                E('h2', { 'style': 'margin-bottom:4px' }, 'TV Guard · 电视时间管理'),
+                E('div', {
+                    'class': 'description',
+                    'style': 'font-size:.95rem;line-height:1.5'
+                }, '先把日常管理做简单；网络诊断和算法实验都收在页面下方，需要时再展开。')
+            ]),
+            statusBanner,
+
+            grid([
+                metric('今日剩余', duration(s.remaining_seconds), '儿童额度剩余', true),
+                metric('当前模式', modeName, modeNote, false),
+                metric('控制状态', controlName, controlNote, false),
+                E('div', {
+                    'style': 'min-width:0;padding:14px;border:1px solid var(--border-color-medium,#ddd);' +
+                        'border-radius:10px;background:var(--background-color-high,#fafafa)'
+                }, [
+                    E('div', { 'class': 'description', 'style': 'margin-bottom:7px' }, '网络安全'),
+                    badge(isolationShort, isolationTone),
+                    E('div', {
+                        'class': 'description',
+                        'style': 'margin-top:7px;line-height:1.45'
+                    }, activityName)
+                ])
+            ], 180),
+
+            panel('今日儿童额度', '这里显示的是根据经过 N1 的联网活动估算的使用时长，不等同于真实亮屏或观看时间。', [
+                E('div', {
+                    'style': 'display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:7px'
+                }, [
+                    E('strong', {}, '已计时 ' + duration(s.used_seconds)),
+                    E('span', {}, '总额度 ' + duration(s.quota_seconds))
+                ]),
+                E('progress', {
+                    'max': '100',
+                    'value': String(quotaPercent),
+                    'style': 'width:100%;height:18px',
+                    'aria-label': '今日额度使用进度'
+                }),
+                E('div', {
+                    'style': 'display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-top:7px'
+                }, [
+                    E('span', { 'class': 'description' }, '剩余 ' + duration(s.remaining_seconds)),
+                    E('span', { 'class': 'description' }, '今日奖励 +' + minutes(s.bonus_seconds) + ' 分钟')
+                ])
+            ], 'margin-top:16px'),
+
+            panel('观看模式', '日常最常用的操作。家长模式不会消耗儿童额度；锁定是否真的断网取决于“正式控制”是否开启。', [
+                buttonRow(modeButtons),
+                s.mode === 'parent' ? E('div', {
+                    'class': 'alert-message success',
+                    'style': 'margin:12px 0 0'
+                }, '家长模式进行中 · 预计剩余 ' + duration(parentLeft)) : null
+            ]),
+
+            panel('儿童时间奖励', '奖励只增加今天的儿童额度，不改变模式；如果点错，可以撤销最近一笔奖励。', [
+                buttonRow([
+                    this.actionButton('+15 分钟', ['bonus', '15']),
+                    this.actionButton('+30 分钟', ['bonus', '30']),
+                    this.actionButton('+60 分钟', ['bonus', '60']),
+                    this.actionButton('撤销上次奖励', ['bonus', 'undo'], {
+                        disabled: Number(s.bonus_seconds || 0) <= 0,
+                        title: Number(s.bonus_seconds || 0) <= 0 ? '当前没有可撤销的奖励' : ''
+                    })
+                ])
+            ]),
+
+            panel('智能识别 · 实验', '用于验证“播放 / 暂停 / 首页 / 待机”的通用网络特征。当前结果只展示，不参与计时和封禁。', [
+                grid([
+                    metric('当前候选', shadow, shadowNote, false),
+                    metric('网络活动强度', trafficName(s.traffic_class),
+                        String(s.pps || 0) + ' PPS · ' + byteRate(s.bytes_per_second || 0), false)
+                ], 220),
+                detailBlock('手工标注与样本', [
+                    E('div', {
+                        'style': 'padding:12px;border:1px solid var(--border-color-medium,#ddd);border-radius:9px;' +
+                            'background:var(--background-color-high,#fafafa);margin-bottom:10px'
+                    }, [calTitle, calDetail, calProgress, calHint]),
+                    E('p', {
+                        'class': 'description',
+                        'style': 'line-height:1.55'
+                    }, '日常使用不需要逐个标注 App。默认选“通用采样”；具体 App 只作为算法泛化验证标签。'),
+                    buttonRow([appSelect, sceneSelect, startCalibration, stopCalibration]),
+                    detailBlock('查看最近原始样本', [samplePreview], false)
+                ], s.calibration_phase === 'running' || s.calibration_phase === 'finishing')
+            ]),
+
+            panel('正式控制', '这是高风险区域。只有管理员已解锁，而且代理隔离审计通过时，才允许开启实际网络控制。', [
+                E('div', {
+                    'style': 'display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:10px'
+                }, [
+                    badge(controlName, s.enforce ? 'warn' : 'good'),
+                    badge(isolationShort, isolationTone),
+                    badge(s.armed ? '管理员已解锁' : '管理员未解锁', s.armed ? 'warn' : 'neutral')
+                ]),
+                E('p', {
+                    'class': 'description',
+                    'style': 'line-height:1.55'
+                }, s.enforce ?
+                    '正式控制已开启。仍只覆盖实际经过 N1 的电视 IPv4 流量。' :
+                    (!s.armed ?
+                        '开发候选默认不提供页面内解锁入口，避免误触。完成实机验收后才应由管理员显式授权。' :
+                        (isolationSafe ?
+                            '隔离审计已通过，但在完成实机代理兼容验收前仍不建议开启。' :
+                            '隔离审计未通过或无法验证，因此前端和后端都会拒绝开启。'))),
+                enforcementAction
+            ]),
+
+            detailBlock('高级网络诊断', [
+                grid([
+                    metric('电视发出', '', '', false),
+                    metric('回程观测', '', '', false)
+                ], 220),
+                E('div', { 'style': 'margin-top:-88px;pointer-events:none;opacity:0' }, ''),
+                E('div', { 'style': 'display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px' }, [
+                    E('div', {
+                        'style': 'padding:12px;border:1px solid var(--border-color-medium,#ddd);border-radius:9px'
+                    }, [
+                        E('strong', {}, '电视向 N1 发包'),
+                        E('div', { 'style': 'margin-top:6px' }, trafficNodes.outgoing),
+                        E('div', { 'class': 'description', 'style': 'margin-top:4px' }, trafficNodes.outgoingProtocol)
+                    ]),
+                    E('div', {
+                        'style': 'padding:12px;border:1px solid var(--border-color-medium,#ddd);border-radius:9px'
+                    }, [
+                        E('strong', {}, '实验回程观测'),
+                        E('div', { 'style': 'margin-top:6px' }, trafficNodes.replyStatus),
+                        E('div', { 'class': 'description', 'style': 'margin-top:4px' }, [
+                            'PREROUTING：', trafficNodes.prerouting, E('br'), '本地 OUTPUT：', trafficNodes.local
+                        ])
+                    ])
+                ]),
+                E('div', {
+                    'class': isolationTone === 'bad' ? 'alert-message error' :
+                        (isolationSafe ? 'alert-message success' : 'alert-message warning'),
+                    'style': 'margin:10px 0 0;line-height:1.55'
+                }, isolationSafe ?
+                    '代理隔离审计通过：TV Guard 未发现进入 nat / mangle / filter 的自身规则。' :
+                    '代理隔离审计：' + isolationText + '。未知或异常都不会被当作安全。'),
+                E('p', {
+                    'class': 'description',
+                    'style': 'line-height:1.55'
+                }, '回程观测默认关闭，只用于实验计数；即使有数据，也不能证明电视所有流量都经过 N1。')
+            ], false),
+
+            detailBlock('最近操作记录', [
+                E('pre', {
+                    'style': [
+                        'max-height:240px',
+                        'overflow:auto',
+                        'white-space:pre-wrap',
+                        'word-break:break-word',
+                        'font-size:.85rem',
+                        'padding:10px',
+                        'border-radius:8px',
+                        'background:var(--background-color-high,#f7f7f7)'
+                    ].join(';')
+                }, events || '暂无操作记录')
+            ], false)
+        ];
+
+        this._isolationStatus = {
+            label: isolationSafe ?
+                '通过：TV Guard 规则仅位于允许的 raw 隔离范围，未发现进入 nat / mangle / filter。' :
+                (isolationTone === 'bad' ?
+                    '异常：' + isolationText + '。请勿启用实验观测或正式控制。' :
+                    '无法验证代理隔离状态：' + isolationText + '。这不等于已确认安全。'),
+            cssClass: isolationTone
+        };
+
         this.updateCalibrationUI(s);
         this.updateTrafficUI(s);
+
         if (this._calibrationPoll)
             poll.remove(this._calibrationPoll);
         this._calibrationPoll = L.bind(this.refreshCalibration, this);
         poll.add(this._calibrationPoll, 2);
+
         return E('div', {}, page);
     },
 
