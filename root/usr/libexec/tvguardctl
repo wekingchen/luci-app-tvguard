@@ -73,11 +73,11 @@ EOSTATE
 persist() {
     mkdir -p "$DIR"
     t="${STATE}.$$"
+    SAVED_EPOCH="$NOW"
+    save_runtime
     cp "$RUN" "$t"
     chmod 600 "$t"
     mv -f "$t" "$STATE"
-    SAVED_EPOCH="$NOW"
-    save_runtime
 }
 event() {
     EVENT_ID=$((EVENT_ID + 1))
@@ -178,6 +178,7 @@ rollover() {
     fi
 }
 tick() {
+    previous_blocked="$BLOCKED"
     count="$("$FW" count 2>/dev/null || echo '')"
     case "$count" in ''|*[!0-9]*) count=0;; esac
     if [ "$count" -lt "$LAST_COUNT" ]; then
@@ -208,12 +209,11 @@ tick() {
     calculate
     apply_gate
     save_runtime
-    if [ $((NOW - SAVED_EPOCH)) -ge 60 ] || [ "$BLOCKED" = 1 ]; then
+    if [ $((NOW - SAVED_EPOCH)) -ge 60 ] || [ "$BLOCKED" != "$previous_blocked" ]; then
         persist
     fi
 }
 status() {
-    calculate
     quota
     left=$((LIMIT_S - USED_S))
     [ "$left" -gt 0 ] || left=0
