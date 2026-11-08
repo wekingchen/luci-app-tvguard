@@ -6,7 +6,7 @@ IPT=/usr/sbin/iptables
 [ -x "$IPT" ] || IPT="$(command -v iptables)"
 # Single choke point: TV Guard is technically unable to select nat/mangle/filter
 # through this adapter. Proxy tools own those tables.
-raw_ipt() { raw_ipt "$@"; }
+raw_ipt() { "$IPT" -t raw "$@"; }
 RAW=TVG_RAW
 GATE=TVG_GATE
 IP="$(uci -q get tvguard.main.ip || echo 192.168.101.76)"
