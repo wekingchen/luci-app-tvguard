@@ -275,12 +275,26 @@ const updates = [
     assert.equal(page._calibrationNodes.samples.textContent, 'sample line');
     assert.match(page._calibrationNodes.title.textContent, /完成/);
 
-    // Clicking a button should dispatch the action and not throw during UI update.
+    // Household buttons must dispatch the exact product semantics.
+    const parentButton = page._overviewNodes.parentButton;
+    await parentButton.props.click();
+    const parentCalls = commands.filter(([n, args]) =>
+        n === '/usr/libexec/tvguardctl' && args[0] === 'mode' && args[1] === 'parent');
+    assert.equal(parentCalls.length, 1);
+    assert.deepEqual(parentCalls[0][1], ['mode', 'parent']);
+
+    const reward15 = page._overviewNodes.rewardButtons[0].node;
+    await reward15.props.click();
+    assert.ok(commands.some(([n, args]) =>
+        n === '/usr/libexec/tvguardctl' && args.join(' ') === 'bonus 15'));
+
+    // Calibration stop remains an independent action.
     state = {...state, ...updates[0]};
     page.updateCalibrationUI(state);
     const stopped = page._calibrationNodes.stop;
     await stopped.props.click();
-    assert.ok(commands.some(([n, args]) => n === '/usr/libexec/tvguardctl' && args.join(' ') === 'calibrate stop'));
-    assert.equal(reloads, 1);
-    console.log('PASS: LuCI hierarchy, live household state, safety summary, calibration and actions');
+    assert.ok(commands.some(([n, args]) =>
+        n === '/usr/libexec/tvguardctl' && args.join(' ') === 'calibrate stop'));
+    assert.equal(reloads, 3);
+    console.log('PASS: LuCI hierarchy, exact mode/reward commands, live state, calibration and safety summary');
 })().catch(err => { console.error(err); process.exitCode = 1; });
