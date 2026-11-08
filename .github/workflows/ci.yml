@@ -45,6 +45,8 @@ jobs:
         run: |
           set -eu
           dash tests/test-controller.sh
+      - name: Enforce proxy isolation contract
+        run: python3 tests/test-proxy-isolation.py
       - name: Exercise mock firewall3 rule lifecycle
         run: |
           set -eu
