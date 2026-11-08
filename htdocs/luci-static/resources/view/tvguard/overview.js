@@ -31,6 +31,37 @@ return view.extend({
         ]);
     },
 
+    updateTrafficUI: function(state) {
+        var n = this._trafficNodes;
+        if (!n)
+            return;
+        n.outgoing.textContent = String(state.pps || 0) + ' PPS · ' +
+            String(state.bytes_per_second || 0) + ' B/s';
+        n.outgoingProtocol.textContent = 'TCP ' + String(state.tcp_pps || 0) +
+            ' PPS · UDP ' + String(state.udp_pps || 0) + ' PPS';
+
+        var observer = String(state.reply_observer || 'unavailable');
+        if (observer === 'ready') {
+            var status = {
+                observed: '检测到回程流量',
+                no_packets: '本次采样未检测到回程包',
+                warming_up: '采样基线建立中'
+            }[state.reply_sample_status] || '等待采样';
+            n.replyStatus.textContent = status + '（路径是否完整仍未验证）';
+            n.prerouting.textContent = String(state.reply_prerouting_pps || 0) + ' PPS · ' +
+                String(state.reply_prerouting_bps || 0) + ' B/s';
+            n.local.textContent = String(state.reply_local_pps || 0) + ' PPS · ' +
+                String(state.reply_local_bps || 0) + ' B/s';
+        }
+        else {
+            n.replyStatus.textContent = observer === 'disabled' ?
+                '未启用；不影响现有电视计时。' :
+                '观测点暂不可用；不会把零流量解释为熄屏。';
+            n.prerouting.textContent = '—';
+            n.local.textContent = '—';
+        }
+    },
+
     updateCalibrationUI: function(state) {
         var n = this._calibrationNodes;
         if (!n)
@@ -84,6 +115,7 @@ return view.extend({
                 throw new Error(r.stderr || '后台状态读取失败');
             var s = JSON.parse(r.stdout);
             this.updateCalibrationUI(s);
+            this.updateTrafficUI(s);
             var n = this._calibrationNodes;
             var session = s.calibration_last_session || 'none';
             if (n && session !== 'none' && n.lastSession !== session) {
@@ -170,6 +202,14 @@ return view.extend({
             scene: sceneSelect, samples: samplePreview,
             lastSession: s.calibration_last_session || 'none'
         };
+        var trafficNodes = {
+            outgoing: E('span', {}, '读取中…'),
+            outgoingProtocol: E('span', {}, '读取中…'),
+            replyStatus: E('span', {}, '读取中…'),
+            prerouting: E('span', {}, '—'),
+            local: E('span', {}, '—')
+        };
+        this._trafficNodes = trafficNodes;
         var page = [
             E('h2', 'TV Guard · 电视时间管理'),
             E('p', { 'class': 'alert-message warning' },
@@ -208,6 +248,15 @@ return view.extend({
                 E('div', { 'style': 'display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-bottom:8px' },
                     [appSelect, sceneSelect, startCalibration, stopCalibration]),
                 samplePreview
+            ]),
+            panel('网络方向与回程观测（实验性）', [
+                E('p', [ E('strong', '电视向 N1 发包：'), trafficNodes.outgoing ]),
+                E('p', trafficNodes.outgoingProtocol),
+                E('p', [ E('strong', '回程观测状态：'), trafficNodes.replyStatus ]),
+                E('p', [ E('strong', '进入 N1、目标为电视的包：'), trafficNodes.prerouting ]),
+                E('p', [ E('strong', 'N1 本地产生、发往电视的包：'), trafficNodes.local ]),
+                E('p', { 'class': 'description' },
+                    '这两个观测点只计数，不放行、不封禁，也不影响今日额度。需要管理员单独启用，默认关闭；即使检测到回程包，也不能证明电视所有流量必经 N1。')
             ]),
             panel('今日儿童额度', [
                 E('p', [ E('strong', '已计时：'), minutes(s.used_seconds) + ' 分钟' ]),
@@ -250,6 +299,7 @@ return view.extend({
             ])
         ];
         this.updateCalibrationUI(s);
+        this.updateTrafficUI(s);
         if (this._calibrationPoll)
             poll.remove(this._calibrationPoll);
         this._calibrationPoll = L.bind(this.refreshCalibration, this);
