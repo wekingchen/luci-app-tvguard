@@ -2,6 +2,7 @@
 'require view';
 'require fs';
 'require ui';
+'require poll';
 
 function minutes(seconds) {
     return Math.ceil(Number(seconds || 0) / 60);
@@ -28,6 +29,75 @@ return view.extend({
                 return r.stdout || '';
             })
         ]);
+    },
+
+    updateCalibrationUI: function(state) {
+        var n = this._calibrationNodes;
+        if (!n)
+            return;
+        var phase = String(state.calibration_phase || 'idle');
+        var active = phase === 'running' || phase === 'finishing';
+        var elapsed = Math.max(0, Math.min(120, Number(state.calibration_elapsed_seconds) || 0));
+        var remaining = Math.max(0, Number(state.calibration_remaining_seconds) || 0);
+        var count = Math.max(0, Number(state.calibration_samples) || 0);
+        var progress = Math.max(0, Math.min(100, Number(state.calibration_percent) || 0));
+
+        n.bar.value = active ? progress : (phase === 'completed' ? 100 : 0);
+        n.bar.setAttribute('aria-valuenow', String(n.bar.value));
+        n.start.disabled = active;
+        n.stop.disabled = !active;
+        n.selection.disabled = active;
+        n.scene.disabled = active;
+        n.status.style.display = '';
+        n.bar.style.display = active || phase === 'completed' ? '' : 'none';
+
+        if (phase === 'running') {
+            n.title.textContent = '正在采样 · ' + state.calibration_app + ' / ' + state.calibration_label;
+            n.detail.textContent = '已进行 ' + elapsed + ' / 120 秒 · 还剩 ' + remaining +
+                ' 秒 · 已记录 ' + count + ' 条样本（每约 10 秒一条）';
+            n.hint.textContent = '正在自动更新，无需停留或刷新页面；保持电视状态不变。';
+        }
+        else if (phase === 'finishing') {
+            n.title.textContent = '采样时间已到，正在汇总…';
+            n.detail.textContent = '已记录 ' + count + ' 条样本，等待后台下一次采样完成结算。';
+            n.hint.textContent = '正常情况下几秒后自动显示结果，无需重复点击开始。';
+        }
+        else if (phase === 'completed' || phase === 'stopped' || phase === 'interrupted') {
+            n.title.textContent = phase === 'completed' ? '本次采样已完成' :
+                (phase === 'stopped' ? '本次采样已手动停止' : '采样被中断');
+            n.detail.textContent = '应用/场景：' + state.calibration_last_app + ' / ' +
+                state.calibration_last_label + ' · 已保存 ' +
+                String(state.calibration_last_samples || 0) + ' 条样本';
+            n.hint.textContent = phase === 'completed' ?
+                '采样数据已保存，可继续选择其他场景。一次标注不代表已能准确识别。' :
+                '本次结果已记录，后续可重新开始校准。';
+        }
+        else {
+            n.title.textContent = '等待开始采样';
+            n.detail.textContent = '选择电视应用与当前场景，点击开始后将自动显示进度。';
+            n.hint.textContent = '校准仅记录网络特征，不自动暂停计时，也不会封禁电视。';
+        }
+    },
+
+    refreshCalibration: function() {
+        return fs.exec('/usr/libexec/tvguard-status', ['status']).then(L.bind(function(r) {
+            if (r.code)
+                throw new Error(r.stderr || '后台状态读取失败');
+            var s = JSON.parse(r.stdout);
+            this.updateCalibrationUI(s);
+            var n = this._calibrationNodes;
+            var session = s.calibration_last_session || 'none';
+            if (n && session !== 'none' && n.lastSession !== session) {
+                n.lastSession = session;
+                return fs.exec('/usr/libexec/tvguard-status', ['calibration']).then(function(result) {
+                    if (!result.code)
+                        n.samples.textContent = (result.stdout || '').split('\n').slice(-12).join('\n') || '暂无标注样本';
+                });
+            }
+        }, this)).catch(L.bind(function(err) {
+            if (this._calibrationNodes)
+                this._calibrationNodes.hint.textContent = '实时更新暂时失败，请检查 N1 连接；已有样本不会因此丢失。';
+        }, this));
     },
 
     handleAction: function(args, warning, ev) {
@@ -84,6 +154,22 @@ return view.extend({
                     '”。接下来记录 120 秒，期间不要操作遥控器。');
             })
         }, '开始 120 秒标注');
+        var stopCalibration = this.actionButton('停止校准', ['calibrate', 'stop'], '提前结束本次采样吗？');
+        var calTitle = E('strong', {}, '等待开始采样');
+        var calDetail = E('div', { 'style': 'margin:8px 0' }, '');
+        var calProgress = E('progress', { 'max': '100', 'value': '0',
+            'style': 'width:100%;height:18px;display:none', 'role': 'progressbar',
+            'aria-valuemin': '0', 'aria-valuemax': '100', 'aria-valuenow': '0' });
+        var calHint = E('p', { 'class': 'description', 'style': 'margin-top:8px' }, '');
+        var samplePreview = E('pre', {
+            'style': 'max-height:160px;overflow:auto;white-space:pre-wrap;word-break:break-word'
+        }, (samples || '').split('\n').slice(-12).join('\n') || '暂无标注样本');
+        this._calibrationNodes = {
+            title: calTitle, detail: calDetail, bar: calProgress, hint: calHint,
+            start: startCalibration, stop: stopCalibration, selection: appSelect,
+            scene: sceneSelect, samples: samplePreview,
+            lastSession: s.calibration_last_session || 'none'
+        };
         var page = [
             E('h2', 'TV Guard · 电视时间管理'),
             E('p', { 'class': 'alert-message warning' },
@@ -113,17 +199,13 @@ return view.extend({
                 ]),
                 E('p', { 'class':'description' },
                     '候选识别必须积累多次独立标注样本，且目前仅显示诊断结果，不会改变儿童计时或封禁策略。'),
-                E('p', [ E('strong', '当前校准：'),
-                    s.calibration_label !== 'none' ?
-                    (String(s.calibration_app || 'general') + ' · ' +
-                     s.calibration_label + '，结束于 ' +
-                     new Date(Number(s.calibration_until) * 1000).toLocaleTimeString()) : '未开启' ]),
+                E('div', { 'style': 'padding:12px;margin:12px 0;border:1px solid #bbb;border-radius:8px' }, [
+                    calTitle, calDetail, calProgress, calHint
+                ]),
                 E('p', '先在电视上打开并保持对应状态；请选择 App 和状态，手工标注 120 秒。只是采集样本，不会自动免计时。'),
                 E('div', { 'style': 'display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-bottom:8px' },
-                    [appSelect, sceneSelect, startCalibration]),
-                this.actionButton('停止校准', ['calibrate', 'stop'], '结束本次校准吗？'),
-                E('pre', { 'style': 'max-height:160px;overflow:auto;white-space:pre-wrap;word-break:break-word' },
-                  (samples || '').split('\n').slice(-12).join('\n') || '暂无标注样本')
+                    [appSelect, sceneSelect, startCalibration, stopCalibration]),
+                samplePreview
             ]),
             panel('今日儿童额度', [
                 E('p', [ E('strong', '已计时：'), minutes(s.used_seconds) + ' 分钟' ]),
@@ -165,6 +247,11 @@ return view.extend({
                 }, events || '尚无操作记录')
             ])
         ];
+        this.updateCalibrationUI(s);
+        if (this._calibrationPoll)
+            poll.remove(this._calibrationPoll);
+        this._calibrationPoll = L.bind(this.refreshCalibration, this);
+        poll.add(this._calibrationPoll, 2);
         return E('div', {}, page);
     },
 
