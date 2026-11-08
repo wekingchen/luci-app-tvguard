@@ -56,6 +56,7 @@ for name in (
     "usr/libexec/tvguardd",
     "usr/libexec/tvguard-fw",
     "usr/libexec/tvguard-isolation-audit",
+    "usr/libexec/tvguard-compat-check",
     "usr/libexec/tvguard-shadow",
     "www/luci-static/resources/view/tvguard/overview.js",
 ):
