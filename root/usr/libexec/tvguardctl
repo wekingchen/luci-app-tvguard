@@ -1,0 +1,310 @@
+#!/bin/sh
+# TV Guard controller. All mutable commands are serialized and validated.
+set -eu
+umask 077
+
+FW=/usr/libexec/tvguard-fw
+RUN=/var/run/tvguard.state
+DIR=/etc/tvguard
+STATE="$DIR/state"
+EVENTS="$DIR/events.log"
+LOCK=/var/run/tvguard.lock
+
+config() {
+    ENFORCE="$(uci -q get tvguard.main.enforce || echo 0)"
+    WEEKDAY="$(uci -q get tvguard.main.weekday_minutes || echo 60)"
+    WEEKEND="$(uci -q get tvguard.main.weekend_minutes || echo 120)"
+    BONUS_MAX="$(uci -q get tvguard.main.max_bonus_minutes || echo 120)"
+    SILENCE="$(uci -q get tvguard.main.silence_seconds || echo 60)"
+    ALLOW_START="$(uci -q get tvguard.main.allow_start || echo 08:00)"
+    ALLOW_END="$(uci -q get tvguard.main.allow_end || echo 21:00)"
+    case "$ENFORCE" in 0|1) :;; *) ENFORCE=0;; esac
+    for n in WEEKDAY WEEKEND BONUS_MAX SILENCE; do
+        eval "v=\$$n"
+        case "$v" in ''|*[!0-9]*) echo "invalid numeric configuration: $n" >&2; exit 2;; esac
+    done
+}
+defaults() {
+    TODAY="$(date +%Y-%m-%d)"
+    MODE=child
+    PARENT_UNTIL=0
+    USED_S=0
+    BONUS_S=0
+    LAST_BONUS_S=0
+    LAST_BONUS_ID=0
+    EVENT_ID=0
+    LAST_EPOCH=0
+    LAST_PACKET_EPOCH=0
+    LAST_COUNT=0
+    SAVED_EPOCH=0
+    ACTIVITY=unknown
+    BLOCKED=0
+}
+load_state() {
+    defaults
+    # Only root-written files; never load untrusted input from a web request.
+    if [ -r "$RUN" ]; then
+        . "$RUN"
+    elif [ -r "$STATE" ]; then
+        . "$STATE"
+    fi
+    case "$MODE" in child|parent|locked) :;; *) MODE=locked;; esac
+}
+save_runtime() {
+    temp="${RUN}.$$"
+    cat > "$temp" <<EOSTATE
+TODAY=$TODAY
+MODE=$MODE
+PARENT_UNTIL=$PARENT_UNTIL
+USED_S=$USED_S
+BONUS_S=$BONUS_S
+LAST_BONUS_S=$LAST_BONUS_S
+LAST_BONUS_ID=$LAST_BONUS_ID
+EVENT_ID=$EVENT_ID
+LAST_EPOCH=$LAST_EPOCH
+LAST_PACKET_EPOCH=$LAST_PACKET_EPOCH
+LAST_COUNT=$LAST_COUNT
+SAVED_EPOCH=$SAVED_EPOCH
+ACTIVITY=$ACTIVITY
+BLOCKED=$BLOCKED
+EOSTATE
+    mv -f "$temp" "$RUN"
+}
+persist() {
+    mkdir -p "$DIR"
+    t="${STATE}.$$"
+    cp "$RUN" "$t"
+    chmod 600 "$t"
+    mv -f "$t" "$STATE"
+    SAVED_EPOCH="$NOW"
+    save_runtime
+}
+event() {
+    EVENT_ID=$((EVENT_ID + 1))
+    mkdir -p "$DIR"
+    printf '%s|%s|%s|%s\n' "$NOW" "$EVENT_ID" "$1" "$2" >> "$EVENTS"
+    if [ "$(wc -c < "$EVENTS")" -gt 262144 ]; then
+        tail -n 1500 "$EVENTS" > "${EVENTS}.$$"
+        mv -f "${EVENTS}.$$" "$EVENTS"
+    fi
+}
+lock() {
+    i=0
+    until mkdir "$LOCK" 2>/dev/null; do
+        if [ -r "$LOCK/pid" ]; then
+            pid="$(cat "$LOCK/pid" 2>/dev/null || echo '')"
+            case "$pid" in
+                ''|*[!0-9]*) : ;;
+                *) if ! kill -0 "$pid" 2>/dev/null; then
+                       rm -f "$LOCK/pid"
+                       rmdir "$LOCK" 2>/dev/null || :
+                   fi ;;
+            esac
+        fi
+        i=$((i + 1))
+        [ "$i" -lt 50 ] || { echo "tvguard lock busy" >&2; exit 1; }
+        sleep 0.1
+    done
+    echo "$$" > "$LOCK/pid"
+    trap unlock EXIT
+    trap 'exit 130' INT
+    trap 'exit 143' TERM
+}
+unlock() {
+    rm -f "$LOCK/pid"
+    rmdir "$LOCK" 2>/dev/null || :
+}
+quota() {
+    weekday="$(date +%u)"
+    if [ "$weekday" -ge 6 ]; then
+        LIMIT_S=$((WEEKEND * 60 + BONUS_S))
+    else
+        LIMIT_S=$((WEEKDAY * 60 + BONUS_S))
+    fi
+}
+within_window() {
+    # Input is admin-managed UCI. Reject unexpected formats safely.
+    case "$ALLOW_START:$ALLOW_END" in *[!0-9:]* ) return 1;; esac
+    a="$(printf '%s' "$ALLOW_START" | awk -F: 'NF==2 && $1<24 && $2<60 {print $1*60+$2}')"
+    b="$(printf '%s' "$ALLOW_END" | awk -F: 'NF==2 && $1<24 && $2<60 {print $1*60+$2}')"
+    [ -n "$a" ] && [ -n "$b" ] || return 1
+    current="$(date +%H%M)"
+    hh="${current%??}"
+    mm="${current#??}"
+    current=$((10#$hh * 60 + 10#$mm))
+    # Empty window means unrestricted clock time, not zero allowed time.
+    [ "$a" -eq "$b" ] && return 0
+    if [ "$a" -lt "$b" ]; then
+        [ "$current" -ge "$a" ] && [ "$current" -lt "$b" ]
+    else
+        [ "$current" -ge "$a" ] || [ "$current" -lt "$b" ]
+    fi
+}
+calculate() {
+    quota
+    if [ "$MODE" = parent ] && [ "$NOW" -ge "$PARENT_UNTIL" ]; then
+        MODE=child
+        PARENT_UNTIL=0
+        event parent_expired "自动恢复儿童模式"
+    fi
+    case "$MODE" in
+        locked) BLOCKED=1 ;;
+        parent) BLOCKED=0 ;;
+        child)
+            BLOCKED=0
+            [ "$USED_S" -lt "$LIMIT_S" ] || BLOCKED=1
+            if ! within_window; then BLOCKED=1; fi
+            ;;
+    esac
+}
+apply_gate() {
+    if [ "$ENFORCE" = 1 ] && [ "$BLOCKED" = 1 ]; then
+        "$FW" gate 1
+    else
+        "$FW" gate 0
+    fi
+}
+rollover() {
+    today="$(date +%Y-%m-%d)"
+    if [ "$TODAY" != "$today" ]; then
+        TODAY="$today"
+        USED_S=0
+        BONUS_S=0
+        LAST_BONUS_S=0
+        LAST_BONUS_ID=0
+        LAST_EPOCH="$NOW"
+        ACTIVITY=unknown
+        event daily_reset "当天额度及奖励已重置"
+    fi
+}
+tick() {
+    count="$("$FW" count 2>/dev/null || echo '')"
+    case "$count" in ''|*[!0-9]*) count=0;; esac
+    if [ "$count" -lt "$LAST_COUNT" ]; then
+        # Firewall was reloaded; do not infer a counter decrease as silence.
+        LAST_COUNT="$count"
+    fi
+    delta=$((count - LAST_COUNT))
+    LAST_COUNT="$count"
+    if [ "$delta" -gt 0 ]; then
+        LAST_PACKET_EPOCH="$NOW"
+    fi
+    if [ "$LAST_PACKET_EPOCH" -gt 0 ] &&
+       [ $((NOW - LAST_PACKET_EPOCH)) -lt "$SILENCE" ]; then
+        ACTIVITY=active
+    else
+        ACTIVITY=silent
+    fi
+    dt=$((NOW - LAST_EPOCH))
+    [ "$dt" -ge 0 ] || dt=0
+    [ "$dt" -le 20 ] || dt=20
+    # A blocked device still sends packets into RAW: never charge blocked traffic.
+    if [ "$MODE" = child ] && [ "$ACTIVITY" = active ]; then
+        if [ "$ENFORCE" != 1 ] || [ "$BLOCKED" != 1 ]; then
+            USED_S=$((USED_S + dt))
+        fi
+    fi
+    LAST_EPOCH="$NOW"
+    calculate
+    apply_gate
+    save_runtime
+    if [ $((NOW - SAVED_EPOCH)) -ge 60 ] || [ "$BLOCKED" = 1 ]; then
+        persist
+    fi
+}
+status() {
+    calculate
+    quota
+    left=$((LIMIT_S - USED_S))
+    [ "$left" -gt 0 ] || left=0
+    actual=0
+    [ "$ENFORCE" = 1 ] && [ "$BLOCKED" = 1 ] && actual=1
+    printf '{"date":"%s","mode":"%s","activity":"%s","enforce":%s,"would_block":%s,"blocked":%s,"used_seconds":%s,"quota_seconds":%s,"bonus_seconds":%s,"remaining_seconds":%s,"parent_until":%s,"last_packet_epoch":%s,"packet_counter":%s}\n' \
+        "$TODAY" "$MODE" "$ACTIVITY" "$ENFORCE" "$BLOCKED" "$actual" \
+        "$USED_S" "$LIMIT_S" "$BONUS_S" "$left" "$PARENT_UNTIL" \
+        "$LAST_PACKET_EPOCH" "$LAST_COUNT"
+}
+mkdir -p /var/run "$DIR"
+config
+case "${1:-}" in
+    status)
+        load_state
+        NOW="$(date +%s)"
+        status
+        exit 0 ;;
+    log)
+        tail -n 80 "$EVENTS" 2>/dev/null || :
+        exit 0 ;;
+    tick|mode|bonus|enforce|sync)
+        lock
+        load_state
+        NOW="$(date +%s)"
+        rollover
+        ;;
+    *) echo "usage: tvguardctl {status|log|tick|sync|mode child|mode parent 30/60/120|mode locked|bonus 15/30/60|bonus undo|enforce on/off}" >&2; exit 2 ;;
+esac
+
+case "$1" in
+    tick)
+        "$FW" sync
+        tick
+        ;;
+    sync)
+        calculate
+        save_runtime
+        persist
+        "$FW" sync
+        ;;
+    mode)
+        case "${2:-}" in
+            child) MODE=child; PARENT_UNTIL=0 ;;
+            locked) MODE=locked; PARENT_UNTIL=0 ;;
+            parent)
+                case "${3:-}" in 30|60|120) :;; *) echo "invalid parent duration" >&2; exit 2;; esac
+                MODE=parent
+                PARENT_UNTIL=$((NOW + $3 * 60))
+                ;;
+            *) echo "invalid mode" >&2; exit 2 ;;
+        esac
+        event mode "切换为 $MODE"
+        calculate
+        save_runtime
+        persist
+        apply_gate
+        ;;
+    bonus)
+        case "${2:-}" in
+            15|30|60)
+                n=$(($2 * 60))
+                [ $((BONUS_S + n)) -le $((BONUS_MAX * 60)) ] ||
+                    { echo "daily bonus cap reached" >&2; exit 2; }
+                BONUS_S=$((BONUS_S + n))
+                LAST_BONUS_S="$n"
+                event reward "+$2 分钟"
+                LAST_BONUS_ID="$EVENT_ID"
+                ;;
+            undo)
+                [ "$LAST_BONUS_S" -gt 0 ] || { echo "nothing to undo" >&2; exit 2; }
+                BONUS_S=$((BONUS_S - LAST_BONUS_S))
+                event reward_revoke "撤销奖励 #$LAST_BONUS_ID"
+                LAST_BONUS_S=0
+                LAST_BONUS_ID=0
+                ;;
+            *) echo "invalid bonus" >&2; exit 2 ;;
+        esac
+        calculate
+        save_runtime
+        persist
+        apply_gate
+        ;;
+    enforce)
+        case "${2:-}" in on) ENFORCE=1;; off) ENFORCE=0;; *) exit 2;; esac
+        uci set tvguard.main.enforce="$ENFORCE"
+        uci commit tvguard
+        event enforcement "enforce=$ENFORCE"
+        calculate
+        save_runtime
+        persist
+        apply_gate
+        ;;
+esac
