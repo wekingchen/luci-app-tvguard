@@ -34,21 +34,16 @@ from pathlib import Path
 import sys
 src,dst,tmp=sys.argv[1:]
 text=Path(src).read_text()
-marker='case "${1:-}" in'
-idx=text.find(marker)
-assert idx > 0, "dispatch marker missing"
-prefix=text[:idx]
-prefix=prefix.replace(
-    'PATH=/usr/sbin:/usr/bin:/sbin:/bin',
-    'PATH='+tmp+'/bin:/usr/bin:/bin',
-    1
-)
-prefix=prefix.replace(
+start=text.index('policy() {')
+end=text.index('\ncase "${1:-}" in', start)
+policy=text[start:end]
+policy=policy.replace(
     'FILE=/etc/tvguard/state',
     'FILE='+tmp+'/state',
     1
 )
-Path(dst).write_text(prefix + '\npolicy\n')
+script='#!/bin/sh\nset -eu\nPATH='+tmp+'/bin:/usr/bin:/bin\nexport PATH\n'+policy+'\npolicy\n'
+Path(dst).write_text(script)
 PY
 chmod +x "$POLICY"
 
