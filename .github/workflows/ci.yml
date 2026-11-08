@@ -63,6 +63,8 @@ jobs:
         run: dash tests/test-firewall-include.sh
       - name: Exercise procd service lifecycle
         run: dash tests/test-init-service.sh
+      - name: Exercise daemon tick loop behavior
+        run: dash tests/test-daemon.sh
       - name: Exercise one-shot proxy compatibility checker
         run: dash tests/test-compat-check.sh
       - name: Exercise firewall reload policy unit tests
