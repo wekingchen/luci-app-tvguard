@@ -3,12 +3,15 @@
 set -eu
 umask 077
 
-FW="${TVGUARD_FW:-/usr/libexec/tvguard-fw}"
-RUN="${TVGUARD_RUN:-/var/run/tvguard.state}"
-DIR="${TVGUARD_DIR:-/etc/tvguard}"
+# No environment-variable path overrides: rpcd file.exec accepts caller env.
+PATH=/usr/sbin:/usr/bin:/sbin:/bin
+export PATH
+FW=/usr/libexec/tvguard-fw
+RUN=/var/run/tvguard.state
+DIR=/etc/tvguard
 STATE="$DIR/state"
 EVENTS="$DIR/events.log"
-LOCK="${TVGUARD_LOCK:-/var/run/tvguard.lock}"
+LOCK=/var/run/tvguard.lock
 
 config() {
     ENFORCE="$(uci -q get tvguard.main.enforce || echo 0)"
