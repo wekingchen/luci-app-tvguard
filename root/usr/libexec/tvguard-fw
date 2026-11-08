@@ -143,8 +143,14 @@ policy() {
     case "$MODE" in
         locked) echo 1 ;;
         parent)
-            case "$UNTIL" in ''|*[!0-9]*) echo 1;; *)
-                [ "$(date +%s)" -ge "$UNTIL" ] && echo 1 || echo 0
+            case "$UNTIL" in
+                ''|*[!0-9]*) echo 1 ;;
+                0) echo 0 ;;
+                *)
+                    # Positive values exist only for one-time migration of
+                    # pre-v0.1.7 timed parent sessions.
+                    [ "$(date +%s)" -ge "$UNTIL" ] && echo 1 || echo 0
+                    ;;
             esac ;;
         child)
             case "$BLOCKED" in 0|1) echo "$BLOCKED";; *) echo 1;; esac ;;
