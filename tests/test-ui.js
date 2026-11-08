@@ -23,7 +23,9 @@ let commands = [];
 let eventLog = [
     '1700000000|1|mode|切换为 parent',
     '1700000060|2|reward|+30 分钟',
-    '1700000120|3|enforcement|enforce=0'
+    '1700000120|3|enforcement|enforce=0',
+    '1700000180|4|calibration_start|手工标注 general/playing：120 秒',
+    '1700000300|5|calibration_end|general/playing: 11 samples (completed)'
 ].join('\n');
 const mockFs = {
     exec: (name, args) => {
@@ -99,15 +101,27 @@ const updates = [
     assert.equal(polls.size, 1);
     assert.equal(page._calibrationNodes.start.disabled, false);
     assert.equal(page._calibrationNodes.stop.disabled, true);
+    assert.equal(page._calibrationNodes.start.props.type, 'button');
+    assert.equal(page._calibrationNodes.stop.props.type, 'button');
+    assert.equal(page._calibrationNodes.selection.props['aria-label'], '标注应用标签');
+    assert.equal(page._calibrationNodes.scene.props['aria-label'], '标注电视场景');
+    assert.equal(page._overviewNodes.childButton.props.type, 'button');
+    assert.equal(page._overviewNodes.lockButton.props.type, 'button');
     assert.equal(page._uiSummary.mode, '儿童模式');
     assert.equal(page._uiSummary.control, '观察模式');
     assert.equal(page._uiSummary.isolationSafe, true);
     assert.equal(page._uiSummary.canEnableEnforcement, false);
-    assert.equal(page._eventSummary.length, 3);
-    assert.equal(page._eventSummary[0].title, '控制策略');
-    assert.match(page._eventSummary[0].note, /观察模式/);
-    assert.equal(page._eventSummary[2].title, '模式切换');
-    assert.match(page._eventSummary[2].note, /家长模式/);
+    assert.equal(page._eventSummary.length, 5);
+    assert.equal(page._eventSummary[0].title, '标注结束');
+    assert.match(page._eventSummary[0].note, /通用采样/);
+    assert.match(page._eventSummary[0].note, /正常播放/);
+    assert.match(page._eventSummary[0].note, /11 条样本/);
+    assert.equal(page._eventSummary[1].title, '开始标注');
+    assert.match(page._eventSummary[1].note, /记录 120 秒/);
+    assert.equal(page._eventSummary[2].title, '控制策略');
+    assert.match(page._eventSummary[2].note, /观察模式/);
+    assert.equal(page._eventSummary[4].title, '模式切换');
+    assert.match(page._eventSummary[4].note, /家长模式/);
     assert.match(page._isolationStatus.label, /通过/);
     assert.match(page._isolationStatus.label, /nat \/ mangle \/ filter/);
 
