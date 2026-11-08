@@ -25,7 +25,9 @@ let eventLog = [
     '1700000060|2|reward|+30 分钟',
     '1700000120|3|enforcement|enforce=0',
     '1700000180|4|calibration_start|手工标注 general/playing：120 秒',
-    '1700000300|5|calibration_end|general/playing: 11 samples (completed)'
+    '1700000300|5|calibration_end|general/playing: 11 samples (completed)',
+    '1700000360|6|reward_revoke|撤销奖励 #22',
+    '1700000420|7|reward_revoke|-15 分钟'
 ].join('\n');
 const mockFs = {
     exec: (name, args) => {
@@ -121,17 +123,21 @@ const updates = [
     assert.equal(page._uiSummary.control, '观察模式');
     assert.equal(page._uiSummary.isolationSafe, true);
     assert.equal(page._uiSummary.canEnableEnforcement, false);
-    assert.equal(page._eventSummary.length, 5);
-    assert.equal(page._eventSummary[0].title, '标注结束');
+    assert.equal(page._eventSummary.length, 7);
+    assert.equal(page._eventSummary[0].title, '撤销奖励');
+    assert.equal(page._eventSummary[0].note, '已撤销 15 分钟奖励');
+    assert.equal(page._eventSummary[1].title, '撤销奖励');
+    assert.equal(page._eventSummary[1].note, '已撤销最近一笔奖励');
+    assert.equal(page._eventSummary[2].title, '标注结束');
     assert.match(page._eventSummary[0].note, /通用采样/);
     assert.match(page._eventSummary[0].note, /正常播放/);
     assert.match(page._eventSummary[0].note, /11 条样本/);
-    assert.equal(page._eventSummary[1].title, '开始标注');
-    assert.match(page._eventSummary[1].note, /记录 120 秒/);
-    assert.equal(page._eventSummary[2].title, '控制策略');
-    assert.match(page._eventSummary[2].note, /观察模式/);
-    assert.equal(page._eventSummary[4].title, '模式切换');
-    assert.match(page._eventSummary[4].note, /家长模式/);
+    assert.equal(page._eventSummary[3].title, '开始标注');
+    assert.match(page._eventSummary[3].note, /记录 120 秒/);
+    assert.equal(page._eventSummary[4].title, '控制策略');
+    assert.match(page._eventSummary[4].note, /观察模式/);
+    assert.equal(page._eventSummary[6].title, '模式切换');
+    assert.match(page._eventSummary[6].note, /家长模式/);
     assert.match(page._isolationStatus.label, /通过/);
     assert.match(page._isolationStatus.label, /nat \/ mangle \/ filter/);
 
