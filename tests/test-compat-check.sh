@@ -13,9 +13,9 @@ case "$2" in
     tvguard.main.enforce) echo "${TVG_COMPAT_ENFORCE:-0}" ;;
     tvguard.main.allow_enforcement) echo "${TVG_COMPAT_ARMED:-0}" ;;
     tvguard.main.observe_reply) echo "${TVG_COMPAT_OBSERVE:-0}" ;;
-    firewall.tvguard) echo include ;;
-    firewall.tvguard.type) echo script ;;
-    firewall.tvguard.path) echo /usr/libexec/tvguard-firewall-include ;;
+    firewall.tvguard) echo "${TVG_COMPAT_INCLUDE_TYPE:-include}" ;;
+    firewall.tvguard.type) echo "${TVG_COMPAT_INCLUDE_MODE:-script}" ;;
+    firewall.tvguard.path) echo "${TVG_COMPAT_INCLUDE_PATH:-/usr/libexec/tvguard-firewall-include}" ;;
     *) exit 1 ;;
 esac
 SH
@@ -30,6 +30,7 @@ if [ "$1" = -w ] && [ "$2" = 2 ]; then shift 2; fi
 [ "$1" = -t ] || exit 2
 table="$2"
 [ "$3" = -S ] || exit 2
+[ "${TVG_COMPAT_FAIL_TABLE:-none}" != "$table" ] || exit 4
 cat "$TVG_COMPAT_TABLE_DIR/$table"
 SH
 
@@ -49,6 +50,7 @@ cat > "$TMP/ctl" <<'SH'
 #!/bin/sh
 [ "$1" = sync ] || exit 2
 case "${TVG_COMPAT_MUTATE:-tvg_only}" in
+    fail) exit 7 ;;
     tvg_only)
         printf '%s\n' '-N TVG_TEST_ONLY' >> "$TVG_COMPAT_TABLE_DIR/raw"
         ;;
@@ -104,6 +106,10 @@ export TVG_COMPAT_ARMED=0
 export TVG_COMPAT_OBSERVE=0
 export TVG_COMPAT_AUDIT=ok
 export TVG_COMPAT_GATE=allowed
+export TVG_COMPAT_FAIL_TABLE=none
+export TVG_COMPAT_INCLUDE_TYPE=include
+export TVG_COMPAT_INCLUDE_MODE=script
+export TVG_COMPAT_INCLUDE_PATH=/usr/libexec/tvguard-firewall-include
 
 # TVG-only changes are filtered from snapshots, so proxy rules remain identical.
 export TVG_COMPAT_MUTATE=tvg_only
@@ -138,6 +144,50 @@ if sh "$CHECK" > "$TMP/fail-mode" 2>&1; then
     echo "FAIL: compatibility check ran while enforcement was enabled" >&2
     exit 1
 fi
-grep -q '^reason=enforce_must_be_0$' "$TMP/fail-mode"
+grep -q '^reason=enforce_must_be_0
+ "$TMP/fail-mode"
+export TVG_COMPAT_ENFORCE=0
 
-echo "PASS: compatibility checker ignores TVG-only changes, detects non-TVG changes and requires safe switches"
+export TVG_COMPAT_ARMED=1
+if sh "$CHECK" > "$TMP/fail-armed" 2>&1; then exit 1; fi
+grep -q '^reason=allow_enforcement_must_be_0
+ "$TMP/fail-armed"
+export TVG_COMPAT_ARMED=0
+
+export TVG_COMPAT_OBSERVE=1
+if sh "$CHECK" > "$TMP/fail-observe" 2>&1; then exit 1; fi
+grep -q '^reason=observe_reply_must_be_0
+ "$TMP/fail-observe"
+export TVG_COMPAT_OBSERVE=0
+
+export TVG_COMPAT_AUDIT='unsafe:test'
+if sh "$CHECK" > "$TMP/fail-audit" 2>&1; then exit 1; fi
+grep -q '^reason=isolation_before_unsafe:test
+ "$TMP/fail-audit"
+export TVG_COMPAT_AUDIT=ok
+
+export TVG_COMPAT_GATE=blocked
+if sh "$CHECK" > "$TMP/fail-gate" 2>&1; then exit 1; fi
+grep -q '^reason=gate_before_blocked
+ "$TMP/fail-gate"
+export TVG_COMPAT_GATE=allowed
+
+export TVG_COMPAT_FAIL_TABLE=mangle
+if sh "$CHECK" > "$TMP/fail-table" 2>&1; then exit 1; fi
+grep -q '^reason=snapshot_before_unavailable
+ "$TMP/fail-table"
+export TVG_COMPAT_FAIL_TABLE=none
+
+export TVG_COMPAT_MUTATE=fail
+if sh "$CHECK" > "$TMP/fail-sync" 2>&1; then exit 1; fi
+grep -q '^reason=tvguard_sync_failed
+ "$TMP/fail-sync"
+export TVG_COMPAT_MUTATE=none
+
+export TVG_COMPAT_INCLUDE_PATH=/usr/libexec/foreign-firewall-include
+if sh "$CHECK" > "$TMP/fail-include" 2>&1; then exit 1; fi
+grep -q '^reason=firewall_include_path_unexpected
+ "$TMP/fail-include"
+export TVG_COMPAT_INCLUDE_PATH=/usr/libexec/tvguard-firewall-include
+
+echo "PASS: compatibility checker validates safe switches, audit/gate, snapshots, sync and firewall include ownership"
