@@ -49,6 +49,23 @@ SSR 透明代理或正常路由
 - 计数器归零（防火墙重载）不被解释为电视熄屏。
 - **FW3 的旧规则若仍在**，新页面显示“允许”也可能无法联网；安装前先核查。
 
+## 可选回程观测（当前开发分支，默认不启用）
+
+`tvguard.main.observe_reply=0` 默认关闭；保持以前的计时、RAW 门控、SSR/PassWall/OpenClash 配置不变。**尚未在真实 N1 验证，不能直接宣称已支持完整的双向流量统计。**
+
+经过人工授权后，`tvguard-fw sync` 在 `raw` 中配置两条仅带匹配和注释、**没有跳转目标（无 `-j`）**的计数规则：
+
+| 观测点 | 匹配 | 适用情况 |
+|---|---|---|
+| `TVG_RX_LAN` | `PREROUTING -i br-lan -d 电视IP` | 到达 N1 且目标为电视的 IPv4 包 |
+| `TVG_RX_LOCAL` | `OUTPUT -o br-lan -d 电视IP` | N1 自己（含本地代理）产生、发往电视的 IPv4 包 |
+
+- 不修改已有的 `TVG_GATE`、DROP/RETURN、MARK、路由表，也不使用 `tcpdump` 或 `conntrack`。两规则只计数，匹配结束后仍按原防火墙规则继续处理。
+- `TVG_RX_LAN` 与 `TVG_RX_LOCAL` 不是“完整下载流量”的保证。经硬件卸载、旁路、桥接直达主路由、IPv6 或不同路径到达的回包可能没被看到。
+- 连续差值独立计时，计数器首次出现、FW3 清空后、异常回跳时不产生虚假瞬时速率；缺少规则显示 unavailable，不解读为电视熄屏。
+- 状态字段 `reply_prerouting_pps/bps` 和 `reply_local_pps/bps` 仅用于诊断，`reply_coverage` 恒为 `unverified`；**永不用于 `USED_S`、免计时或防火墙判决**。
+- 仅删除自己精确匹配的注释规则，不清空 PREROUTING 或 OUTPUT。旧版本没有 `observe_reply` 选项时视作关闭，升级后也不会自动启用。
+
 ## 控制、计时与日志
 
 - `/etc/config/tvguard` 保存可配置限额、时段和观测参数；`/etc/tvguard/state` 保留额度状态。
@@ -82,4 +99,5 @@ SSR 透明代理或正常路由
 - 电视 IP 或进入接口变更时，当前门控暂不自动撤销旧 hook；此版本应保持这两项固定。
 - 内存丢失后的磁盘快照最多落后约 60 秒；启动时应核查额度恢复。
 - 防火墙规则变更会影响全局转发；在真实 N1 上测试前不得启用 `enforce=1`。
-- 尚未实机验证 LuCI RPC、包安装脚本和非标准 LEDE SDK 的构建兼容性。
+- 已在 N1 验证 v0.1.1 的 opkg 安装、LuCI 打开、RAW 出站统计及双重封禁开关的默认关闭；后续开发分支及被动回程计数仍待单独真机验证。
+- LuCI 上传 v0.1.3 曾报 malformed package，但同一用户通过页面文件局部修复继续了标注；包兼容性仍须独立于 CI 检查。
