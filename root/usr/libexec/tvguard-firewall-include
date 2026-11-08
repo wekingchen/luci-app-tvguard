@@ -1,0 +1,3 @@
+#!/bin/sh
+# Called by firewall3 on start/reload; do not manipulate other packages' rules.
+/usr/libexec/tvguard-fw sync
