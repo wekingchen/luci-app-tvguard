@@ -1,0 +1,8 @@
+#!/bin/sh
+# Keep time accounting independent of the LuCI page lifecycle.
+trap 'exit 0' TERM INT
+while :; do
+    /usr/libexec/tvguardctl tick ||
+        logger -t tvguard "sample/update failed; keeping existing firewall gate"
+    sleep 10
+done
