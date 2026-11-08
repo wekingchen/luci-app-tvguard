@@ -14,8 +14,8 @@ cat > "$TMP/bin/uci" <<'SH'
 set -eu
 UCI_STATE="$TVG_UCI_STATE"
 UCI_LOG="$TVG_ACTION_LOG"
-[ "\${1:-}" = -q ] && shift
-UCI_CMD="\${1:-}"
+[ "${1:-}" = -q ] && shift
+UCI_CMD="${1:-}"
 shift || :
 
 get_value() {
@@ -25,14 +25,14 @@ get_value() {
 
 case "$UCI_CMD" in
     get)
-        UCI_VALUE="$(get_value "\${1:-}")"
+        UCI_VALUE="$(get_value "${1:-}")"
         [ -n "$UCI_VALUE" ] || exit 1
         printf '%s\n' "$UCI_VALUE"
         ;;
     set)
-        UCI_ARG="\${1:-}"
-        UCI_KEY="\${UCI_ARG%%=*}"
-        UCI_VALUE="\${UCI_ARG#*=}"
+        UCI_ARG="${1:-}"
+        UCI_KEY="${UCI_ARG%%=*}"
+        UCI_VALUE="${UCI_ARG#*=}"
         UCI_VALUE="$(printf '%s' "$UCI_VALUE" | sed "s/^'//;s/'$//")"
         grep -v "^$UCI_KEY=" "$UCI_STATE" > "$UCI_STATE.tmp" || :
         printf '%s=%s\n' "$UCI_KEY" "$UCI_VALUE" >> "$UCI_STATE.tmp"
@@ -40,13 +40,13 @@ case "$UCI_CMD" in
         printf 'set %s=%s\n' "$UCI_KEY" "$UCI_VALUE" >> "$UCI_LOG"
         ;;
     delete)
-        UCI_KEY="\${1:-}"
+        UCI_KEY="${1:-}"
         grep -v "^$UCI_KEY=" "$UCI_STATE" > "$UCI_STATE.tmp" || :
         mv "$UCI_STATE.tmp" "$UCI_STATE"
         printf 'delete %s\n' "$UCI_KEY" >> "$UCI_LOG"
         ;;
     commit)
-        printf 'commit %s\n' "\${1:-}" >> "$UCI_LOG"
+        printf 'commit %s\n' "${1:-}" >> "$UCI_LOG"
         ;;
     *)
         echo "unexpected uci: $UCI_CMD $*" >&2
@@ -68,8 +68,8 @@ done
 cat > "$TMP/tvguard-fw" <<'SH'
 #!/bin/sh
 printf 'tvguard-fw %s\n' "$*" >> "$TVG_ACTION_LOG"
-if [ "\${1:-}" = remove ]; then
-    exit "\${TVG_FW_REMOVE_EXIT:-0}"
+if [ "${1:-}" = remove ]; then
+    exit "${TVG_FW_REMOVE_EXIT:-0}"
 fi
 exit 0
 SH
