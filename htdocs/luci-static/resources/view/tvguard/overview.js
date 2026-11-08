@@ -209,6 +209,26 @@ function eventNote(type, note) {
         if (value.indexOf('enforce=0') >= 0)
             return '已关闭正式网络控制，恢复观察模式';
     }
+    if (type === 'calibration_start') {
+        var started = value.match(/手工标注 ([^/]+)\/([^：]+)：120 秒/);
+        if (started)
+            return appName(started[1]) + ' · ' + sceneName(started[2]) + ' · 记录 120 秒';
+        var systemStarted = value.match(/手工标注 ([^：]+)：120 秒/);
+        if (systemStarted)
+            return sceneName(systemStarted[1]) + ' · 记录 120 秒';
+    }
+    if (type === 'calibration_end') {
+        var ended = value.match(/^([^/]+)\/([^:]+): ([0-9]+) samples \(([^)]+)\)$/);
+        if (ended) {
+            var reason = {
+                completed: '已完成',
+                stopped: '提前结束',
+                interrupted: '被中断'
+            }[ended[4]] || ended[4];
+            return appName(ended[1]) + ' · ' + sceneName(ended[2]) +
+                ' · ' + ended[3] + ' 条样本 · ' + reason;
+        }
+    }
     return value || '—';
 }
 
