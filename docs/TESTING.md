@@ -2,6 +2,19 @@
 
 > 状态：v0.1.1 已在用户 N1 完成基础安装、LuCI 页面、RAW 出站计数和默认双重封禁开关验证；当前开发分支新增的代理隔离审计、打包加固和可选回程观测仍待下一轮 N1 验收。尚未证明可投入正式家庭控制，IPK 仍是开发构建，不是稳定 Release。
 
+## 自动化测试覆盖
+
+当前开发分支的自动化测试分为四层，共 18 个测试文件：
+
+- **LuCI / ACL**：`test-ui.js`、`test-settings-ui.js`、`test-status-wrapper.sh`，覆盖首页状态更新、精确命令派发、设置校验、高风险开关隐藏、只读 wrapper 命令白名单。
+- **控制器 / 策略**：`test-controller.sh`、`test-policy.sh`、`test-enforcement.sh`，覆盖工作日/周末额度、普通/跨午夜时段、奖励上限与撤销、家长模式跨重启/跨日、旧定时家长迁移、正式控制双开关与现场隔离审计、儿童/家长/锁定 gate 切换、持久状态丢失后的 fail-closed 恢复。
+- **防火墙 / 生命周期 / 代理隔离**：`test-firewall.sh`、`test-firewall-policy.sh`、`test-isolation-audit.sh`、`test-proxy-isolation.py`、`test-firewall-include.sh`、`test-package-safety.sh`、`test-init-service.sh`、`test-daemon.sh`、`test-compat-check.sh`，覆盖 raw-only 写入、TV 专属 hook、firewall reload 策略、代理规则不变、FW3 fail-open、安装卸载所有权、procd trigger、daemon tick 失败处理和一键兼容验收全部拒绝条件。
+- **校准 / 识别**：`test-calibration.py`、`test-shadow.sh`、`test-generalization.py`，覆盖保守影子识别、证据重叠拒绝、未知 App 泛化和方向性校准数据边界。
+
+这轮单元测试补齐过程中实际发现并修复了一项产品回归：v0.1.7 将长期家长模式定义为 `PARENT_UNTIL=0` 后，旧的 `tvguard-fw policy()` 在 firewall reload 时仍把 `0` 当作“已到期”，可能在正式控制开启时错误 DROP。现已明确规定：`0` = 长期家长模式允许；正数仅用于旧版本一次性定时迁移；缺失、损坏或未知状态继续 fail-closed。
+
+自动化测试通过不替代 N1 真机验收。特别是 iptables-legacy、fw3、现有 SSR/OpenClash/PassWall 共存以及 LuCI 主题渲染，仍需下一次真实设备验证。
+
 ## 一、联调前确认
 
 - 设备：斐讯 N1，LEDE R26.11.3，FW3 + iptables legacy。
