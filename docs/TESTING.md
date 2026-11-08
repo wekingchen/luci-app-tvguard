@@ -58,6 +58,8 @@ uci -q get tvguard.main.observe_reply
 
 期望依次为 `ok`、`allowed`、`0`、`0`、`0`。
 
+只有第一项为精确 `ok` 时，后续才允许考虑正式控制。`unsafe:*` 或 `unavailable:*` 都必须视为未通过；TV Guard 的 fw3 include 即便自身同步失败，也不应让全局 firewall reload 返回失败。
+
 为验证 TV Guard 自身操作不改变现有网络规则，可在**不触发全局 firewall reload** 的情况下做短时前后快照：
 
 ```sh
