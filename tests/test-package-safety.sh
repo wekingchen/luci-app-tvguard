@@ -61,7 +61,7 @@ printf '%s %s\n' "$(basename "$0")" "$*" >> "$TVG_ACTION_LOG"
 exit 0
 SH
 chmod +x "$TMP/bin/uci" "$TMP/mock-action"
-for name in rpcd tvguard; do
+for name in rpcd tvguard tvguardctl; do
     cp "$TMP/mock-action" "$TMP/$name"
 done
 
@@ -90,6 +90,7 @@ src, dst, tmp = sys.argv[1:]
 text = Path(src).read_text()
 text = text.replace("/etc/init.d/rpcd", tmp + "/rpcd")
 text = text.replace("/etc/init.d/tvguard", tmp + "/tvguard")
+text = text.replace("/usr/libexec/tvguardctl", tmp + "/tvguardctl")
 text = text.replace("/usr/libexec/tvguard-fw", tmp + "/tvguard-fw")
 Path(dst).write_text(text)
 PY
@@ -200,6 +201,45 @@ assert_proxy_section
 grep -q '^firewall.tvguard=include$' "$STATE"
 ! grep -q '^delete firewall\.tvguard$' "$LOG"
 grep -q 'aborting uninstall' "$TMP/err"
+grep -q '^tvguardctl enforce off
+
+# Owned section is deleted only after firewall detach succeeds; proxy survives.
+owned
+: > "$LOG"
+sh "$TMP/prerm"
+assert_proxy_section
+! grep -q '^firewall.tvguard=' "$STATE"
+grep -q '^delete firewall.tvguard$' "$LOG"
+grep -q '^commit firewall$' "$LOG"
+
+echo "PASS: package ownership is isolated, proxy UCI survives, and failed detach aborts uninstall"
+ "$LOG"
+grep -q '^tvguard stop
+
+# Owned section is deleted only after firewall detach succeeds; proxy survives.
+owned
+: > "$LOG"
+sh "$TMP/prerm"
+assert_proxy_section
+! grep -q '^firewall.tvguard=' "$STATE"
+grep -q '^delete firewall.tvguard$' "$LOG"
+grep -q '^commit firewall$' "$LOG"
+
+echo "PASS: package ownership is isolated, proxy UCI survives, and failed detach aborts uninstall"
+ "$LOG"
+grep -q '^tvguard start
+
+# Owned section is deleted only after firewall detach succeeds; proxy survives.
+owned
+: > "$LOG"
+sh "$TMP/prerm"
+assert_proxy_section
+! grep -q '^firewall.tvguard=' "$STATE"
+grep -q '^delete firewall.tvguard$' "$LOG"
+grep -q '^commit firewall$' "$LOG"
+
+echo "PASS: package ownership is isolated, proxy UCI survives, and failed detach aborts uninstall"
+ "$LOG"
 export TVG_FW_REMOVE_EXIT=0
 
 # Owned section is deleted only after firewall detach succeeds; proxy survives.
