@@ -62,7 +62,7 @@ for label, vals in vectors.items():
         for i in range(8):
             rows.append(f"{1730000000+sid*120+i*10},{sid+1}-1,{label},tencent," +
                         ",".join(map(str, vals)))
-p.write_text("\\n".join(rows)+"\\n")
+p.write_text("\n".join(rows)+"\n")
 PY
 test "$(sh "$DST" 100 2 97 50000)" = 'unknown none 0'
 # An exact match to the app home range remains a shadow-only diagnostic.
