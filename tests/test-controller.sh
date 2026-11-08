@@ -147,6 +147,8 @@ if sh "$CTL" calibrate paused tencent > "$TMP/out" 2>&1; then
 fi
 test -s "$TMP/state/calibration-v3.csv"
 grep -q ',playing,tencent,' "$TMP/state/calibration-v3.csv"
+# Reply observer is disabled here: never manufacture directional zeros.
+[ ! -e "$TMP/state/calibration-v4.csv" ]
 # Simulate a completed 120-second calibration without sleeping.
 python3 - "$TMP/run/runtime" <<'PY'
 from pathlib import Path
