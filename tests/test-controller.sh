@@ -106,6 +106,7 @@ check 'assert s["bonus_seconds"] == 2700 and s["bonus_undo_available"] == 1'
 sh "$CTL" bonus undo
 status
 check 'assert s["bonus_seconds"] == 900 and s["bonus_undo_available"] == 0'
+grep -q 'reward_revoke|-30 分钟' "$TMP/etc/events.log"
 if sh "$CTL" bonus undo > "$TMP/out" 2>&1; then exit 1; fi
 if sh "$CTL" bonus 999 > "$TMP/out" 2>&1; then exit 1; fi
 
