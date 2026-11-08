@@ -109,14 +109,44 @@ check 'assert s["bonus_seconds"] == 900 and s["bonus_undo_available"] == 0'
 if sh "$CTL" bonus undo > "$TMP/out" 2>&1; then exit 1; fi
 if sh "$CTL" bonus 999 > "$TMP/out" 2>&1; then exit 1; fi
 
-sh "$CTL" mode parent 30
+# Parent mode is a persistent usage identity, not temporary child allowance.
+sh "$CTL" mode parent
 status
-check 'assert s["mode"] == "parent" and s["parent_until"] > 0 and s["policy_reason"] == "none"'
+check 'assert s["mode"] == "parent" and s["parent_until"] == 0 and s["policy_reason"] == "none"'
+# A stale cached UI must not turn an old timed-parent request into indefinite access.
+if sh "$CTL" mode parent 30 > "$TMP/out" 2>&1; then
+    echo "FAIL: legacy timed parent command was accepted" >&2
+    exit 1
+fi
+grep -q 'no longer accepts a duration' "$TMP/out"
+status
+check 'assert s["mode"] == "parent" and s["parent_until"] == 0'
 sh "$CTL" mode locked
 status
 check 'assert s["mode"] == "locked" and s["would_block"] == 1 and s["blocked"] == 0'
 check 'assert s["policy_reason"] == "locked"'
 sh "$CTL" mode child
+
+# Migration only: a pre-v0.1.7 timed parent state is allowed to expire once,
+# preventing an old temporary authorization from silently becoming permanent.
+python3 - "$TMP/run/runtime" <<'PY'
+from pathlib import Path
+import sys,time
+p=Path(sys.argv[1])
+lines=p.read_text().splitlines()
+out=[]
+for line in lines:
+    if line.startswith('MODE='):
+        out.append('MODE=parent')
+    elif line.startswith('PARENT_UNTIL='):
+        out.append('PARENT_UNTIL='+str(int(time.time())-1))
+    else:
+        out.append(line)
+p.write_text('\n'.join(out)+'\n')
+PY
+sh "$CTL" sync
+status
+check 'assert s["mode"] == "child" and s["parent_until"] == 0'
 
 # Prime the counter baseline: never bill 20 seconds when daemon starts.
 echo '500 100000 100 20000 350 70000' > "$TMP/sample"
