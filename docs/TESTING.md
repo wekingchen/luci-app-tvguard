@@ -39,12 +39,51 @@ iptables -t raw -S PREROUTING | grep TVG
 5. 家长模式授权 30/60/120 分钟，过期转儿童模式且不会清除儿童已用时长。
 6. 手动锁定优先于儿童奖励；奖励不能解除锁定。
 7. SSR 透明代理运行时，TV Guard 的计数链在 raw PREROUTING 统计电视进入 N1 的包。
-8. `/etc/init.d/tvguard restart` 后状态正常，`/etc/init.d/firewall reload` 后入口规则恢复。
+8. `/etc/init.d/tvguard reload` 后 daemon 不重启、代理规则不变；由 fw3 正常 reload 时，独立 include 能恢复 TVG 入口规则。
 9. 重启 N1 后 `/etc/tvguard/state` 恢复上次持久快照；确认不会因重启把已消耗额度清零。
 10. 检查停服务时的策略保持，卸载时所有 TVG 规则均被清除而不触碰其他链。
 11. 若使用电视前台场景推断，必须标注“疑似”，且不得直接启用不可信的免计时规则。
 
-## 四、可选回程观测的安全测试（下一轮，尚未真机执行）
+## 四、代理不干扰验收（下一轮只需做一次）
+
+不需要逐个测试视频 App。升级候选版后，先保持 `enforce=0`、`allow_enforcement=0`、`observe_reply=0`，验证：
+
+```sh
+/usr/libexec/tvguard-status isolation
+/usr/libexec/tvguard-fw inspect
+uci -q get tvguard.main.enforce
+uci -q get tvguard.main.allow_enforcement
+uci -q get tvguard.main.observe_reply
+```
+
+期望依次为 `ok`、`allowed`、`0`、`0`、`0`。
+
+为验证 TV Guard 自身操作不改变现有网络规则，可在**不触发全局 firewall reload** 的情况下做短时前后快照：
+
+```sh
+for t in raw mangle nat filter; do
+    echo "### $t"
+    iptables -t "$t" -S 2>/dev/null | grep -v 'TVG_'
+done > /tmp/tvguard-nontvg-before.txt
+
+/etc/init.d/tvguard reload
+/usr/libexec/tvguardctl mode child
+/usr/libexec/tvguardctl bonus 15
+/usr/libexec/tvguardctl bonus undo
+
+for t in raw mangle nat filter; do
+    echo "### $t"
+    iptables -t "$t" -S 2>/dev/null | grep -v 'TVG_'
+done > /tmp/tvguard-nontvg-after.txt
+
+diff -u /tmp/tvguard-nontvg-before.txt /tmp/tvguard-nontvg-after.txt
+```
+
+正常应无 diff。这里不跨越代理工具自己的重载动作，因为代理自身重载可能合法重建规则，不能归因给 TV Guard。
+
+同时检查常用代理功能本身仍可正常访问；TV Guard 不要求停止或切换任何现有代理工具。
+
+## 五、可选回程观测的安全测试（下一轮，尚未真机执行）
 
 当前开发分支已经增加两处无动作目标的回程计数，但必须保留 `observe_reply=0`，直到完成兼容性测试。**无需安装 tcpdump/conntrack，不要改变现有 SSR、PassWall、OpenClash 或主路由设置。**
 
@@ -83,7 +122,7 @@ uci commit tvguard
 
 预期第一项为 `disabled`、第二项为 `allowed`。禁止使用 `iptables -F`、`iptables -t raw -F` 等影响其他服务的命令。
 
-## 五、正式封禁前的放行路径
+## 六、正式封禁前的放行路径
 
 本开发版本存在额外上锁开关：
 ```sh
@@ -94,7 +133,7 @@ uci -q get tvguard.main.allow_enforcement
 
 后续验证通过后才会提供受控的“启用”流程及失败回滚步骤；当前版本不建议开启强制模式。
 
-## 六、恢复与卸载
+## 七、恢复与卸载
 
 已安装且希望保持电视可联网时，需先检查其它插件和原先的旧封禁规则。TV Guard 自身可用以下操作退出拦截：
 ```sh
@@ -105,7 +144,7 @@ uci -q get tvguard.main.allow_enforcement
 
 卸载由 `prerm` 停止服务并移除 TVG 专用链；**不能使用 `iptables -F` 清空防火墙**。
 
-## 七、仍未解决的功能限制
+## 八、仍未解决的功能限制
 
 - 当前计时主要依据网络活动会话，尚无经证实的“小米系统首页 / App 首页 / 视频暂停”可信自动识别。
 - 不区分电视是大人还是孩子，家长必须主动切换家长模式。
