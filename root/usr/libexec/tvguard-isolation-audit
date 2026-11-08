@@ -48,14 +48,8 @@ if ! raw="$(read_table raw 2>/dev/null)"; then
     exit 2
 fi
 
-tmp="/tmp/tvguard-isolation-audit.$$"
-trap 'rm -f "$tmp"' EXIT HUP INT TERM
-
-# Token-level validation tolerates iptables rendering the host as x.x.x.x/32.
-# All TVG matches are restricted to the configured TV address and interface.
-printf '%s
-' "$raw" | awk -v ip="$IP" -v iface="$IFACE" '
-function die(msg) { print msg; bad=1; exit 1 }
+# Token-level validation stays entirely in memory; no predictable /tmp files.
+if ! audit_reason="$(printf '%s\n' "$raw" | awk -v ip="$IP" -v iface="$IFACE" 'function die(msg) { print msg; bad=1; exit 1 }
 function hosteq(v) { return v==ip || v==ip "/32" }
 function core_hook(   i,hi,hs,hj) {
     hi=hs=hj=0
@@ -171,9 +165,10 @@ END {
     if (rx_lan>1) die("rx_lan_count_" rx_lan)
     if (rx_local>1) die("rx_local_count_" rx_local)
 }
-' >"$tmp" 2>&1 || {
-    reason="$(tail -n 1 "$tmp" 2>/dev/null || echo unexpected_rule)"
+' 2>&1)"; then
+    reason="$(printf '%s\n' "$audit_reason" | tail -n 1)"
+    [ -n "$reason" ] || reason=unexpected_rule
     fail "$reason"
-}
+fi
 
 echo "ok"
