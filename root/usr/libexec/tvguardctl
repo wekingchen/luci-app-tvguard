@@ -51,6 +51,18 @@ defaults() {
     TCP_PPS=0
     UDP_PPS=0
     BYTES_PER_S=0
+    # Reply counters are diagnostics ONLY, never used for USED_S or gate.
+    RX_STATE=disabled
+    RX_SAMPLE_STATUS=disabled
+    RX_LAST_EPOCH=0
+    RX_LAST_LAN_COUNT=0
+    RX_LAST_LAN_BYTES=0
+    RX_LAST_LOCAL_COUNT=0
+    RX_LAST_LOCAL_BYTES=0
+    RX_LAN_PPS=0
+    RX_LAN_BPS=0
+    RX_LOCAL_PPS=0
+    RX_LOCAL_BPS=0
     TRAFFIC_CLASS=unknown
     SHADOW_LABEL=unknown
     SHADOW_APP=none
@@ -110,6 +122,17 @@ PPS=$PPS
 TCP_PPS=$TCP_PPS
 UDP_PPS=$UDP_PPS
 BYTES_PER_S=$BYTES_PER_S
+RX_STATE=$RX_STATE
+RX_SAMPLE_STATUS=$RX_SAMPLE_STATUS
+RX_LAST_EPOCH=$RX_LAST_EPOCH
+RX_LAST_LAN_COUNT=$RX_LAST_LAN_COUNT
+RX_LAST_LAN_BYTES=$RX_LAST_LAN_BYTES
+RX_LAST_LOCAL_COUNT=$RX_LAST_LOCAL_COUNT
+RX_LAST_LOCAL_BYTES=$RX_LAST_LOCAL_BYTES
+RX_LAN_PPS=$RX_LAN_PPS
+RX_LAN_BPS=$RX_LAN_BPS
+RX_LOCAL_PPS=$RX_LOCAL_PPS
+RX_LOCAL_BPS=$RX_LOCAL_BPS
 TRAFFIC_CLASS=$TRAFFIC_CLASS
 SHADOW_LABEL=$SHADOW_LABEL
 SHADOW_APP=$SHADOW_APP
@@ -325,6 +348,77 @@ tick() {
         fi
     fi
 
+    # The two optional reply observation points see different paths:
+    # raw PREROUTING (arriving at N1, destined for TV) and raw OUTPUT
+    # (generated locally by N1/proxy, destined for TV). Neither proves
+    # that all TV traffic follows N1, and neither changes session billing.
+    RX_LAN_PPS=0
+    RX_LAN_BPS=0
+    RX_LOCAL_PPS=0
+    RX_LOCAL_BPS=0
+    RX_STATE="$("$FW" inspect-reply 2>/dev/null || echo unavailable)"
+    case "$RX_STATE" in ready|disabled|unavailable) :;; *) RX_STATE=unavailable;; esac
+    RX_SAMPLE_STATUS="$RX_STATE"
+    if [ "$RX_STATE" = ready ]; then
+        reply_sample="$("$FW" sample-reply 2>/dev/null || echo '')"
+        set -- $reply_sample
+        reply_valid=1
+        [ "$#" -eq 4 ] || reply_valid=0
+        if [ "$reply_valid" = 1 ]; then
+            for number in "$@"; do
+                case "$number" in ''|*[!0-9]*) reply_valid=0;; esac
+            done
+        fi
+        if [ "$reply_valid" = 1 ]; then
+            lan_count="$1"
+            lan_bytes="$2"
+            local_count="$3"
+            local_bytes="$4"
+            rx_dt=0
+            if [ "$RX_LAST_EPOCH" -gt 0 ]; then
+                rx_dt=$((NOW - RX_LAST_EPOCH))
+            fi
+            # Observer has an independent baseline, so toggling the option,
+            # reloading FW3, or a counter reset cannot fabricate a huge rate.
+            if [ "$rx_dt" -lt 1 ] || [ "$rx_dt" -gt 20 ] ||
+               [ "$lan_count" -lt "$RX_LAST_LAN_COUNT" ] ||
+               [ "$lan_bytes" -lt "$RX_LAST_LAN_BYTES" ] ||
+               [ "$local_count" -lt "$RX_LAST_LOCAL_COUNT" ] ||
+               [ "$local_bytes" -lt "$RX_LAST_LOCAL_BYTES" ]; then
+                rx_dt=0
+            fi
+            if [ "$rx_dt" -gt 0 ]; then
+                lan_delta=$((lan_count - RX_LAST_LAN_COUNT))
+                local_delta=$((local_count - RX_LAST_LOCAL_COUNT))
+                RX_LAN_PPS=$((lan_delta / rx_dt))
+                RX_LAN_BPS=$(((lan_bytes - RX_LAST_LAN_BYTES) / rx_dt))
+                RX_LOCAL_PPS=$((local_delta / rx_dt))
+                RX_LOCAL_BPS=$(((local_bytes - RX_LAST_LOCAL_BYTES) / rx_dt))
+                RX_SAMPLE_STATUS=no_packets
+                if [ "$lan_delta" -gt 0 ] || [ "$local_delta" -gt 0 ]; then
+                    RX_SAMPLE_STATUS=observed
+                fi
+            else
+                RX_SAMPLE_STATUS=warming_up
+            fi
+            RX_LAST_EPOCH="$NOW"
+            RX_LAST_LAN_COUNT="$lan_count"
+            RX_LAST_LAN_BYTES="$lan_bytes"
+            RX_LAST_LOCAL_COUNT="$local_count"
+            RX_LAST_LOCAL_BYTES="$local_bytes"
+        else
+            RX_STATE=unavailable
+            RX_SAMPLE_STATUS=unavailable
+        fi
+    fi
+    if [ "$RX_STATE" != ready ]; then
+        RX_LAST_EPOCH=0
+        RX_LAST_LAN_COUNT=0
+        RX_LAST_LAN_BYTES=0
+        RX_LAST_LOCAL_COUNT=0
+        RX_LAST_LOCAL_BYTES=0
+    fi
+
     SHADOW_LABEL=unknown
     SHADOW_APP=none
     SHADOW_SCORE=0
@@ -426,11 +520,12 @@ status() {
         cal_phase="$CAL_LAST_RESULT"
     fi
 
-    printf '{"date":"%s","mode":"%s","activity":"%s","enforce":%s,"armed":%s,"would_block":%s,"blocked":%s,"firewall_state":"%s","used_seconds":%s,"quota_seconds":%s,"bonus_seconds":%s,"remaining_seconds":%s,"parent_until":%s,"last_packet_epoch":%s,"packet_counter":%s,"pps":%s,"tcp_pps":%s,"udp_pps":%s,"bytes_per_second":%s,"traffic_class":"%s","shadow_label":"%s","shadow_app":"%s","shadow_score":%s,"server_epoch":%s,"calibration_label":"%s","calibration_app":"%s","calibration_session":"%s","calibration_until":%s,"calibration_started":%s,"calibration_samples":%s,"calibration_phase":"%s","calibration_active":%s,"calibration_elapsed_seconds":%s,"calibration_remaining_seconds":%s,"calibration_percent":%s,"calibration_last_label":"%s","calibration_last_app":"%s","calibration_last_session":"%s","calibration_last_samples":%s,"calibration_last_finished":%s,"calibration_last_result":"%s"}\n' \
+    printf '{"date":"%s","mode":"%s","activity":"%s","enforce":%s,"armed":%s,"would_block":%s,"blocked":%s,"firewall_state":"%s","used_seconds":%s,"quota_seconds":%s,"bonus_seconds":%s,"remaining_seconds":%s,"parent_until":%s,"last_packet_epoch":%s,"packet_counter":%s,"pps":%s,"tcp_pps":%s,"udp_pps":%s,"bytes_per_second":%s,"reply_observer":"%s","reply_sample_status":"%s","reply_prerouting_pps":%s,"reply_prerouting_bps":%s,"reply_local_pps":%s,"reply_local_bps":%s,"reply_coverage":"unverified","traffic_class":"%s","shadow_label":"%s","shadow_app":"%s","shadow_score":%s,"server_epoch":%s,"calibration_label":"%s","calibration_app":"%s","calibration_session":"%s","calibration_until":%s,"calibration_started":%s,"calibration_samples":%s,"calibration_phase":"%s","calibration_active":%s,"calibration_elapsed_seconds":%s,"calibration_remaining_seconds":%s,"calibration_percent":%s,"calibration_last_label":"%s","calibration_last_app":"%s","calibration_last_session":"%s","calibration_last_samples":%s,"calibration_last_finished":%s,"calibration_last_result":"%s"}\n' \
         "$TODAY" "$MODE" "$ACTIVITY" "$ENFORCE" "$ARMED" "$BLOCKED" "$actual" "$firewall_state" \
         "$USED_S" "$LIMIT_S" "$BONUS_S" "$left" "$PARENT_UNTIL" \
         "$LAST_PACKET_EPOCH" "$LAST_COUNT" "$PPS" "$TCP_PPS" "$UDP_PPS" \
-        "$BYTES_PER_S" "$TRAFFIC_CLASS" "$SHADOW_LABEL" "$SHADOW_APP" "$SHADOW_SCORE" \
+        "$BYTES_PER_S" "$RX_STATE" "$RX_SAMPLE_STATUS" "$RX_LAN_PPS" "$RX_LAN_BPS" \
+        "$RX_LOCAL_PPS" "$RX_LOCAL_BPS" "$TRAFFIC_CLASS" "$SHADOW_LABEL" "$SHADOW_APP" "$SHADOW_SCORE" \
         "$NOW" "$CAL_LABEL" "$cal_app" "$cal_session" "$CAL_UNTIL" "$CAL_STARTED" \
         "$CAL_SAMPLES" "$cal_phase" "$cal_active" "$cal_elapsed" "$cal_remaining" "$cal_percent" \
         "$CAL_LAST_LABEL" "$CAL_LAST_APP" "$CAL_LAST_SESSION" "$CAL_LAST_SAMPLES" "$CAL_LAST_FINISHED" "$CAL_LAST_RESULT"
