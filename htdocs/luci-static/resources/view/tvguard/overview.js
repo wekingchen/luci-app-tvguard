@@ -242,6 +242,13 @@ function eventNote(type, note) {
         if (value.indexOf('enforce=0') >= 0)
             return '已关闭正式网络控制，恢复观察模式';
     }
+    if (type === 'reward_revoke') {
+        var revoked = value.match(/^-([0-9]+) 分钟$/);
+        if (revoked)
+            return '已撤销 ' + revoked[1] + ' 分钟奖励';
+        if (/^撤销奖励 #[0-9]+$/.test(value))
+            return '已撤销最近一笔奖励';
+    }
     if (type === 'calibration_start') {
         var started = value.match(/手工标注 ([^/]+)\/([^：]+)：120 秒/);
         if (started)
