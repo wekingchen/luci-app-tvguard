@@ -37,6 +37,12 @@ isolation_ok() {
     [ -x "$AUDIT" ] || return 1
     [ "$("$AUDIT" 2>/dev/null || true)" = ok ]
 }
+core_preflight() {
+    if ! isolation_ok; then
+        echo "TV Guard: firewall isolation audit failed; refusing core mutation" >&2
+        return 1
+    fi
+}
 add_reply_rules() {
     has PREROUTING -i "$IFACE" -d "$IP" -m comment --comment TVG_RX_LAN ||
         raw_ipt -I PREROUTING 1 -i "$IFACE" -d "$IP" -m comment --comment TVG_RX_LAN || return 1
@@ -90,6 +96,9 @@ read_reply_count() {
         }'
 }
 create() {
+    # Before touching any pre-existing TVG namespace, prove it is either absent
+    # or already conforms to the strict TV-scoped raw-only layout.
+    core_preflight
     raw_ipt -N "$RAW" 2>/dev/null || :
     raw_ipt -N "$GATE" 2>/dev/null || :
     # A rule with no jump target only counts matching packets.
@@ -108,6 +117,8 @@ create() {
     fi
     has PREROUTING -i "$IFACE" -s "$IP" -j "$RAW" ||
         raw_ipt -I PREROUTING 1 -i "$IFACE" -s "$IP" -j "$RAW"
+    # Detect partial/mis-scoped writes before returning success.
+    core_preflight
 }
 gate() {
     case "$1" in 0) TARGET=RETURN;; 1) TARGET=DROP;; *) exit 2;; esac
