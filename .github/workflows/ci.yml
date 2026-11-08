@@ -2,7 +2,7 @@ name: TV Guard static checks
 
 on:
   push:
-    branches: [main, 'feat/**']
+    branches: [main]
   pull_request:
 
 jobs:
@@ -42,7 +42,7 @@ jobs:
       - name: Exercise controller in mock FW3 environment
         run: |
           set -eu
-          dash -x tests/test-controller.sh
+          dash tests/test-controller.sh
       - name: Exercise mock firewall3 rule lifecycle
         run: |
           set -eu
@@ -55,6 +55,10 @@ jobs:
           grep -q 'TVG_COUNT' root/usr/libexec/tvguard-fw
           grep -q '"read"' root/usr/share/rpcd/acl.d/luci-app-tvguard.json
           ! grep -q '"/bin/sh"' root/usr/share/rpcd/acl.d/luci-app-tvguard.json
+          ! grep -q 'TVGUARD_FW' root/usr/libexec/tvguardctl
+          ! grep -q 'TVGUARD_RUN' root/usr/libexec/tvguardctl
+          grep -q 'allow_enforcement' root/etc/config/tvguard
+          grep -q 'sample)' root/usr/libexec/tvguard-fw
 
   package:
     runs-on: ubuntu-latest
