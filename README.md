@@ -2,7 +2,7 @@
 
 面向 OpenWrt/LEDE 的电视使用时间管理。当前优先适配 **Phicomm N1 / LEDE R26.11.3 / fw3 / iptables-legacy** 的单网口旁路由环境。
 
-> **状态：v0.1.6 开发候选。** v0.1.1 已通过 N1 的基础安装、LuCI、RAW 出站计数验证；v0.1.5 完成代理隔离硬化，v0.1.6 在不放宽任何网络安全边界的前提下重整 LuCI 信息层级、日常操作逻辑、设置校验和人话状态反馈。仍待 N1 实机验收。默认 `enforce=0`、`allow_enforcement=0`、`observe_reply=0`。
+> **状态：v0.1.7 开发候选。** v0.1.1 已通过 N1 的基础安装、LuCI、RAW 出站计数验证；v0.1.5 完成代理隔离硬化，v0.1.6 完成 LuCI 信息架构重构，v0.1.7 将家长模式明确为持续模式，并把孩子临时多看的需求统一归入奖励时间。仍待 N1 实机验收。默认 `enforce=0`、`allow_enforcement=0`、`observe_reply=0`。
 
 ## 已实现的基础能力
 
