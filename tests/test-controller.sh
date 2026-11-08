@@ -35,15 +35,29 @@ EOFW
 chmod +x "$TMP/bin/uci" "$TMP/fw"
 echo '0 0 0 0 0 0' > "$TMP/sample"
 echo 9 > "$TMP/gate"
-export TVGUARD_RUN="$TMP/run/runtime"
-export TVGUARD_DIR="$TMP/state"
-export TVGUARD_LOCK="$TMP/run/lock"
-export TVGUARD_FW="$TMP/fw"
 export TVGUARD_TEST_SAMPLE="$TMP/sample"
 export TVGUARD_TEST_GATE="$TMP/gate"
-PATH="$TMP/bin:$PATH"
-export PATH
-CTL="$ROOT/root/usr/libexec/tvguardctl"
+# Rewrite a disposable copy only. Production controller has no env path overrides.
+CTL="$TMP/controller"
+python3 - "$ROOT/root/usr/libexec/tvguardctl" "$CTL" "$TMP" <<'PY'
+from pathlib import Path
+import sys
+src,dest,root=sys.argv[1:]
+s=Path(src).read_text()
+mapping={
+    'PATH=/usr/sbin:/usr/bin:/sbin:/bin': 'PATH='+root+'/bin:/usr/sbin:/usr/bin:/sbin:/bin',
+    'FW=/usr/libexec/tvguard-fw': 'FW='+root+'/fw',
+    'RUN=/var/run/tvguard.state': 'RUN='+root+'/run/runtime',
+    'DIR=/etc/tvguard': 'DIR='+root+'/state',
+    'LOCK=/var/run/tvguard.lock': 'LOCK='+root+'/run/lock',
+}
+for before,after in mapping.items():
+    if before not in s:
+        raise SystemExit('missing production path anchor: '+before)
+    s=s.replace(before,after,1)
+Path(dest).write_text(s)
+PY
+chmod 700 "$CTL"
 
 status() { sh "$CTL" status > "$TMP/status.json"; }
 check() { python3 - "$TMP/status.json" "$1" <<'PY'
@@ -83,7 +97,7 @@ check 'assert s["used_seconds"] == 0, s'
 check 'assert s["pps"] == 0, s'
 
 # Artificially simulate 10 elapsed seconds without sleeping.
-python3 - "$TVGUARD_RUN" <<'PY'
+python3 - "$TMP/run/runtime" <<'PY'
 import pathlib,sys,time
 p=pathlib.Path(sys.argv[1])
 s=p.read_text()
