@@ -54,6 +54,22 @@ for line in FW.splitlines():
     if re.search(r"\s-(P|Z)\b", stripped):
         errors.append(f"global policy/counter mutation forbidden: {stripped}")
 
+# No runtime/package script may bypass the two dedicated firewall surfaces:
+# tvguard-fw (raw-only writer) and tvguard-isolation-audit (read-only inspector).
+for path, text in RUNTIME:
+    rel = str(path.relative_to(ROOT))
+    executable = "\n".join(
+        line for line in text.splitlines()
+        if not line.lstrip().startswith("#")
+    )
+    if rel not in ("root/usr/libexec/tvguard-fw",
+                   "root/usr/libexec/tvguard-isolation-audit"):
+        if re.search(r"(^|[\s/])iptables(?:-legacy)?([\s\"']|$)", executable):
+            errors.append(f"{rel} directly invokes iptables outside the firewall adapter/audit")
+    if rel not in ("ipkg/postinst", "ipkg/prerm"):
+        if re.search(r"\buci\s+(?:-q\s+)?(?:set|delete|add|rename)\s+firewall\.", executable):
+            errors.append(f"{rel} mutates firewall UCI outside package ownership scripts")
+
 # Runtime scripts must not reconfigure or restart existing proxy stacks.
 proxy_words = (
     "openclash", "passwall", "shadowsocks", "shadowsocksr",
