@@ -58,7 +58,15 @@ defaults() {
     CAL_LABEL=none
     CAL_APP=none
     CAL_SESSION=none
+    CAL_STARTED=0
+    CAL_SAMPLES=0
     CAL_UNTIL=0
+    CAL_LAST_LABEL=none
+    CAL_LAST_APP=none
+    CAL_LAST_SESSION=none
+    CAL_LAST_SAMPLES=0
+    CAL_LAST_FINISHED=0
+    CAL_LAST_RESULT=none
     SAVED_EPOCH=0
     ACTIVITY=unknown
     BLOCKED=0
@@ -109,7 +117,15 @@ SHADOW_SCORE=$SHADOW_SCORE
 CAL_LABEL=$CAL_LABEL
 CAL_APP=$CAL_APP
 CAL_SESSION=$CAL_SESSION
+CAL_STARTED=$CAL_STARTED
+CAL_SAMPLES=$CAL_SAMPLES
 CAL_UNTIL=$CAL_UNTIL
+CAL_LAST_LABEL=$CAL_LAST_LABEL
+CAL_LAST_APP=$CAL_LAST_APP
+CAL_LAST_SESSION=$CAL_LAST_SESSION
+CAL_LAST_SAMPLES=$CAL_LAST_SAMPLES
+CAL_LAST_FINISHED=$CAL_LAST_FINISHED
+CAL_LAST_RESULT=$CAL_LAST_RESULT
 SAVED_EPOCH=$SAVED_EPOCH
 ACTIVITY=$ACTIVITY
 BLOCKED=$BLOCKED
@@ -213,6 +229,24 @@ apply_gate() {
         "$FW" gate 0
     fi
 }
+finish_calibration() {
+    # Record an immutable summary before clearing the active session.
+    # No automatic smart-idle exemption can be granted by this function.
+    [ "$CAL_LABEL" != none ] || return 0
+    CAL_LAST_LABEL="$CAL_LABEL"
+    CAL_LAST_APP="$CAL_APP"
+    CAL_LAST_SESSION="$CAL_SESSION"
+    CAL_LAST_SAMPLES="$CAL_SAMPLES"
+    CAL_LAST_FINISHED="$NOW"
+    CAL_LAST_RESULT="$1"
+    event calibration_end "$CAL_APP/$CAL_LABEL: $CAL_SAMPLES samples ($1)"
+    CAL_LABEL=none
+    CAL_APP=none
+    CAL_SESSION=none
+    CAL_STARTED=0
+    CAL_SAMPLES=0
+    CAL_UNTIL=0
+}
 rollover() {
     today="$(date +%Y-%m-%d)"
     if [ "$TODAY" != "$today" ]; then
@@ -226,15 +260,20 @@ rollover() {
         SHADOW_LABEL=unknown
         SHADOW_APP=none
         SHADOW_SCORE=0
-        CAL_LABEL=none
+        if [ "$CAL_LABEL" != none ]; then
+            finish_calibration interrupted
+        fi
         CAL_APP=none
         CAL_SESSION=none
+        CAL_STARTED=0
+        CAL_SAMPLES=0
         CAL_UNTIL=0
         event daily_reset "当天额度及奖励已重置"
     fi
 }
 tick() {
     previous_blocked="$BLOCKED"
+    previous_finished="$CAL_LAST_FINISHED"
     sample="$("$FW" sample)" || { echo "TV Guard packet sample unavailable" >&2; return 1; }
     set -- $sample
     [ "$#" -eq 6 ] || { echo "Invalid packet sample" >&2; return 1; }
@@ -316,14 +355,21 @@ tick() {
             # grant "verified idle" exemptions or change today's quota.
             printf '%s,%s,%s,%s,%s,%s,%s,%s\n' "$NOW" "$CAL_SESSION" "$CAL_LABEL" "$CAL_APP" \
                 "$PPS" "$TCP_PPS" "$UDP_PPS" "$BYTES_PER_S" >> "$DIR/calibration-v3.csv"
+            CAL_SAMPLES=$((CAL_SAMPLES + 1))
             if [ "$(wc -c < "$DIR/calibration-v3.csv")" -gt 262144 ]; then
                 tail -n 1500 "$DIR/calibration-v3.csv" > "$DIR/calibration-v3.tmp"
                 mv -f "$DIR/calibration-v3.tmp" "$DIR/calibration-v3.csv"
             fi
         elif [ "$NOW" -ge "$CAL_UNTIL" ]; then
-            CAL_LABEL=none
-            CAL_UNTIL=0
+            finish_calibration completed
         fi
+    elif [ "$CAL_APP" != none ] || [ "$CAL_SESSION" != none ]; then
+        # Repair stale metadata left by the previous development build.
+        CAL_APP=none
+        CAL_SESSION=none
+        CAL_STARTED=0
+        CAL_SAMPLES=0
+        CAL_UNTIL=0
     fi
 
     # Count children's network-use session, not claimed screen time.
@@ -337,7 +383,9 @@ tick() {
     calculate
     apply_gate
     save_runtime
-    if [ $((NOW - SAVED_EPOCH)) -ge 60 ] || [ "$BLOCKED" != "$previous_blocked" ]; then
+    if [ $((NOW - SAVED_EPOCH)) -ge 60 ] ||
+       [ "$BLOCKED" != "$previous_blocked" ] ||
+       [ "$CAL_LAST_FINISHED" != "$previous_finished" ]; then
         persist
     fi
 }
@@ -349,12 +397,43 @@ status() {
     case "$firewall_state" in blocked|allowed|absent|unknown) :;; *) firewall_state=unknown;; esac
     actual=0
     [ "$firewall_state" = blocked ] && actual=1
-    printf '{"date":"%s","mode":"%s","activity":"%s","enforce":%s,"armed":%s,"would_block":%s,"blocked":%s,"firewall_state":"%s","used_seconds":%s,"quota_seconds":%s,"bonus_seconds":%s,"remaining_seconds":%s,"parent_until":%s,"last_packet_epoch":%s,"packet_counter":%s,"pps":%s,"tcp_pps":%s,"udp_pps":%s,"bytes_per_second":%s,"traffic_class":"%s","shadow_label":"%s","shadow_app":"%s","shadow_score":%s,"calibration_label":"%s","calibration_app":"%s","calibration_session":"%s","calibration_until":%s}\n' \
+
+    # The N1 clock is authoritative. No dependency on the phone clock, page
+    # refresh or JavaScript timers for elapsed/remaining time calculations.
+    cal_phase=idle
+    cal_elapsed=0
+    cal_remaining=0
+    cal_percent=0
+    cal_active=0
+    cal_app=none
+    cal_session=none
+    if [ "$CAL_LABEL" != none ]; then
+        cal_app="$CAL_APP"
+        cal_session="$CAL_SESSION"
+        cal_elapsed=$((NOW - CAL_STARTED))
+        [ "$cal_elapsed" -ge 0 ] || cal_elapsed=0
+        [ "$cal_elapsed" -le 120 ] || cal_elapsed=120
+        cal_remaining=$((CAL_UNTIL - NOW))
+        [ "$cal_remaining" -ge 0 ] || cal_remaining=0
+        cal_percent=$((cal_elapsed * 100 / 120))
+        if [ "$NOW" -lt "$CAL_UNTIL" ]; then
+            cal_phase=running
+            cal_active=1
+        else
+            cal_phase=finishing
+        fi
+    elif [ "$CAL_LAST_FINISHED" -gt 0 ]; then
+        cal_phase="$CAL_LAST_RESULT"
+    fi
+
+    printf '{"date":"%s","mode":"%s","activity":"%s","enforce":%s,"armed":%s,"would_block":%s,"blocked":%s,"firewall_state":"%s","used_seconds":%s,"quota_seconds":%s,"bonus_seconds":%s,"remaining_seconds":%s,"parent_until":%s,"last_packet_epoch":%s,"packet_counter":%s,"pps":%s,"tcp_pps":%s,"udp_pps":%s,"bytes_per_second":%s,"traffic_class":"%s","shadow_label":"%s","shadow_app":"%s","shadow_score":%s,"server_epoch":%s,"calibration_label":"%s","calibration_app":"%s","calibration_session":"%s","calibration_until":%s,"calibration_started":%s,"calibration_samples":%s,"calibration_phase":"%s","calibration_active":%s,"calibration_elapsed_seconds":%s,"calibration_remaining_seconds":%s,"calibration_percent":%s,"calibration_last_label":"%s","calibration_last_app":"%s","calibration_last_session":"%s","calibration_last_samples":%s,"calibration_last_finished":%s,"calibration_last_result":"%s"}\n' \
         "$TODAY" "$MODE" "$ACTIVITY" "$ENFORCE" "$ARMED" "$BLOCKED" "$actual" "$firewall_state" \
         "$USED_S" "$LIMIT_S" "$BONUS_S" "$left" "$PARENT_UNTIL" \
         "$LAST_PACKET_EPOCH" "$LAST_COUNT" "$PPS" "$TCP_PPS" "$UDP_PPS" \
         "$BYTES_PER_S" "$TRAFFIC_CLASS" "$SHADOW_LABEL" "$SHADOW_APP" "$SHADOW_SCORE" \
-        "$CAL_LABEL" "$CAL_APP" "$CAL_SESSION" "$CAL_UNTIL"
+        "$NOW" "$CAL_LABEL" "$cal_app" "$cal_session" "$CAL_UNTIL" "$CAL_STARTED" \
+        "$CAL_SAMPLES" "$cal_phase" "$cal_active" "$cal_elapsed" "$cal_remaining" "$cal_percent" \
+        "$CAL_LAST_LABEL" "$CAL_LAST_APP" "$CAL_LAST_SESSION" "$CAL_LAST_SAMPLES" "$CAL_LAST_FINISHED" "$CAL_LAST_RESULT"
 }
 mkdir -p /var/run "$DIR"
 config
@@ -442,6 +521,13 @@ case "$1" in
         apply_gate
         ;;
     calibrate)
+        if [ "$CAL_LABEL" != none ] && [ "$NOW" -ge "$CAL_UNTIL" ]; then
+            finish_calibration completed
+        fi
+        if [ "$CAL_LABEL" != none ] && [ "${2:-}" != stop ]; then
+            echo "calibration already running; stop it before starting another" >&2
+            exit 2
+        fi
         case "${2:-}" in
             playing|paused|app_home)
                 case "${3:-general}" in
@@ -449,6 +535,8 @@ case "$1" in
                     *) echo "unsupported application label" >&2; exit 2 ;;
                 esac
                 CAL_LABEL="$2"
+                CAL_STARTED="$NOW"
+                CAL_SAMPLES=0
                 CAL_UNTIL=$((NOW + 120))
                 event calibration_start "手工标注 $CAL_APP/$CAL_LABEL：120 秒"
                 CAL_SESSION="$NOW-$EVENT_ID"
@@ -456,16 +544,15 @@ case "$1" in
             system_home|sleep)
                 CAL_LABEL="$2"
                 CAL_APP=system
+                CAL_STARTED="$NOW"
+                CAL_SAMPLES=0
                 CAL_UNTIL=$((NOW + 120))
                 event calibration_start "手工标注 $CAL_LABEL：120 秒"
                 CAL_SESSION="$NOW-$EVENT_ID"
                 ;;
             stop)
-                CAL_LABEL=none
-                CAL_APP=none
-                CAL_SESSION=none
-                CAL_UNTIL=0
-                event calibration_stop "结束手工标注"
+                [ "$CAL_LABEL" != none ] || { echo "no active calibration" >&2; exit 2; }
+                finish_calibration stopped
                 ;;
             *) echo "invalid calibration label" >&2; exit 2 ;;
         esac
