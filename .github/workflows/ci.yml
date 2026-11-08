@@ -1,0 +1,49 @@
+name: TV Guard static checks
+
+on:
+  push:
+    branches: [main, 'feat/**']
+  pull_request:
+
+jobs:
+  static:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate shell syntax
+        shell: bash
+        run: |
+          set -eu
+          find root/usr/libexec root/etc/init.d ipkg -type f \
+            \( -name 'tvguard*' -o -name 'postinst' -o -name 'prerm' \) |
+          while read -r file; do
+            sh -n "$file"
+            dash -n "$file"
+          done
+      - name: Validate LuCI JSON and JavaScript syntax
+        shell: bash
+        run: |
+          set -eu
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          for path in Path('root/usr/share').rglob('*.json'):
+              json.loads(path.read_text())
+              print('JSON OK', path)
+          PY
+          node - <<'JS'
+          const fs = require('fs');
+          for (const p of ['htdocs/luci-static/resources/view/tvguard/overview.js',
+                           'htdocs/luci-static/resources/view/tvguard/settings.js']) {
+              new Function(fs.readFileSync(p, 'utf8'));
+              console.log('JS syntax OK:', p);
+          }
+          JS
+      - name: Check intended safeguards
+        shell: bash
+        run: |
+          set -eu
+          grep -q "option enforce '0'" root/etc/config/tvguard
+          grep -q 'TVG_COUNT' root/usr/libexec/tvguard-fw
+          grep -q '"read"' root/usr/share/rpcd/acl.d/luci-app-tvguard.json
+          ! grep -q '"/bin/sh"' root/usr/share/rpcd/acl.d/luci-app-tvguard.json
