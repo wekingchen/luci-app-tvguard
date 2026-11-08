@@ -53,6 +53,7 @@ defaults() {
     BYTES_PER_S=0
     TRAFFIC_CLASS=unknown
     CAL_LABEL=none
+    CAL_APP=none
     CAL_UNTIL=0
     SAVED_EPOCH=0
     ACTIVITY=unknown
@@ -99,6 +100,7 @@ UDP_PPS=$UDP_PPS
 BYTES_PER_S=$BYTES_PER_S
 TRAFFIC_CLASS=$TRAFFIC_CLASS
 CAL_LABEL=$CAL_LABEL
+CAL_APP=$CAL_APP
 CAL_UNTIL=$CAL_UNTIL
 SAVED_EPOCH=$SAVED_EPOCH
 ACTIVITY=$ACTIVITY
@@ -214,6 +216,7 @@ rollover() {
         LAST_EPOCH="$NOW"
         ACTIVITY=unknown
         CAL_LABEL=none
+        CAL_APP=none
         CAL_UNTIL=0
         event daily_reset "当天额度及奖励已重置"
     fi
@@ -286,11 +289,11 @@ tick() {
         if [ "$NOW" -lt "$CAL_UNTIL" ] && [ "$dt" -gt 0 ]; then
             # Explicitly labeled by a parent; these samples never automatically
             # grant "verified idle" exemptions or change today's quota.
-            printf '%s,%s,%s,%s,%s,%s\n' "$NOW" "$CAL_LABEL" \
-                "$PPS" "$TCP_PPS" "$UDP_PPS" "$BYTES_PER_S" >> "$DIR/calibration.csv"
-            if [ "$(wc -c < "$DIR/calibration.csv")" -gt 262144 ]; then
-                tail -n 1500 "$DIR/calibration.csv" > "$DIR/calibration.tmp"
-                mv -f "$DIR/calibration.tmp" "$DIR/calibration.csv"
+            printf '%s,%s,%s,%s,%s,%s,%s\n' "$NOW" "$CAL_LABEL" "$CAL_APP" \
+                "$PPS" "$TCP_PPS" "$UDP_PPS" "$BYTES_PER_S" >> "$DIR/calibration-v2.csv"
+            if [ "$(wc -c < "$DIR/calibration-v2.csv")" -gt 262144 ]; then
+                tail -n 1500 "$DIR/calibration-v2.csv" > "$DIR/calibration-v2.tmp"
+                mv -f "$DIR/calibration-v2.tmp" "$DIR/calibration-v2.csv"
             fi
         elif [ "$NOW" -ge "$CAL_UNTIL" ]; then
             CAL_LABEL=none
@@ -321,11 +324,11 @@ status() {
     case "$firewall_state" in blocked|allowed|absent|unknown) :;; *) firewall_state=unknown;; esac
     actual=0
     [ "$firewall_state" = blocked ] && actual=1
-    printf '{"date":"%s","mode":"%s","activity":"%s","enforce":%s,"armed":%s,"would_block":%s,"blocked":%s,"firewall_state":"%s","used_seconds":%s,"quota_seconds":%s,"bonus_seconds":%s,"remaining_seconds":%s,"parent_until":%s,"last_packet_epoch":%s,"packet_counter":%s,"pps":%s,"tcp_pps":%s,"udp_pps":%s,"bytes_per_second":%s,"traffic_class":"%s","calibration_label":"%s","calibration_until":%s}\n' \
+    printf '{"date":"%s","mode":"%s","activity":"%s","enforce":%s,"armed":%s,"would_block":%s,"blocked":%s,"firewall_state":"%s","used_seconds":%s,"quota_seconds":%s,"bonus_seconds":%s,"remaining_seconds":%s,"parent_until":%s,"last_packet_epoch":%s,"packet_counter":%s,"pps":%s,"tcp_pps":%s,"udp_pps":%s,"bytes_per_second":%s,"traffic_class":"%s","calibration_label":"%s","calibration_app":"%s","calibration_until":%s}\n' \
         "$TODAY" "$MODE" "$ACTIVITY" "$ENFORCE" "$ARMED" "$BLOCKED" "$actual" "$firewall_state" \
         "$USED_S" "$LIMIT_S" "$BONUS_S" "$left" "$PARENT_UNTIL" \
         "$LAST_PACKET_EPOCH" "$LAST_COUNT" "$PPS" "$TCP_PPS" "$UDP_PPS" \
-        "$BYTES_PER_S" "$TRAFFIC_CLASS" "$CAL_LABEL" "$CAL_UNTIL"
+        "$BYTES_PER_S" "$TRAFFIC_CLASS" "$CAL_LABEL" "$CAL_APP" "$CAL_UNTIL"
 }
 mkdir -p /var/run "$DIR"
 config
@@ -339,7 +342,7 @@ case "${1:-}" in
         tail -n 80 "$EVENTS" 2>/dev/null || :
         exit 0 ;;
     calibration)
-        tail -n 80 "$DIR/calibration.csv" 2>/dev/null || :
+        tail -n 80 "$DIR/calibration-v2.csv" 2>/dev/null || :
         exit 0 ;;
     tick|mode|bonus|enforce|sync|calibrate)
         lock
@@ -414,13 +417,24 @@ case "$1" in
         ;;
     calibrate)
         case "${2:-}" in
-            playing|paused|app_home|system_home|sleep)
+            playing|paused|app_home)
+                case "${3:-general}" in
+                    general|tencent|iqiyi|mango|other) CAL_APP="${3:-general}" ;;
+                    *) echo "unsupported application label" >&2; exit 2 ;;
+                esac
                 CAL_LABEL="$2"
+                CAL_UNTIL=$((NOW + 120))
+                event calibration_start "手工标注 $CAL_APP/$CAL_LABEL：120 秒"
+                ;;
+            system_home|sleep)
+                CAL_LABEL="$2"
+                CAL_APP=system
                 CAL_UNTIL=$((NOW + 120))
                 event calibration_start "手工标注 $CAL_LABEL：120 秒"
                 ;;
             stop)
                 CAL_LABEL=none
+                CAL_APP=none
                 CAL_UNTIL=0
                 event calibration_stop "结束手工标注"
                 ;;
