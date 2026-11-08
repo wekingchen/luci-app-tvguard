@@ -3,12 +3,12 @@
 set -eu
 umask 077
 
-FW=/usr/libexec/tvguard-fw
-RUN=/var/run/tvguard.state
-DIR=/etc/tvguard
+FW="${TVGUARD_FW:-/usr/libexec/tvguard-fw}"
+RUN="${TVGUARD_RUN:-/var/run/tvguard.state}"
+DIR="${TVGUARD_DIR:-/etc/tvguard}"
 STATE="$DIR/state"
 EVENTS="$DIR/events.log"
-LOCK=/var/run/tvguard.lock
+LOCK="${TVGUARD_LOCK:-/var/run/tvguard.lock}"
 
 config() {
     ENFORCE="$(uci -q get tvguard.main.enforce || echo 0)"
@@ -128,10 +128,8 @@ within_window() {
     a="$(printf '%s' "$ALLOW_START" | awk -F: 'NF==2 && $1<24 && $2<60 {print $1*60+$2}')"
     b="$(printf '%s' "$ALLOW_END" | awk -F: 'NF==2 && $1<24 && $2<60 {print $1*60+$2}')"
     [ -n "$a" ] && [ -n "$b" ] || return 1
-    current="$(date +%H%M)"
-    hh="${current%??}"
-    mm="${current#??}"
-    current=$((10#$hh * 60 + 10#$mm))
+    # POSIX-safe decimal conversion (08 and 09 break octal shell arithmetic).
+    current="$(date '+%H %M' | awk '{printf "%d", $1*60+$2}')" 
     # Empty window means unrestricted clock time, not zero allowed time.
     [ "$a" -eq "$b" ] && return 0
     if [ "$a" -lt "$b" ]; then
