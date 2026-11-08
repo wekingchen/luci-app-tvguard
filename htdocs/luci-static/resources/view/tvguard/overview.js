@@ -194,7 +194,9 @@ return view.extend({
                        system_home:'疑似小米系统首页', sleep:'疑似熄屏网络静默',
                        unknown:'无法判断' })[s.shadow_label] || '无法判断',
                     ' · 参考应用：' + (s.shadow_app || 'none'),
-                    ' · 匹配分数：' + String(s.shadow_score || 0) + '（不是准确率）'
+                    ' · ' + (s.shadow_label === 'unknown' ?
+                        '当前证据不足或流量特征重叠' :
+                        '通过已标注样本对比，仅供观察')
                 ]),
                 E('p', { 'class':'description' },
                     '候选识别必须积累多次独立标注样本，且目前仅显示诊断结果，不会改变儿童计时或封禁策略。'),
