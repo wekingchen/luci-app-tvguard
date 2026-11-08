@@ -13,11 +13,19 @@ start_service() {
     procd_close_instance
 }
 
+reload_service() {
+    # TV Guard config is read on each controller command. Refresh only our
+    # own raw rules/state; do not restart the daemon or global firewall.
+    /usr/libexec/tvguardctl sync
+}
+
 service_triggers() {
-    procd_add_reload_trigger tvguard firewall
+    # Deliberately do NOT subscribe to the global "firewall" config trigger.
+    # fw3 invokes our isolated script include when it rebuilds its tables.
+    procd_add_reload_trigger tvguard
 }
 
 stop_service() {
-    # Stop service without silently changing the enforced policy.
+    # Stop service without silently changing an enforced policy.
     :
 }
