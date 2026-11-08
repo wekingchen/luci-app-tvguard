@@ -228,10 +228,14 @@ within_window() {
 }
 calculate() {
     quota
-    if [ "$MODE" = parent ] && [ "$NOW" -ge "$PARENT_UNTIL" ]; then
+    # Compatibility only: pre-v0.1.7 builds stored a positive expiry timestamp
+    # for timed parent sessions. Let that old session expire normally, but all
+    # newly selected parent mode sessions use PARENT_UNTIL=0 and never expire.
+    if [ "$MODE" = parent ] && [ "$PARENT_UNTIL" -gt 0 ] &&
+       [ "$NOW" -ge "$PARENT_UNTIL" ]; then
         MODE=child
         PARENT_UNTIL=0
-        event parent_expired "自动恢复儿童模式"
+        event parent_expired "旧版定时家长模式结束，自动恢复儿童模式"
     fi
     case "$MODE" in
         locked) BLOCKED=1 ;;
@@ -627,9 +631,10 @@ case "$1" in
             child) MODE=child; PARENT_UNTIL=0 ;;
             locked) MODE=locked; PARENT_UNTIL=0 ;;
             parent)
-                case "${3:-}" in 30|60|120) :;; *) echo "invalid parent duration" >&2; exit 2;; esac
+                [ -z "${3:-}" ] ||
+                    { echo "parent mode no longer accepts a duration; use bonus for child extra time" >&2; exit 2; }
                 MODE=parent
-                PARENT_UNTIL=$((NOW + $3 * 60))
+                PARENT_UNTIL=0
                 ;;
             *) echo "invalid mode" >&2; exit 2 ;;
         esac
