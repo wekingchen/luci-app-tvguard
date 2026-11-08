@@ -239,7 +239,7 @@ const updates = [
         remaining_seconds: 7077
     });
     page.updateOverviewUI(state);
-    assert.match(page._overviewNodes.modeNote.textContent, /不在允许使用时段/);
+    assert.match(page._overviewNodes.modeNote.textContent, /不在允许时段/);
 
     assert.match(page._trafficNodes.outgoing.textContent, /8 PPS/);
     assert.match(page._trafficNodes.replyStatus.textContent, /未启用|暂不可用/);
