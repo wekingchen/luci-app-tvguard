@@ -215,10 +215,12 @@ status() {
     quota
     left=$((LIMIT_S - USED_S))
     [ "$left" -gt 0 ] || left=0
+    firewall_state="$("$FW" inspect 2>/dev/null || echo unknown)"
+    case "$firewall_state" in blocked|allowed|absent|unknown) :;; *) firewall_state=unknown;; esac
     actual=0
-    [ "$ENFORCE" = 1 ] && [ "$BLOCKED" = 1 ] && actual=1
-    printf '{"date":"%s","mode":"%s","activity":"%s","enforce":%s,"would_block":%s,"blocked":%s,"used_seconds":%s,"quota_seconds":%s,"bonus_seconds":%s,"remaining_seconds":%s,"parent_until":%s,"last_packet_epoch":%s,"packet_counter":%s}\n' \
-        "$TODAY" "$MODE" "$ACTIVITY" "$ENFORCE" "$BLOCKED" "$actual" \
+    [ "$firewall_state" = blocked ] && actual=1
+    printf '{"date":"%s","mode":"%s","activity":"%s","enforce":%s,"would_block":%s,"blocked":%s,"firewall_state":"%s","used_seconds":%s,"quota_seconds":%s,"bonus_seconds":%s,"remaining_seconds":%s,"parent_until":%s,"last_packet_epoch":%s,"packet_counter":%s}\n' \
+        "$TODAY" "$MODE" "$ACTIVITY" "$ENFORCE" "$BLOCKED" "$actual" "$firewall_state" \
         "$USED_S" "$LIMIT_S" "$BONUS_S" "$left" "$PARENT_UNTIL" \
         "$LAST_PACKET_EPOCH" "$LAST_COUNT"
 }
