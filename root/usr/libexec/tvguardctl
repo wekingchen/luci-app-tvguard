@@ -466,6 +466,25 @@ tick() {
                 tail -n 1500 "$DIR/calibration-v3.csv" > "$DIR/calibration-v3.tmp"
                 mv -f "$DIR/calibration-v3.tmp" "$DIR/calibration-v3.csv"
             fi
+
+            # Directional v4 evidence is written ONLY when the optional reply
+            # observer is actually ready and has a valid delta. It is a
+            # diagnostic dataset; current billing/classification never reads it.
+            case "$RX_SAMPLE_STATUS" in
+                observed|no_packets)
+                    if [ "$RX_STATE" = ready ]; then
+                        printf '%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s\n' \
+                            "$NOW" "$CAL_SESSION" "$CAL_LABEL" "$CAL_APP" \
+                            "$PPS" "$TCP_PPS" "$UDP_PPS" "$BYTES_PER_S" \
+                            "$RX_LAN_PPS" "$RX_LAN_BPS" "$RX_LOCAL_PPS" "$RX_LOCAL_BPS" \
+                            >> "$DIR/calibration-v4.csv"
+                        if [ "$(wc -c < "$DIR/calibration-v4.csv")" -gt 393216 ]; then
+                            tail -n 1800 "$DIR/calibration-v4.csv" > "$DIR/calibration-v4.tmp"
+                            mv -f "$DIR/calibration-v4.tmp" "$DIR/calibration-v4.csv"
+                        fi
+                    fi
+                    ;;
+            esac
         elif [ "$NOW" -ge "$CAL_UNTIL" ]; then
             finish_calibration completed
         fi
@@ -556,6 +575,9 @@ case "${1:-}" in
     calibration)
         tail -n 80 "$DIR/calibration-v3.csv" 2>/dev/null || :
         exit 0 ;;
+    calibration-v4)
+        tail -n 80 "$DIR/calibration-v4.csv" 2>/dev/null || :
+        exit 0 ;;
     tick|mode|bonus|enforce|sync|calibrate)
         lock
         load_state
@@ -565,7 +587,7 @@ case "${1:-}" in
             event recovery_lock "持久状态缺失，强制锁定直至家长确认"
         fi
         ;;
-    *) echo "usage: tvguardctl {status|log|calibration|tick|sync|mode|bonus|calibrate|enforce}" >&2; exit 2 ;;
+    *) echo "usage: tvguardctl {status|log|calibration|calibration-v4|tick|sync|mode|bonus|calibrate|enforce}" >&2; exit 2 ;;
 esac
 
 case "$1" in
