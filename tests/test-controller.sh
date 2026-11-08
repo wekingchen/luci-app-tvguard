@@ -195,6 +195,30 @@ check 'assert s["reply_prerouting_pps"] == 7 and s["reply_prerouting_bps"] == 70
 check 'assert s["reply_local_pps"] == 6 and s["reply_local_bps"] == 900, s'
 check 'assert s["reply_coverage"] == "unverified" and s["enforce"] == 0 and s["armed"] == 0'
 
+# A labelled window with a valid reply delta writes the new 12-column
+# directional v4 evidence, while v3 remains the canonical legacy dataset.
+sh "$CTL" calibrate app_home general
+python3 - "$TMP/run/runtime" <<'PY'
+from pathlib import Path
+import sys,time
+p=Path(sys.argv[1])
+lines=p.read_text().splitlines()
+now=int(time.time())
+lines=[
+    'LAST_EPOCH='+str(now-10) if line.startswith('LAST_EPOCH=') else
+    'RX_LAST_EPOCH='+str(now-10) if line.startswith('RX_LAST_EPOCH=') else line
+    for line in lines
+]
+p.write_text('\n'.join(lines)+'\n')
+PY
+echo '1650 270000 200 33000 1400 220000' > "$TMP/sample"
+echo '240 31000 330 42000' > "$TMP/reply"
+sh "$CTL" tick
+test -s "$TMP/state/calibration-v4.csv"
+awk -F, 'NF!=12 {exit 1} $3=="app_home" && $4=="general" {found=1} END {exit !found}'     "$TMP/state/calibration-v4.csv"
+sh "$CTL" calibration-v4 | grep -q ',app_home,general,'
+sh "$CTL" calibrate stop
+
 # FW3 counter reset: never display a huge bogus negative or positive rate.
 python3 - "$TMP/run/runtime" <<'PY'
 from pathlib import Path
