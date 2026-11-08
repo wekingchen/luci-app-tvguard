@@ -149,7 +149,7 @@ const updates = [
     Object.assign(state, updates[0]);
     await page.refreshCalibration();
     assert.equal(page._calibrationNodes.bar.value, 41);
-    assert.match(page._calibrationNodes.detail.textContent, /还剩 70 秒/);
+    assert.match(page._calibrationNodes.detail.textContent, /剩余 70 秒/);
     Object.assign(state, updates[2]);
     await page.refreshCalibration();
     assert.equal(page._calibrationNodes.bar.value, 100);
