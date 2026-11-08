@@ -25,6 +25,8 @@ import json, os, pathlib, sys
 p=pathlib.Path(os.environ["MOCK_IPT_STATE"])
 s=json.loads(p.read_text())
 argv=sys.argv[1:]
+if argv[:2]==["-w","2"]:
+    argv=argv[2:]
 assert argv[:2]==["-t","raw"], argv
 argv=argv[2:]
 op,chain,*args=argv
