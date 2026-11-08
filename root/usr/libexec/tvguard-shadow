@@ -90,8 +90,8 @@ END {
     }
     # For system home, require a complete video-app reference set and
     # separation from EVERY comparable video state, not just "low PPS".
-    system="system" SUBSEP "system_home"
-    if (complete_apps>0 && ready(system) && in_envelope(system)) {
+    syskey="system" SUBSEP "system_home"
+    if (complete_apps>0 && ready(syskey) && in_envelope(syskey)) {
         distinct=1
         for (app in video_apps) {
             if (app=="system") continue
