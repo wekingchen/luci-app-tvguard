@@ -658,7 +658,7 @@ case "$1" in
             undo)
                 [ "$LAST_BONUS_S" -gt 0 ] || { echo "nothing to undo" >&2; exit 2; }
                 BONUS_S=$((BONUS_S - LAST_BONUS_S))
-                event reward_revoke "撤销奖励 #$LAST_BONUS_ID"
+                event reward_revoke "-$((LAST_BONUS_S / 60)) 分钟"
                 LAST_BONUS_S=0
                 LAST_BONUS_ID=0
                 ;;
