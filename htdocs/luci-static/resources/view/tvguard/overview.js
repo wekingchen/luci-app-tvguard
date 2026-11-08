@@ -156,6 +156,14 @@ function shadowName(value) {
     }[value] || '暂时无法判断';
 }
 
+function childPolicyNote(state) {
+    if (state.policy_reason === 'quota')
+        return state.enforce ? '今日儿童额度已用完，正式控制会阻断联网' : '今日儿童额度已用完；观察模式下仍不会断网';
+    if (state.policy_reason === 'window')
+        return state.enforce ? '当前不在允许使用时段，正式控制会阻断联网' : '当前不在允许使用时段；观察模式下仍不会断网';
+    return '儿童额度会按联网活动估算消耗';
+}
+
 return view.extend({
     load: function() {
         return Promise.all([
@@ -196,7 +204,7 @@ return view.extend({
             '家长授权剩余 ' + duration(parentLeft) :
             (state.mode === 'locked' ?
                 (state.enforce ? '正式控制下会阻断电视联网' : '观察模式下只记录锁定意图，不断网') :
-                '儿童额度会按联网活动估算消耗');
+                childPolicyNote(state));
         var activityName = {
             active: '检测到联网活动',
             silent: '当前网络静默',
@@ -228,6 +236,17 @@ return view.extend({
 
         n.undoButton.disabled = !Number(state.bonus_undo_available || 0);
         n.undoButton.title = n.undoButton.disabled ? '当前没有可撤销的最近一笔奖励' : '撤销最近一笔尚未撤销的奖励';
+
+        var bonusSeconds = Math.max(0, Number(state.bonus_seconds) || 0);
+        var bonusLimit = Math.max(0, Number(state.bonus_limit_seconds) || 0);
+        n.rewardLimit.textContent = bonusLimit > 0 ?
+            '今日已奖励 ' + minutes(bonusSeconds) + ' / ' + minutes(bonusLimit) + ' 分钟' :
+            '今天的额外奖励上限为 0 分钟';
+        n.rewardButtons.forEach(function(item) {
+            var wouldExceed = bonusSeconds + item.minutes * 60 > bonusLimit;
+            item.node.disabled = wouldExceed;
+            item.node.title = wouldExceed ? '添加后会超过今天的最大奖励额度' : '';
+        });
 
         n.shadowValue.textContent = shadowName(state.shadow_label);
         n.shadowNote.textContent = state.shadow_label === 'unknown' ?
@@ -406,7 +425,7 @@ return view.extend({
             '家长授权剩余 ' + duration(parentLeft) :
             (s.mode === 'locked' ?
                 (s.enforce ? '正式控制下会阻断电视联网' : '观察模式下只记录锁定意图，不断网') :
-                '儿童额度会按联网活动估算消耗');
+                childPolicyNote(s));
 
         var controlName = s.enforce ? '正式控制' : '观察模式';
         var controlNote = s.enforce ?
@@ -599,11 +618,18 @@ return view.extend({
             'class': 'alert-message success',
             'style': 'margin:12px 0 0;' + (s.mode === 'parent' ? '' : 'display:none')
         }, s.mode === 'parent' ? '家长模式进行中 · 预计剩余 ' + duration(parentLeft) : '');
+        var reward15Button = this.actionButton('+15 分钟', ['bonus', '15']);
+        var reward30Button = this.actionButton('+30 分钟', ['bonus', '30']);
+        var reward60Button = this.actionButton('+60 分钟', ['bonus', '60']);
         var undoButton = this.actionButton('撤销上次奖励', ['bonus', 'undo'], {
             disabled: !Number(s.bonus_undo_available || 0),
             title: Number(s.bonus_undo_available || 0) ?
                 '撤销最近一笔尚未撤销的奖励' : '当前没有可撤销的最近一笔奖励'
         });
+        var rewardLimitNode = E('div', {
+            'class': 'description',
+            'style': 'margin-top:10px;line-height:1.45'
+        }, '');
         var shadowValueNode = E('span', {}, shadowName(s.shadow_label));
         var shadowNoteNode = E('span', {}, s.shadow_label === 'unknown' ?
             '当前证据不足或样本重叠，不做推断。' :
@@ -626,6 +652,12 @@ return view.extend({
             childButton: childModeButton,
             lockButton: lockModeButton,
             undoButton: undoButton,
+            rewardLimit: rewardLimitNode,
+            rewardButtons: [
+                { node: reward15Button, minutes: 15 },
+                { node: reward30Button, minutes: 30 },
+                { node: reward60Button, minutes: 60 }
+            ],
             shadowValue: shadowValueNode,
             shadowNote: shadowNoteNode,
             trafficValue: trafficValueNode,
@@ -682,11 +714,12 @@ return view.extend({
 
             panel('儿童时间奖励', '奖励只增加今天的儿童额度，不改变模式；如果点错，可以撤销最近一笔奖励。', [
                 buttonRow([
-                    this.actionButton('+15 分钟', ['bonus', '15']),
-                    this.actionButton('+30 分钟', ['bonus', '30']),
-                    this.actionButton('+60 分钟', ['bonus', '60']),
+                    reward15Button,
+                    reward30Button,
+                    reward60Button,
                     undoButton
-                ])
+                ]),
+                rewardLimitNode
             ]),
 
             panel('智能识别 · 实验', '用于验证“播放 / 暂停 / 首页 / 待机”的通用网络特征。当前结果只展示，不参与计时和封禁。', [
