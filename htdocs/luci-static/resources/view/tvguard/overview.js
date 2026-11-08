@@ -181,12 +181,12 @@ return view.extend({
             ]),
             panel('网络采样与手工校准（观察模式）', [
                 E('p', { 'class': 'description' },
-                    '这些只是网络活动统计，不能证明电视目前属于哪个视频 App、是否暂停或是否有人观看。校准标签由家长手动确认，绝不自动免计时。'),
-                E('p', [ E('strong', '最近 10 秒总包频率：'), String(s.pps || 0) + ' PPS' ]),
+                    '当前计数规则只统计从电视发出的 IPv4 包，并非完整的视频下载流量；不能证明前台 App、暂停或观看状态。校准标签由家长手动确认，绝不自动免计时。'),
+                E('p', [ E('strong', '电视发出包频率（最近 10 秒）：'), String(s.pps || 0) + ' PPS' ]),
                 E('p', [
                     E('strong', 'TCP：'), String(s.tcp_pps || 0) + ' PPS · ',
                     E('strong', 'UDP：'), String(s.udp_pps || 0) + ' PPS · ',
-                    E('strong', '速率：'), String(s.bytes_per_second || 0) + ' B/s'
+                    E('strong', '电视发出字节速率：'), String(s.bytes_per_second || 0) + ' B/s'
                 ]),
                 E('p', [ E('strong', '网络强度：'), String(s.traffic_class || 'unknown') ]),
                 E('p', [ E('strong', '网络指纹候选：'),
