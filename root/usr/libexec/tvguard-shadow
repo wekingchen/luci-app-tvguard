@@ -64,7 +64,10 @@ $7 ~ /^[0-9]+$/ && $8 ~ /^[0-9]+$/ {
         bmin[label]=low(bmin[label],$8); bmax[label]=high(bmax[label],$8)
     }
     session_seen[label SUBSEP $2]=1
-    app_seen[label SUBSEP $4]=1
+    # "other" and "general" may represent many unnamed apps; neither is
+    # proof of a second *independent* application for cross-app validation.
+    if ($4=="tencent" || $4=="iqiyi" || $4=="mango")
+        app_seen[label SUBSEP $4]=1
 }
 END {
     for (k in session_seen) {
