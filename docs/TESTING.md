@@ -2,6 +2,19 @@
 
 > 状态：v0.1.1 已在用户 N1 完成基础安装、LuCI 页面、RAW 出站计数和默认双重封禁开关验证；当前开发分支新增的代理隔离审计、打包加固和可选回程观测仍待下一轮 N1 验收。尚未证明可投入正式家庭控制，IPK 仍是开发构建，不是稳定 Release。
 
+## v0.1.7 真机家长模式验证 · 2026-11-08
+
+N1 实机已验证新版持续家长模式跨服务重启保持：
+
+- 切换家长模式后：`mode=parent`、`parent_until=0`、`policy_reason=none`。
+- 重启 `/etc/init.d/tvguard` 后仍为：`mode=parent`、`parent_until=0`。
+- 重启前后 `used_seconds=7088` 未增加，说明家长模式未消耗儿童额度。
+- `quota_seconds=9000`、`bonus_seconds=1800` 保持一致，已有儿童奖励未因进入家长模式或服务重启丢失。
+- `would_block=0`、`blocked=0`、`firewall_state=allowed`，观察模式下没有误阻断。
+- `enforce=0`、`armed=0`、`observe_reply=disabled`，安全边界保持。
+
+该结果确认新版语义：**家长模式无倒计时，持续生效直到手动切回儿童模式；儿童临时多看仍由奖励时间承担。**
+
 ## 自动化测试覆盖
 
 当前开发分支的自动化测试分为四层，共 18 个测试文件：
