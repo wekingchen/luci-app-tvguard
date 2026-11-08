@@ -23,6 +23,7 @@ for f in \
     usr/libexec/tvguard-status \
     usr/libexec/tvguard-fw \
     usr/libexec/tvguard-firewall-include \
+    usr/libexec/tvguard-isolation-audit \
     usr/libexec/tvguard-shadow; do
     chmod 755 "$WORK/data/$f"
 done
