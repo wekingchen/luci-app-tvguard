@@ -25,6 +25,7 @@ const mockFs = {
         if (args[0] === 'status') return Promise.resolve({code: 0, stdout: JSON.stringify(state)});
         if (args[0] === 'log') return Promise.resolve({code: 0, stdout: ''});
         if (args[0] === 'calibration') return Promise.resolve({code: 0, stdout: 'sample line'});
+        if (args[0] === 'isolation') return Promise.resolve({code: 0, stdout: 'ok\n'});
         if (name === '/usr/libexec/tvguardctl') return Promise.resolve({code: 0, stdout: ''});
         throw Error('unexpected command: ' + name + ' ' + args.join(' '));
     }
@@ -86,12 +87,14 @@ const updates = [
 ];
 (async () => {
     const initial = await page.load();
-    assert.equal(initial.length, 3);
+    assert.equal(initial.length, 4);
     const root = page.render(initial);
     assert.equal(root.tag, 'div');
     assert.equal(polls.size, 1);
     assert.equal(page._calibrationNodes.start.disabled, false);
     assert.equal(page._calibrationNodes.stop.disabled, true);
+    assert.match(page._isolationStatus.label, /通过/);
+    assert.match(page._isolationStatus.label, /nat \/ mangle \/ filter/);
     assert.match(page._trafficNodes.outgoing.textContent, /8 PPS/);
     assert.match(page._trafficNodes.replyStatus.textContent, /未启用|暂不可用/);
     Object.assign(state, {
