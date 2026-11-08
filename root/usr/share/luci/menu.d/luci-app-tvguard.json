@@ -1,0 +1,24 @@
+{
+  "admin/services/tvguard": {
+    "title": "电视时长 TV Guard",
+    "order": 85,
+    "action": {
+      "type": "view",
+      "path": "tvguard/overview"
+    },
+    "depends": {
+      "acl": ["luci-app-tvguard"]
+    }
+  },
+  "admin/services/tvguard/settings": {
+    "title": "时间与规则设置",
+    "order": 10,
+    "action": {
+      "type": "view",
+      "path": "tvguard/settings"
+    },
+    "depends": {
+      "acl": ["luci-app-tvguard"]
+    }
+  }
+}
