@@ -10,7 +10,8 @@
 - 儿童、家长限时授权、手动锁定三种策略
 - 工作日 / 周末基础额度、允许时段、每日清零
 - 家长奖励 15 / 30 / 60 分钟，可撤销最近一次未撤销奖励
-- 独立 fw3 RAW PREROUTING 计数链：总包、TCP、UDP；不覆盖现有 SSR 透明代理、Docker 防火墙链
+- 独立 fw3 RAW PREROUTING 计数链：电视出站总包、TCP、UDP；不覆盖现有 SSR 透明代理、Docker 防火墙链
+- **实验性回程观测（默认关闭）**：另在 raw PREROUTING、OUTPUT 增加无动作目标的只计数规则，分别观察经过 N1 的回程包与本地代理回程包；与计时、封禁完全隔离，尚未完成真机验证
 - 10 秒间隔的轻量级联网活动影子计时
 - **可选的手工校准**：仅用于开发验证，家长可以标记 120 秒的播放、暂停、应用首页、系统首页或待机。视频 App 名称是实验标签，不是日常使用条件；不需要逐个配置所有视频 App
 - 数据持久化及规则重载恢复，模拟环境回归测试和 GitHub Actions 开发版 IPK
@@ -33,9 +34,10 @@
 ```uci
 option enforce '0'
 option allow_enforcement '0'
+option observe_reply '0'
 ```
 
-双开关未同时开启时不允许 TV Guard 主动封禁电视。**不要在还未完成 N1 真机验收前打开正式封禁。**
+双开关未同时开启时不允许 TV Guard 主动封禁电视。回程观测开关也默认关闭，其开启不赋予封禁权限。**不要在还未完成 N1 真机验收前打开正式封禁。**
 
 网络控制仅覆盖实际经过 N1 的 IPv4 数据包。电视如果手动换网关直接走主路由，N1 无法可靠阻止；严格防绕过需要主路由配合。
 
@@ -43,7 +45,8 @@ option allow_enforcement '0'
 
 - 代码：[PR #1](https://github.com/wekingchen/luci-app-tvguard/pull/1)
 - 构建：PR Checks 下 `package` 产出开发版 IPK（具体版本以相应 Action 产物为准）；N1 早期包安装已验证，后续版本仍需逐版验收。
-- 仓库 `tests/test-controller.sh` 测试额度、奖励和授权；`tests/test-firewall.sh` 在模拟 iptables 上测试幂等安装、重载与删除。
+- 仓库 `tests/test-controller.sh` 测试额度、奖励和授权；`tests/test-firewall.sh` 在模拟 iptables 上测试幂等安装、重载与删除。还覆盖回程计数钩子的幂等性、策略隔离、计数器重置以及独立修复。
+- 新增回程观测仅在开发分支和模拟环境中通过测试；当前用户 N1 无需升级、启用或采样。
 - [通用识别、验证方法及已知限制](docs/CALIBRATION.md)
 - [设计与已知限制](docs/DESIGN.md)
 - [N1 联调与回滚清单](docs/TESTING.md)
