@@ -1,3 +1,12 @@
 #!/bin/sh
-# Called by firewall3 on start/reload; do not manipulate other packages' rules.
-/usr/libexec/tvguard-fw sync
+# Called by firewall3 on start/reload.
+#
+# CRITICAL ISOLATION CONTRACT:
+# A TV Guard failure must NEVER fail the global firewall reload, because proxy
+# packages may be rebuilding their own nat/mangle/raw rules in the same cycle.
+# We fail open for TV Guard itself: log, leave proxy/firewall ownership alone,
+# and return success to firewall3.
+if ! /usr/libexec/tvguard-fw sync; then
+    logger -t tvguard "isolated firewall sync failed; global firewall reload left successful"
+fi
+exit 0
