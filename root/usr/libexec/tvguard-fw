@@ -221,6 +221,10 @@ case "${1:-}" in
         while has PREROUTING -i "$IFACE" -s "$IP" -j "$RAW"; do
             raw_ipt -D PREROUTING -i "$IFACE" -s "$IP" -j "$RAW" || break
         done
+        if has PREROUTING -i "$IFACE" -s "$IP" -j "$RAW"; then
+            echo "TV Guard: failed to detach TV-scoped raw hook; refusing incomplete removal" >&2
+            exit 1
+        fi
         if [ "$owned" = 1 ]; then
             raw_ipt -F "$RAW" 2>/dev/null || :
             raw_ipt -X "$RAW" 2>/dev/null || :
