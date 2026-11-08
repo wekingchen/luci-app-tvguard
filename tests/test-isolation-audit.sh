@@ -35,6 +35,12 @@ case "${TVG_AUDIT_CASE:-ok}:$table" in
 -A PREROUTING -p tcp -j EXISTING_RAW_PROXY_RULE
 EOF
         ;;
+    unreadable_nat:nat)
+        exit 4
+        ;;
+    unreadable_nat:mangle|unreadable_nat:filter|unreadable_nat:raw)
+        :
+        ;;
     tvg_nat:nat)
         echo '-A PREROUTING -m comment --comment TVG_BAD -j ACCEPT'
         ;;
@@ -134,6 +140,23 @@ chmod +x "$AUDIT"
 
 export TVG_AUDIT_CASE=ok
 [ "$(sh "$AUDIT")" = ok ]
+
+export TVG_AUDIT_CASE=unreadable_nat
+if sh "$AUDIT" >"$TMP/out" 2>"$TMP/err"; then
+    echo "FAIL: audit accepted unreadable nat table" >&2
+    exit 1
+fi
+grep -q '^unavailable:nat_table
+    export TVG_AUDIT_CASE="$bad"
+    if sh "$AUDIT" >"$TMP/out" 2>"$TMP/err"; then
+        echo "FAIL: audit accepted unsafe case $bad" >&2
+        exit 1
+    fi
+    grep -q '^unsafe:' "$TMP/out"
+done
+
+echo "PASS: runtime audit allows unrelated proxy rules and rejects TVG namespace/table/target violations"
+ "$TMP/out"
 
 for bad in tvg_nat passive_target unexpected_chain extra_gate broad_core duplicate_core; do
     export TVG_AUDIT_CASE="$bad"
