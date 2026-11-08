@@ -1,5 +1,5 @@
 #!/bin/sh
-# Host-only smoke test: mocks uci/firewall, never touches host iptables.
+# Host-only functional test, never invokes actual router iptables.
 set -eu
 ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
 TMP="$(mktemp -d)"
@@ -28,75 +28,87 @@ case "$1" in
 sync) exit 0 ;;
 gate) printf '%s\n' "$2" > "$TVGUARD_TEST_GATE" ;;
 inspect) if [ "$(cat "$TVGUARD_TEST_GATE")" = 1 ]; then echo blocked; else echo allowed; fi ;;
-count) cat "$TVGUARD_TEST_COUNTER" ;;
+sample) cat "$TVGUARD_TEST_SAMPLE" ;;
 *) exit 2 ;;
 esac
 EOFW
 chmod +x "$TMP/bin/uci" "$TMP/fw"
-echo 0 > "$TMP/counter"
+echo '0 0 0 0 0 0' > "$TMP/sample"
 echo 9 > "$TMP/gate"
 export TVGUARD_RUN="$TMP/run/runtime"
 export TVGUARD_DIR="$TMP/state"
 export TVGUARD_LOCK="$TMP/run/lock"
 export TVGUARD_FW="$TMP/fw"
-export TVGUARD_TEST_COUNTER="$TMP/counter"
+export TVGUARD_TEST_SAMPLE="$TMP/sample"
 export TVGUARD_TEST_GATE="$TMP/gate"
 PATH="$TMP/bin:$PATH"
 export PATH
 CTL="$ROOT/root/usr/libexec/tvguardctl"
+
+status() { sh "$CTL" status > "$TMP/status.json"; }
+check() { python3 - "$TMP/status.json" "$1" <<'PY'
+import json,sys
+s=json.load(open(sys.argv[1]))
+exec(sys.argv[2], {"s":s})
+PY
+}
+
 sh "$CTL" sync
-sh "$CTL" status > "$TMP/status.json"
-python3 - "$TMP/status.json" <<'PY'
-import json,sys
-s=json.load(open(sys.argv[1]))
-assert s["enforce"] == 0
-assert s["mode"] == "child"
-assert s["bonus_seconds"] == 0
-PY
+status
+check 'assert s["enforce"] == 0 and s["armed"] == 0 and s["mode"] == "child"'
+check 'assert s["pps"] == 0 and s["calibration_label"] == "none"'
+
 sh "$CTL" bonus 15
-sh "$CTL" status > "$TMP/status.json"
-python3 - "$TMP/status.json" <<'PY'
-import json,sys
-s=json.load(open(sys.argv[1]))
-assert s["bonus_seconds"] == 900, s
-assert s["remaining_seconds"] >= 900, s
-PY
+status
+check 'assert s["bonus_seconds"] == 900 and s["remaining_seconds"] >= 900'
 sh "$CTL" bonus undo
-sh "$CTL" status > "$TMP/status.json"
-python3 - "$TMP/status.json" <<'PY'
-import json,sys
-assert json.load(open(sys.argv[1]))["bonus_seconds"] == 0
-PY
+status
+check 'assert s["bonus_seconds"] == 0'
+if sh "$CTL" bonus undo > "$TMP/out" 2>&1; then exit 1; fi
+if sh "$CTL" bonus 999 > "$TMP/out" 2>&1; then exit 1; fi
+
 sh "$CTL" mode parent 30
-sh "$CTL" status > "$TMP/status.json"
-python3 - "$TMP/status.json" <<'PY'
-import json,sys
-s=json.load(open(sys.argv[1]))
-assert s["mode"] == "parent"
-assert s["parent_until"] > 0
-PY
+status
+check 'assert s["mode"] == "parent" and s["parent_until"] > 0'
 sh "$CTL" mode locked
-sh "$CTL" status > "$TMP/status.json"
-python3 - "$TMP/status.json" <<'PY'
-import json,sys
-s=json.load(open(sys.argv[1]))
-assert s["mode"] == "locked" and s["would_block"] == 1
-assert s["enforce"] == 0 and s["blocked"] == 0
-PY
+status
+check 'assert s["mode"] == "locked" and s["would_block"] == 1 and s["blocked"] == 0'
 sh "$CTL" mode child
-echo 100 > "$TMP/counter"
+
+# Prime the counter baseline: never bill 20 seconds when daemon starts.
+echo '500 100000 100 20000 350 70000' > "$TMP/sample"
 sh "$CTL" tick
-sh "$CTL" status > "$TMP/status.json"
-python3 - "$TMP/status.json" <<'PY'
-import json,sys
-s=json.load(open(sys.argv[1]))
-assert s["used_seconds"] > 0, s
-assert s["activity"] == "active", s
-assert s["enforce"] == 0, s
+status
+check 'assert s["used_seconds"] == 0, s'
+check 'assert s["pps"] == 0, s'
+
+# Artificially simulate 10 elapsed seconds without sleeping.
+python3 - "$TVGUARD_RUN" <<'PY'
+import pathlib,sys,time
+p=pathlib.Path(sys.argv[1])
+s=p.read_text()
+s=s.replace(f'LAST_EPOCH={int(time.time())}', f'LAST_EPOCH={int(time.time())-10}')
+if 'LAST_EPOCH=' not in s: raise RuntimeError("no LAST_EPOCH")
+# Robustly set last timestamp even across second boundaries
+s='\n'.join('LAST_EPOCH='+str(int(time.time())-10) if x.startswith('LAST_EPOCH=') else x for x in s.splitlines())+'\n'
+p.write_text(s)
 PY
-if sh "$CTL" enforce on > "$TMP/out" 2>&1; then
-    echo "FAIL: observer-only build allowed enforcement without arming" >&2
-    exit 1
-fi
+sh "$CTL" calibrate playing
+echo '1500 240000 170 27000 1280 193000' > "$TMP/sample"
+sh "$CTL" tick
+status
+check 'assert s["used_seconds"] >= 9 and s["used_seconds"] <= 11, s'
+check 'assert s["pps"] > 0 and s["tcp_pps"] > 0 and s["udp_pps"] > 0, s'
+check 'assert s["traffic_class"] in ("high_traffic","medium_traffic","low_traffic")'
+check 'assert s["calibration_label"] == "playing"'
+test -s "$TMP/state/calibration.csv"
+grep -q ',playing,' "$TMP/state/calibration.csv"
+sh "$CTL" calibrate stop
+status
+check 'assert s["calibration_label"] == "none"'
+
+# No invalid labels or hidden enforcement bypass.
+if sh "$CTL" calibrate unknown > "$TMP/out" 2>&1; then exit 1; fi
+if sh "$CTL" enforce on > "$TMP/out" 2>&1; then exit 1; fi
 test "$(cat "$TMP/gate")" = 0
-echo "PASS: status, award/undo, parent/lock, activity, enforcement interlock"
+echo "PASS: syntax, mode, rewards, startup timebase, telemetry, labels, fail-safe"
