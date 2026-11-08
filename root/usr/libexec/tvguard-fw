@@ -1,0 +1,79 @@
+#!/bin/sh
+# TV Guard - firewall3/iptables-legacy adapter.
+# Requires root. Never flushes or overwrites unrelated chains.
+set -eu
+IPT=/usr/sbin/iptables
+[ -x "$IPT" ] || IPT="$(command -v iptables)"
+RAW=TVG_RAW
+GATE=TVG_GATE
+IP="$(uci -q get tvguard.main.ip || echo 192.168.101.76)"
+IFACE="$(uci -q get tvguard.main.interface || echo br-lan)"
+
+case "$IP" in ''|*[!0-9.]* ) echo "invalid TV IPv4 address" >&2; exit 2;; esac
+case "$IFACE" in ''|*[!a-zA-Z0-9_.:-]* ) echo "invalid interface" >&2; exit 2;; esac
+
+has() { "$IPT" -t raw -C "$@" >/dev/null 2>&1; }
+create() {
+    "$IPT" -t raw -N "$RAW" 2>/dev/null || :
+    "$IPT" -t raw -N "$GATE" 2>/dev/null || :
+    # A rule with no jump target only counts matching packets.
+    has "$RAW" -m comment --comment TVG_COUNT ||
+        "$IPT" -t raw -A "$RAW" -m comment --comment TVG_COUNT
+    has "$RAW" -j "$GATE" ||
+        "$IPT" -t raw -A "$RAW" -j "$GATE"
+    has PREROUTING -i "$IFACE" -s "$IP" -j "$RAW" ||
+        "$IPT" -t raw -I PREROUTING 1 -i "$IFACE" -s "$IP" -j "$RAW"
+}
+gate() {
+    case "$1" in 0) TARGET=RETURN;; 1) TARGET=DROP;; *) exit 2;; esac
+    # Atomic replacement when already initialized; avoid temporary ACCEPT windows.
+    if "$IPT" -t raw -C "$GATE" -j RETURN 2>/dev/null ||
+       "$IPT" -t raw -C "$GATE" -j DROP 2>/dev/null; then
+        "$IPT" -t raw -R "$GATE" 1 -j "$TARGET"
+    else
+        "$IPT" -t raw -A "$GATE" -j "$TARGET"
+    fi
+}
+policy() {
+    ENFORCE="$(uci -q get tvguard.main.enforce || echo 0)"
+    [ "$ENFORCE" = 1 ] || { echo 0; return; }
+    FILE=/etc/tvguard/state
+    [ -r "$FILE" ] || { echo 1; return; }
+    MODE="$(sed -n 's/^MODE=//p' "$FILE" | tail -n 1)"
+    BLOCKED="$(sed -n 's/^BLOCKED=//p' "$FILE" | tail -n 1)"
+    UNTIL="$(sed -n 's/^PARENT_UNTIL=//p' "$FILE" | tail -n 1)"
+    case "$MODE" in
+        locked) echo 1 ;;
+        parent)
+            case "$UNTIL" in ''|*[!0-9]*) echo 1;; *)
+                [ "$(date +%s)" -ge "$UNTIL" ] && echo 1 || echo 0
+            esac ;;
+        child)
+            case "$BLOCKED" in 0|1) echo "$BLOCKED";; *) echo 1;; esac ;;
+        *) echo 1 ;;
+    esac
+}
+case "${1:-}" in
+    sync)
+        create
+        gate "$(policy)"
+        ;;
+    gate)
+        create
+        gate "${2:-}"
+        ;;
+    count)
+        "$IPT" -t raw -L "$RAW" -n -v -x 2>/dev/null |
+            awk '/TVG_COUNT/ {print $1; found=1; exit} END {if (!found) exit 1}'
+        ;;
+    remove)
+        while has PREROUTING -i "$IFACE" -s "$IP" -j "$RAW"; do
+            "$IPT" -t raw -D PREROUTING -i "$IFACE" -s "$IP" -j "$RAW"
+        done
+        "$IPT" -t raw -F "$RAW" 2>/dev/null || :
+        "$IPT" -t raw -X "$RAW" 2>/dev/null || :
+        "$IPT" -t raw -F "$GATE" 2>/dev/null || :
+        "$IPT" -t raw -X "$GATE" 2>/dev/null || :
+        ;;
+    *) echo "usage: tvguard-fw {sync|gate 0|gate 1|count|remove}" >&2; exit 2 ;;
+esac
