@@ -181,6 +181,66 @@ return view.extend({
         ]);
     },
 
+    updateOverviewUI: function(state) {
+        var n = this._overviewNodes;
+        if (!n)
+            return;
+
+        var parentLeft = Math.max(0, Number(state.parent_until || 0) - Number(state.server_epoch || 0));
+        var modeName = {
+            child: '儿童模式',
+            parent: '家长模式',
+            locked: '已锁定'
+        }[state.mode] || '未知模式';
+        var modeNote = state.mode === 'parent' && parentLeft > 0 ?
+            '家长授权剩余 ' + duration(parentLeft) :
+            (state.mode === 'locked' ?
+                (state.enforce ? '正式控制下会阻断电视联网' : '观察模式下只记录锁定意图，不断网') :
+                '儿童额度会按联网活动估算消耗');
+        var activityName = {
+            active: '检测到联网活动',
+            silent: '当前网络静默',
+            unknown: '等待首次采样'
+        }[state.activity] || '状态未知';
+        var quota = Math.max(0, Number(state.quota_seconds) || 0);
+        var used = Math.max(0, Number(state.used_seconds) || 0);
+        var quotaPercent = quota > 0 ? clamp(used * 100 / quota, 0, 100) : 0;
+
+        n.remaining.textContent = duration(state.remaining_seconds);
+        n.mode.textContent = modeName;
+        n.modeNote.textContent = modeNote;
+        n.activity.textContent = activityName;
+        n.used.textContent = '已计时 ' + duration(state.used_seconds);
+        n.quota.textContent = '总额度 ' + duration(state.quota_seconds);
+        n.quotaProgress.value = quotaPercent;
+        n.quotaProgress.setAttribute('aria-valuenow', String(Math.round(quotaPercent)));
+        n.quotaRemaining.textContent = '剩余 ' + duration(state.remaining_seconds);
+        n.quotaBonus.textContent = '今日奖励 +' + minutes(state.bonus_seconds) + ' 分钟';
+
+        n.parentNotice.style.display = state.mode === 'parent' ? '' : 'none';
+        n.parentNotice.textContent = state.mode === 'parent' ?
+            '家长模式进行中 · 预计剩余 ' + duration(parentLeft) : '';
+
+        n.childButton.disabled = state.mode === 'child';
+        n.childButton.textContent = state.mode === 'child' ? '儿童模式 · 当前' : '儿童模式';
+        n.lockButton.disabled = state.mode === 'locked';
+        n.lockButton.textContent = state.mode === 'locked' ? '已锁定 · 当前' : '立即锁定';
+
+        n.undoButton.disabled = !Number(state.bonus_undo_available || 0);
+        n.undoButton.title = n.undoButton.disabled ? '当前没有可撤销的最近一笔奖励' : '撤销最近一笔尚未撤销的奖励';
+
+        n.shadowValue.textContent = shadowName(state.shadow_label);
+        n.shadowNote.textContent = state.shadow_label === 'unknown' ?
+            '当前证据不足或样本重叠，不做推断。' :
+            '仅作为实验候选，不会自动免计时。';
+        n.trafficValue.textContent = trafficName(state.traffic_class);
+        n.trafficNote.textContent = String(state.pps || 0) + ' PPS · ' +
+            byteRate(state.bytes_per_second || 0);
+
+        this._uiSummary.mode = modeName;
+        this._uiSummary.quotaPercent = quotaPercent;
+    },
+
     updateTrafficUI: function(state) {
         var n = this._trafficNodes;
         if (!n)
@@ -268,6 +328,7 @@ return view.extend({
                 throw new Error(r.stderr || '后台状态读取失败');
 
             var s = JSON.parse(r.stdout);
+            this.updateOverviewUI(s);
             this.updateCalibrationUI(s);
             this.updateTrafficUI(s);
 
@@ -474,20 +535,26 @@ return view.extend({
         };
         this._trafficNodes = trafficNodes;
 
+        var childModeButton = this.actionButton(
+            s.mode === 'child' ? '儿童模式 · 当前' : '儿童模式',
+            ['mode', 'child'], { disabled: s.mode === 'child', primary: s.mode === 'child' }
+        );
+        var lockModeButton = this.actionButton(
+            s.mode === 'locked' ? '已锁定 · 当前' : '立即锁定',
+            ['mode', 'locked'], {
+                danger: true,
+                disabled: s.mode === 'locked',
+                confirm: '确认切换为锁定模式？' +
+                    (s.enforce ? '正式控制已开启，电视联网可能立即被阻断。' :
+                        '当前仍是观察模式，因此只记录锁定状态，不会断网。')
+            }
+        );
         var modeButtons = [
-            this.actionButton(s.mode === 'child' ? '儿童模式 · 当前' : '儿童模式',
-                ['mode', 'child'], { disabled: s.mode === 'child', primary: s.mode === 'child' }),
+            childModeButton,
             this.actionButton('家长 30 分钟', ['mode', 'parent', '30']),
             this.actionButton('家长 60 分钟', ['mode', 'parent', '60']),
             this.actionButton('家长 120 分钟', ['mode', 'parent', '120']),
-            this.actionButton(s.mode === 'locked' ? '已锁定 · 当前' : '立即锁定',
-                ['mode', 'locked'], {
-                    danger: true,
-                    disabled: s.mode === 'locked',
-                    confirm: '确认切换为锁定模式？' +
-                        (s.enforce ? '正式控制已开启，电视联网可能立即被阻断。' :
-                            '当前仍是观察模式，因此只记录锁定状态，不会断网。')
-                })
+            lockModeButton
         ];
 
         var canEnable = !!s.armed && isolationSafe;
@@ -511,10 +578,59 @@ return view.extend({
             });
         }
 
-        var shadow = shadowName(s.shadow_label);
-        var shadowNote = s.shadow_label === 'unknown' ?
+        var remainingNode = E('span', {}, duration(s.remaining_seconds));
+        var modeNode = E('span', {}, modeName);
+        var modeNoteNode = E('span', {}, modeNote);
+        var activityNode = E('span', {}, activityName);
+        var usedNode = E('strong', {}, '已计时 ' + duration(s.used_seconds));
+        var quotaNode = E('span', {}, '总额度 ' + duration(s.quota_seconds));
+        var quotaProgressNode = E('progress', {
+            'max': '100',
+            'value': String(quotaPercent),
+            'style': 'width:100%;height:18px',
+            'aria-label': '今日额度使用进度',
+            'aria-valuenow': String(Math.round(quotaPercent))
+        });
+        var quotaRemainingNode = E('span', { 'class': 'description' },
+            '剩余 ' + duration(s.remaining_seconds));
+        var quotaBonusNode = E('span', { 'class': 'description' },
+            '今日奖励 +' + minutes(s.bonus_seconds) + ' 分钟');
+        var parentNoticeNode = E('div', {
+            'class': 'alert-message success',
+            'style': 'margin:12px 0 0;' + (s.mode === 'parent' ? '' : 'display:none')
+        }, s.mode === 'parent' ? '家长模式进行中 · 预计剩余 ' + duration(parentLeft) : '');
+        var undoButton = this.actionButton('撤销上次奖励', ['bonus', 'undo'], {
+            disabled: !Number(s.bonus_undo_available || 0),
+            title: Number(s.bonus_undo_available || 0) ?
+                '撤销最近一笔尚未撤销的奖励' : '当前没有可撤销的最近一笔奖励'
+        });
+        var shadowValueNode = E('span', {}, shadowName(s.shadow_label));
+        var shadowNoteNode = E('span', {}, s.shadow_label === 'unknown' ?
             '当前证据不足或样本重叠，不做推断。' :
-            '仅作为实验候选，不会自动免计时。';
+            '仅作为实验候选，不会自动免计时。');
+        var trafficValueNode = E('span', {}, trafficName(s.traffic_class));
+        var trafficNoteNode = E('span', {}, String(s.pps || 0) + ' PPS · ' +
+            byteRate(s.bytes_per_second || 0));
+
+        this._overviewNodes = {
+            remaining: remainingNode,
+            mode: modeNode,
+            modeNote: modeNoteNode,
+            activity: activityNode,
+            used: usedNode,
+            quota: quotaNode,
+            quotaProgress: quotaProgressNode,
+            quotaRemaining: quotaRemainingNode,
+            quotaBonus: quotaBonusNode,
+            parentNotice: parentNoticeNode,
+            childButton: childModeButton,
+            lockButton: lockModeButton,
+            undoButton: undoButton,
+            shadowValue: shadowValueNode,
+            shadowNote: shadowNoteNode,
+            trafficValue: trafficValueNode,
+            trafficNote: trafficNoteNode
+        };
 
         var page = [
             E('div', { 'style': 'margin-bottom:14px' }, [
@@ -527,8 +643,8 @@ return view.extend({
             statusBanner,
 
             grid([
-                metric('今日剩余', duration(s.remaining_seconds), '儿童额度剩余', true),
-                metric('当前模式', modeName, modeNote, false),
+                metric('今日剩余', remainingNode, '儿童额度剩余', true),
+                metric('当前模式', modeNode, modeNoteNode, false),
                 metric('控制状态', controlName, controlNote, false),
                 E('div', {
                     'style': 'min-width:0;padding:14px;border:1px solid var(--border-color-medium,#ddd);' +
@@ -539,7 +655,7 @@ return view.extend({
                     E('div', {
                         'class': 'description',
                         'style': 'margin-top:7px;line-height:1.45'
-                    }, activityName)
+                    }, activityNode)
                 ])
             ], 180),
 
@@ -547,29 +663,21 @@ return view.extend({
                 E('div', {
                     'style': 'display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:7px'
                 }, [
-                    E('strong', {}, '已计时 ' + duration(s.used_seconds)),
-                    E('span', {}, '总额度 ' + duration(s.quota_seconds))
+                    usedNode,
+                    quotaNode
                 ]),
-                E('progress', {
-                    'max': '100',
-                    'value': String(quotaPercent),
-                    'style': 'width:100%;height:18px',
-                    'aria-label': '今日额度使用进度'
-                }),
+                quotaProgressNode,
                 E('div', {
                     'style': 'display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-top:7px'
                 }, [
-                    E('span', { 'class': 'description' }, '剩余 ' + duration(s.remaining_seconds)),
-                    E('span', { 'class': 'description' }, '今日奖励 +' + minutes(s.bonus_seconds) + ' 分钟')
+                    quotaRemainingNode,
+                    quotaBonusNode
                 ])
             ], 'margin-top:16px'),
 
             panel('观看模式', '日常最常用的操作。家长模式不会消耗儿童额度；锁定是否真的断网取决于“正式控制”是否开启。', [
                 buttonRow(modeButtons),
-                s.mode === 'parent' ? E('div', {
-                    'class': 'alert-message success',
-                    'style': 'margin:12px 0 0'
-                }, '家长模式进行中 · 预计剩余 ' + duration(parentLeft)) : null
+                parentNoticeNode
             ]),
 
             panel('儿童时间奖励', '奖励只增加今天的儿童额度，不改变模式；如果点错，可以撤销最近一笔奖励。', [
@@ -577,18 +685,14 @@ return view.extend({
                     this.actionButton('+15 分钟', ['bonus', '15']),
                     this.actionButton('+30 分钟', ['bonus', '30']),
                     this.actionButton('+60 分钟', ['bonus', '60']),
-                    this.actionButton('撤销上次奖励', ['bonus', 'undo'], {
-                        disabled: Number(s.bonus_seconds || 0) <= 0,
-                        title: Number(s.bonus_seconds || 0) <= 0 ? '当前没有可撤销的奖励' : ''
-                    })
+                    undoButton
                 ])
             ]),
 
             panel('智能识别 · 实验', '用于验证“播放 / 暂停 / 首页 / 待机”的通用网络特征。当前结果只展示，不参与计时和封禁。', [
                 grid([
-                    metric('当前候选', shadow, shadowNote, false),
-                    metric('网络活动强度', trafficName(s.traffic_class),
-                        String(s.pps || 0) + ' PPS · ' + byteRate(s.bytes_per_second || 0), false)
+                    metric('当前候选', shadowValueNode, shadowNoteNode, false),
+                    metric('网络活动强度', trafficValueNode, trafficNoteNode, false)
                 ], 220),
                 detailBlock('手工标注与样本', [
                     E('div', {
@@ -691,6 +795,7 @@ return view.extend({
             cssClass: isolationTone
         };
 
+        this.updateOverviewUI(s);
         this.updateCalibrationUI(s);
         this.updateTrafficUI(s);
 
