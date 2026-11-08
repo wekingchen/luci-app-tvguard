@@ -43,6 +43,8 @@ jobs:
         run: node tests/test-ui.js
       - name: Validate LuCI settings hierarchy and safety
         run: node tests/test-settings-ui.js
+      - name: Validate LuCI overview/time-rules tab structure
+        run: node tests/test-menu-ui.js
       - name: Verify LuCI read wrapper command allowlist
         run: dash tests/test-status-wrapper.sh
       - name: Exercise controller in mock FW3 environment
