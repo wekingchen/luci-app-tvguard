@@ -180,3 +180,11 @@ r6 进一步证明：正常播放也可能出现极高 rolling B/P（例如 P50/
 
 这套优先级已通过 N1 的 play → pause → play 真机序列验证。
 
+
+
+## 存储约束
+
+校准和学习数据属于长期模型输入，但不能以无限日志形式保存。当前 append-only 持久数据总设计预算为 1 MiB；超限时只保留最近记录。
+
+Adaptive Engine 的实时 rolling window 位于 `/var/run`，不是持久学习库。未来 Shadow Soak 也必须遵循“高频原始窗口放 volatile ring、持久层只留有界摘要”的原则。磁盘容量不能作为提高模型精度的代价。
+
