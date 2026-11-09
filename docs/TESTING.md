@@ -1,3 +1,37 @@
+## v0.1.13-r8 Durable MMC Data · 持久数据迁移
+
+N1 的固件 overlay 在升级/重刷时可能被替换，因此 `/etc/tvguard` 不再作为正式持久数据根。r8 将 TV Guard 的运行状态、学习资料和历史摘要统一迁到：
+
+`/mnt/mmcblk2p4/tvguard`
+
+迁移/故障语义：
+- `/mnt/mmcblk2p4` 精确挂载且可写时，正式数据根为 `/mnt/mmcblk2p4/tvguard`；
+- 首次 r7→r8 升级会原子复制并校验旧 `/etc/tvguard` 中已知文件，成功后才删除旧副本；
+- 已知数据全部迁完且旧目录为空时，可创建 `/etc/tvguard -> /mnt/mmcblk2p4/tvguard` 兼容软链接；
+- 未知/管理员自行放入 `/etc/tvguard` 的文件不会自动删除；
+- 若持久分区尚未挂载，新的写入只进入 `/var/run/tvguard-data`，不会重新把 overlay `/etc` 变成第二套持久数据库；
+- 持久盘恢复后，只合并挂载中断期间新增的 append-only 后缀；从旧库种入 RAM 供读取的前缀不会重复追加，避免学习样本被重复加权；
+- `/var/run/tvguard.state` 继续作为当前启动周期的运行态权威，磁盘状态是持久快照；
+- 原 r7 的 1 MiB append-only 总预算继续生效，迁移到 mmc 后仍会自动裁剪。
+
+当前正式持久文件：
+- `/mnt/mmcblk2p4/tvguard/state`
+- `/mnt/mmcblk2p4/tvguard/events.log`
+- `/mnt/mmcblk2p4/tvguard/calibration-v3.csv`
+- `/mnt/mmcblk2p4/tvguard/calibration-v4.csv`
+- `/mnt/mmcblk2p4/tvguard/learning-sessions.csv`
+- `/mnt/mmcblk2p4/tvguard/learning-last.txt`
+
+`tvguard-status storage` 会显示当前是 `persistent` 还是 `volatile`、实际数据目录、正式持久目录、挂载状态和剩余空间。
+
+CI #42598534187：static + package success；其中覆盖旧库迁移、挂载缺失 RAM fallback、恢复后只合并新增数据、学习数据不重复、存储上限、原有 controller/enforcement/firewall/proxy/Adaptive 回归。
+Package：`luci-app-tvguard_0.1.13-8_all.ipk`
+IPK SHA256：`aa0db29362b9ef87c5d6d1a7fe59a1968cb457ee3efab88788c989f74f417841`
+Artifact：`tvguard-v0.1.13-r8-durable-mmc-data-ipk`
+Artifact digest：`sha256:9ffe43ab29b8e92676616a4daf68acc5877249ca8b14402335ae8852e8700723`
+
+> 固件升级前必须先确认 `tvguard-status storage` 显示 `数据模式: persistent` 且当前目录为 `/mnt/mmcblk2p4/tvguard`。否则当前 r7 数据仍可能只在 overlay 中，不能宣称已具备跨固件升级持久性。
+
 ## v0.1.13-r7 Storage Guard · 持久存储硬上限
 
 为避免 N1 长期运行后 TV Guard 自身数据无限增长，r7 新增统一存储护栏。
@@ -156,7 +190,7 @@ Artifact digest：`sha256:213f138fe9ad288e468ad95e3e4247e9711498aa2fe1fafa52fec0
 - 采集时长可选 1 / 3 / 5 分钟，默认推荐 3 分钟。
 - 到时自动结束，无需再次点击。
 - 每次结束自动运行轻量分析器，计算有效样本数、有效时长、完整度、PPS P10/中位/P90、TCP/UDP 中位、BPS 中位/P90、窗口波动。
-- 自动生成可读分析报告，并把机器可读摘要追加到 `/etc/tvguard/learning-sessions.csv`。
+- 自动生成可读分析报告；r8 起机器可读摘要写入正式持久库 `/mnt/mmcblk2p4/tvguard/learning-sessions.csv`。
 - 高质量人工会话被标记为 Adaptive Engine 的可信训练资料；低质量/提前结束样本会保留但不会单独改变模型。
 - 该阶段只重构采集、分析和训练资料库；Phase 1 滚动窗口引擎接入前，单次学习结果不会直接改变儿童计时或防火墙。
 - 包版本提升为 `0.1.13-3`，运行时构建标识 `v0.1.13-r3-learning-center`。
@@ -476,7 +510,7 @@ iptables -t raw -S PREROUTING | grep TVG
 6. 手动锁定优先于儿童奖励；奖励不能解除锁定。
 7. SSR 透明代理运行时，TV Guard 的计数链在 raw PREROUTING 统计电视进入 N1 的包。
 8. `/etc/init.d/tvguard reload` 后 daemon 不重启、代理规则不变；由 fw3 正常 reload 时，独立 include 能恢复 TVG 入口规则。
-9. 重启 N1 后 `/etc/tvguard/state` 恢复上次持久快照；确认不会因重启把已消耗额度清零。
+9. r8 起重启 N1 后由 `/mnt/mmcblk2p4/tvguard/state` 恢复上次持久快照；确认不会因重启把已消耗额度清零。
 10. 检查停服务时的策略保持，卸载时所有 TVG 规则均被清除而不触碰其他链。
 11. 若使用电视前台场景推断，必须标注“疑似”，且不得直接启用不可信的免计时规则。
 
