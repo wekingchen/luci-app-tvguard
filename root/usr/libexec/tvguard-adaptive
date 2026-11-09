@@ -7,7 +7,8 @@ set -eu
 PATH=/usr/sbin:/usr/bin:/sbin:/bin
 export PATH
 
-DIR=/etc/tvguard
+DATA=/usr/libexec/tvguard-data
+DIR="$("$DATA" root)"
 MODEL="$DIR/learning-sessions.csv"
 RAW="$DIR/calibration-v3.csv"
 WINDOW=/var/run/tvguard-adaptive-window.csv
