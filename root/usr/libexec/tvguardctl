@@ -570,6 +570,71 @@ tick() {
         persist
     fi
 }
+brief() {
+    quota
+    left=$((LIMIT_S - USED_S))
+    [ "$left" -gt 0 ] || left=0
+    firewall_state="$("$FW" inspect 2>/dev/null || echo unknown)"
+    case "$MODE" in
+        child) mode_name="儿童模式" ;;
+        parent) mode_name="家长模式" ;;
+        locked) mode_name="锁定模式" ;;
+        *) mode_name="未知" ;;
+    esac
+    case "$BILLING_STATE" in
+        idle_verified)
+            case "$IDLE_REASON" in
+                system_home) billing_name="已暂停（系统首页已确认）" ;;
+                idle) billing_name="已暂停（App 首页/暂停已确认）" ;;
+                paused) billing_name="已暂停（暂停已确认）" ;;
+                app_home) billing_name="已暂停（App 首页已确认）" ;;
+                *) billing_name="已暂停（闲置已确认）" ;;
+            esac ;;
+        idle_silent) billing_name="已暂停（网络静默）" ;;
+        *) billing_name="计时中" ;;
+    esac
+    used_m=$((USED_S / 60)); used_r=$((USED_S % 60))
+    left_m=$((left / 60)); left_r=$((left % 60))
+    printf '模式: %s\n' "$mode_name"
+    printf '计时: %s\n' "$billing_name"
+    printf '识别: %s · 连续闲置 %ss\n' "$SHADOW_LABEL" "$IDLE_STREAK_S"
+    printf '用量: %dm%02ds · 剩余 %dm%02ds\n' "$used_m" "$used_r" "$left_m" "$left_r"
+    printf '流量: %s PPS (TCP %s / UDP %s) · %s B/s\n' "$PPS" "$TCP_PPS" "$UDP_PPS" "$BYTES_PER_S"
+    printf '控制: gate=%s · enforce=%s · armed=%s\n' "$firewall_state" "$ENFORCE" "$ARMED"
+}
+
+evidence() {
+    CSV="$DIR/calibration-v3.csv"
+    [ -s "$CSV" ] || {
+        echo "暂无校准样本"
+        return 0
+    }
+    awk -F, '
+        $2 ~ /^[0-9]+-[0-9]+$/ &&
+        $3 ~ /^(playing|paused|app_home|system_home|sleep)$/ {
+            key=$3
+            samples[key]++
+            seen[key SUBSEP $2]=1
+        }
+        END {
+            for (k in seen) {
+                split(k,a,SUBSEP)
+                sessions[a[1]]++
+            }
+            order[1]="playing"; order[2]="paused"; order[3]="app_home";
+            order[4]="system_home"; order[5]="sleep"
+            name["playing"]="正常播放"
+            name["paused"]="视频暂停"
+            name["app_home"]="App 首页"
+            name["system_home"]="系统首页"
+            name["sleep"]="待机"
+            for (i=1;i<=5;i++) {
+                k=order[i]
+                printf "%s: %d 样本 · %d 会话\n", name[k], samples[k]+0, sessions[k]+0
+            }
+        }' "$CSV"
+}
+
 status() {
     quota
     left=$((LIMIT_S - USED_S))
@@ -640,6 +705,16 @@ case "${1:-}" in
         NOW="$(date +%s)"
         status
         exit 0 ;;
+    brief)
+        load_state
+        NOW="$(date +%s)"
+        brief
+        exit 0 ;;
+    evidence)
+        load_state
+        NOW="$(date +%s)"
+        evidence
+        exit 0 ;;
     log)
         tail -n 80 "$EVENTS" 2>/dev/null || :
         exit 0 ;;
@@ -658,7 +733,7 @@ case "${1:-}" in
             event recovery_lock "持久状态缺失，强制锁定直至家长确认"
         fi
         ;;
-    *) echo "usage: tvguardctl {status|log|calibration|calibration-v4|tick|sync|mode|bonus|calibrate|enforce}" >&2; exit 2 ;;
+    *) echo "usage: tvguardctl {status|brief|evidence|log|calibration|calibration-v4|tick|sync|mode|bonus|calibrate|enforce}" >&2; exit 2 ;;
 esac
 
 case "$1" in
