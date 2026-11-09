@@ -119,6 +119,23 @@ grep -qx 'TEMPORAL_ENTERS=1' "$TMP/run/state"
 grep -qx 'TEMPORAL_P90=10' "$TMP/run/state"
 grep -qx 'TEMPORAL_SPREAD=1' "$TMP/run/state"
 
+# Real N1 paused field sample: a slightly wider but still low/stable plateau
+# (P10/P50/P90 about 5/5/13, spread 8, max 16) must be observable too.
+rm -f "$TMP/run/state" "$TMP/persist/soak-summary" "$TMP/run/ring.csv" "$TMP/run/schema"
+i=0
+for pps in 5 5 5 6 5 5 6 5 13 16 5 6; do
+    i=$((i+1))
+    run "$((2500+i*10))" parent idle 95 idle_overlap 60 "$pps" 1 "$((pps>1 ? pps-1 : 0))" 1800 6 13 250 350 0 0 idle >/dev/null
+done
+grep -qx 'TEMPORAL_HINT=stable_low_plateau' "$TMP/run/state"
+grep -qx 'TEMPORAL_ENTERS=1' "$TMP/run/state"
+grep -qx 'TEMPORAL_SPREAD=8' "$TMP/run/state"
+
+# State must persist across ticks instead of being reset to zero.
+run 2630 parent idle 95 idle_overlap 60 6 1 5 1800 6 13 250 350 0 0 idle >/dev/null
+grep -qx 'TEMPORAL_ENTERS=1' "$TMP/run/state"
+grep -qx 'TEMPORAL_CANDIDATE_SAMPLES=2' "$TMP/run/state"
+
 # Real N1 regression: confirmed continuous Mango 576p playback entered a
 # low-traffic UDP-heavy regime for ~251 seconds. Its burst cadence must NOT
 # trigger stable_low_plateau even though many individual windows are <=20 PPS.
