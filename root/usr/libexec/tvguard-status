@@ -2,6 +2,8 @@
 # Read-only wrapper: a LuCI read ACL cannot execute the mutating controller.
 case "${1:-status}" in
     status) exec /usr/libexec/tvguardctl status ;;
+    brief) exec /usr/libexec/tvguardctl brief ;;
+    evidence) exec /usr/libexec/tvguardctl evidence ;;
     log) exec /usr/libexec/tvguardctl log ;;
     calibration) exec /usr/libexec/tvguardctl calibration ;;
     calibration-v4) exec /usr/libexec/tvguardctl calibration-v4 ;;
