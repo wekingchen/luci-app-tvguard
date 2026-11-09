@@ -51,6 +51,7 @@ run_expect 'ctl:evidence' evidence
 run_expect 'ctl:log' log
 run_expect 'ctl:calibration' calibration
 run_expect 'ctl:calibration-v4' calibration-v4
+run_expect 'ctl:learning' learning
 run_expect 'audit:' isolation
 
 # Extra arguments must never be forwarded to the underlying reader.
@@ -72,4 +73,4 @@ if sh "$WRAPPER" '../../bin/sh' >"$TMP/out" 2>"$TMP/err"; then
 fi
 [ ! -s "$LOG" ]
 
-echo "PASS: LuCI read wrapper exposes only fixed status/brief/evidence/log/calibration/isolation readers"
+echo "PASS: LuCI read wrapper exposes only fixed status/brief/evidence/log/calibration/learning/isolation readers"
