@@ -19,13 +19,13 @@ r10 Shadow Soak 在芒果 TV 未登录、576p 正常播放期间捕获到系统�
 - 单纯提高 B/P 阈值或增加 30/60 秒持续时间门槛都不能可靠解决，因为真实低码率播放可持续满足该形状；
 - Phase 1 billing 仍保持安全：这些假阳性没有改变 USED_S、billing_state 或 gate。
 
-r11 不修改暂停判定阈值，而是把 high_ratio_pause 在 UI 语义上降级为“高 B/P 重叠行为 / 规则分”，明确规则分不是概率；同时 Shadow Soak v2 新增 TCP_PPS、UDP_PPS、BPS 到 RAM 原始环和小型摘要，用于验证协议组成是否能区分腾讯暂停和低码率播放。
+r11 不修改暂停判定阈值，而是把 high_ratio_pause 在 UI 语义上降级为“高 B/P 重叠行为 / 规则分”，明确规则分不是概率；同时 Shadow Soak v2 新增 TCP_PPS、UDP_PPS、BPS 到 RAM 原始环和小型摘要，用于验证协议组成是否能区分腾讯暂停和低码率播放。r10 → r11 升级时旧 Soak 统计会作为已归档证据保留在 docs/events 中，v2 协议统计从零开始，避免旧样本没有协议字段而污染均值。
 
-CI #42615888915：static + package success。
+CI #42616343255：static + package success。
 Package：`luci-app-tvguard_0.1.13-11_all.ipk`
-IPK SHA256：`81cd570381118524347d8d5a7ab93fa031b3978129b0a42668e834001035ff66`
+IPK SHA256：`d7ae30af7d818c08a20da9d424e23b01e279c26347fcbc68cbe3975d3c48612c`
 Artifact：`tvguard-v0.1.13-r11-soak-protocol-evidence-ipk`
-Artifact digest：`sha256:5c811a3cdee500af397aa50083423389ab9cb1e51a70244e04459f6339723d36`
+Artifact digest：`sha256:ece35c6c9cb0b34b63420cef90c72094f8a85c2907bd9cc5f8c53d25af4b22dc`
 
 ## v0.1.13-r10 Shadow Soak · 长期旁路观察
 
