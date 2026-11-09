@@ -106,3 +106,24 @@ python3 scripts/evaluate-generalization.py calibration-v3.csv
 - 这个保持窗口是**有界滞回**，不是“低 PPS 永久免费”。最坏情况下只会在已经确认闲置之后给一次短暂的 20 秒过渡容差。
 
 完整的自适应在线学习（时间窗口统计、近期样本加权、人工纠错、双向流量特征）将作为后续识别引擎重构方向；r2 先停止继续堆具体页面阈值。
+## v0.1.13-r3：四状态学习中心
+
+新的人工学习入口只保留四个 ground-truth 标签：
+
+1. `system_home`：电视系统首页
+2. `app_home`：视频 App 首页
+3. `playing`：视频正常播放
+4. `paused`：视频暂停
+
+用户选择标签后只需再选择 60 / 180 / 300 秒采集时间。控制器按 10 秒节奏保存原始窗口，到时自动结束，并调用 `tvguard-learn` 分析该会话。
+
+分析器不会修改计时或防火墙。它将会话汇总为：
+- 样本完整度；
+- PPS P10 / median / P90；
+- TCP、UDP median；
+- BPS median / P90；
+- PPS 相对跨度与波动等级；
+- 会话质量（high / medium / low）。
+
+最近一次人类可读结果写入 `/etc/tvguard/learning-last.txt`；机器可读会话摘要追加到 `/etc/tvguard/learning-sessions.csv`。这些会话摘要是后续 Adaptive Engine Phase 1 建立滚动窗口画像的输入，不是新的固定阈值表。
+
