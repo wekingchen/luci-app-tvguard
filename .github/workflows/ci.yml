@@ -89,6 +89,8 @@ jobs:
         run: dash tests/test-retention.sh
       - name: Validate durable mmc data migration
         run: dash tests/test-data-root.sh
+      - name: Validate UCI config persistence install semantics
+        run: dash tests/test-config-persistence.sh
       - name: Validate unseen-app generalization and safe refusal
         run: python3 tests/test-generalization.py
       - name: Check intended safeguards
@@ -124,6 +126,9 @@ jobs:
           grep -q '1048576 bytes (1 MiB)' root/usr/libexec/tvguard-retention
           grep -q '/mnt/mmcblk2p4' root/usr/libexec/tvguard-data
           grep -q 'tvguard-data' scripts/build-ipk.sh
+          grep -q 'backup-config' ipkg/preinst
+          grep -q 'restore-config' ipkg/postinst
+          grep -q 'default-config' scripts/verify-ipk.py
           grep -q 'system_home system 100' root/usr/libexec/tvguard-shadow
 
   package:
@@ -134,17 +139,17 @@ jobs:
       - name: Build and validate OpenWrt-compatible development IPK
         run: |
           set -eu
-          sh scripts/build-ipk.sh 0.1.13 8
-          PKG=dist/luci-app-tvguard_0.1.13-8_all.ipk
+          sh scripts/build-ipk.sh 0.1.13 9
+          PKG=dist/luci-app-tvguard_0.1.13-9_all.ipk
           test -f "$PKG"
           # OpenWrt ipkg-build uses gzip-compressed tar, not Debian ar.
           test "$(od -An -tx1 -N2 "$PKG" | tr -d ' \n')" = 1f8b
           tar -tzf "$PKG" | grep -q './control.tar.gz'
-          python3 scripts/verify-ipk.py "$PKG" 0.1.13 8
+          python3 scripts/verify-ipk.py "$PKG" 0.1.13 9
           sha256sum "$PKG"
       - name: Upload development IPK
         uses: actions/upload-artifact@v4
         with:
-          name: tvguard-v0.1.13-r8-durable-mmc-data-ipk
+          name: tvguard-v0.1.13-r9-config-persistence-ipk
           path: dist/*.ipk
           if-no-files-found: error
