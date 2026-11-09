@@ -38,6 +38,27 @@ sh "$DST" prepare
 [ "$(sh "$DST" root)" = "$TMP/mmc/tvguard" ]
 grep -q 'legacy-state' "$TMP/mmc/tvguard/state"
 grep -q 'legacy-event' "$TMP/mmc/tvguard/events.log"
+[ "$(grep -c '^legacy-event
+[ -f "$TMP/mmc/tvguard/.layout-v1" ]
+
+# After successful migration the known legacy files are removed. If the
+# directory becomes empty, a compatibility symlink may replace it.
+if [ -L "$TMP/etc/tvguard" ]; then
+    [ "$(readlink "$TMP/etc/tvguard")" = "$TMP/mmc/tvguard" ]
+else
+    [ ! -e "$TMP/etc/tvguard/state" ]
+fi
+
+# A later mount outage selects only volatile RAM, never overlay /etc.
+: > "$MOUNTS"
+[ "$(sh "$DST" root)" = "$TMP/run/tvguard-data" ]
+case "$(sh "$DST" status)" in
+    volatile\|"$TMP/run/tvguard-data"\|persistent_mount_unavailable) : ;;
+    *) exit 1 ;;
+esac
+
+echo 'PASS: durable data migrates to mmc and mount outage falls back only to volatile RAM'
+ "$TMP/mmc/tvguard/events.log")" -eq 1 ]
 grep -q 'volatile-event' "$TMP/mmc/tvguard/events.log"
 [ -f "$TMP/mmc/tvguard/.layout-v1" ]
 
