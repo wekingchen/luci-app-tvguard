@@ -13,7 +13,7 @@ from pathlib import Path
 import sys
 src,dst,path=sys.argv[1:]
 s=Path(src).read_text()
-anchor="CSV=/etc/tvguard/calibration-v3.csv"
+anchor='DATA=/usr/libexec/tvguard-data\nDIR="$("$DATA" root)"\nCSV="$DIR/calibration-v3.csv"'
 assert anchor in s
 Path(dst).write_text(s.replace(anchor,"CSV="+path,1))
 
