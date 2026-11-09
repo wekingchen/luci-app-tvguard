@@ -68,8 +68,153 @@ export TVG_INIT_SCRIPT="$INIT"
 # Start: durable-data prepare and controller sync must succeed before procd.
 : > "$LOG"
 sh "$TMP/harness" start
+grep -q '^data:prepare
+grep -q '^procd:open$' "$LOG"
+grep -q "^procd:param:command $TMP/daemon$" "$LOG"
+grep -q '^procd:param:respawn 3600 5 5$' "$LOG"
+grep -q '^procd:close$' "$LOG"
+! grep -q 'firewall' "$LOG"
+
+# Failed durable-data preparation must abort before sync/procd.
+: > "$LOG"
+export TVG_DATA_EXIT=7
+if sh "$TMP/harness" start >"$TMP/out" 2>"$TMP/err"; then
+    echo "FAIL: start_service ignored durable-data prepare failure" >&2
+    exit 1
+fi
+grep -q '^data:prepare$' "$LOG"
+! grep -q '^ctl:sync$' "$LOG"
+! grep -q '^procd:' "$LOG"
+export TVG_DATA_EXIT=0
+
+# Failed initial sync must abort before procd starts the daemon.
+: > "$LOG"
+export TVG_CTL_EXIT=7
+if sh "$TMP/harness" start >"$TMP/out" 2>"$TMP/err"; then
+    echo "FAIL: start_service ignored controller sync failure" >&2
+    exit 1
+fi
 grep -q '^data:prepare$' "$LOG"
 grep -q '^ctl:sync$' "$LOG"
+! grep -q '^procd:' "$LOG"
+export TVG_CTL_EXIT=0
+
+# Reload: persist committed UCI changes, then sync TV Guard state/rules;
+# do not restart/open daemon instance.
+: > "$LOG"
+sh "$TMP/harness" reload
+grep -qx 'data:config-sync' "$LOG"
+grep -qx 'ctl:sync' "$LOG"
+[ "$(wc -l < "$LOG")" -eq 2 ]
+
+# Trigger subscription must be TV Guard-only, never global firewall.
+: > "$LOG"
+sh "$TMP/harness" triggers
+[ "$(cat "$LOG")" = 'procd:trigger:tvguard' ]
+
+# Stop is intentionally policy-neutral and performs no firewall/global action.
+: > "$LOG"
+sh "$TMP/harness" stop
+[ ! -s "$LOG" ]
+
+echo "PASS: procd start prepares durable data, preserves local lifecycle and stays proxy-neutral"
+ "$LOG"
+grep -q '^data:config-sync
+grep -q '^procd:open$' "$LOG"
+grep -q "^procd:param:command $TMP/daemon$" "$LOG"
+grep -q '^procd:param:respawn 3600 5 5$' "$LOG"
+grep -q '^procd:close$' "$LOG"
+! grep -q 'firewall' "$LOG"
+
+# Failed durable-data preparation must abort before sync/procd.
+: > "$LOG"
+export TVG_DATA_EXIT=7
+if sh "$TMP/harness" start >"$TMP/out" 2>"$TMP/err"; then
+    echo "FAIL: start_service ignored durable-data prepare failure" >&2
+    exit 1
+fi
+grep -q '^data:prepare$' "$LOG"
+! grep -q '^ctl:sync$' "$LOG"
+! grep -q '^procd:' "$LOG"
+export TVG_DATA_EXIT=0
+
+# Failed initial sync must abort before procd starts the daemon.
+: > "$LOG"
+export TVG_CTL_EXIT=7
+if sh "$TMP/harness" start >"$TMP/out" 2>"$TMP/err"; then
+    echo "FAIL: start_service ignored controller sync failure" >&2
+    exit 1
+fi
+grep -q '^data:prepare$' "$LOG"
+grep -q '^ctl:sync$' "$LOG"
+! grep -q '^procd:' "$LOG"
+export TVG_CTL_EXIT=0
+
+# Reload: only sync TV Guard state/rules; do not restart/open daemon instance.
+: > "$LOG"
+sh "$TMP/harness" reload
+[ "$(cat "$LOG")" = 'ctl:sync' ]
+
+# Trigger subscription must be TV Guard-only, never global firewall.
+: > "$LOG"
+sh "$TMP/harness" triggers
+[ "$(cat "$LOG")" = 'procd:trigger:tvguard' ]
+
+# Stop is intentionally policy-neutral and performs no firewall/global action.
+: > "$LOG"
+sh "$TMP/harness" stop
+[ ! -s "$LOG" ]
+
+echo "PASS: procd start prepares durable data, preserves local lifecycle and stays proxy-neutral"
+ "$LOG"
+grep -q '^ctl:sync
+grep -q '^procd:open$' "$LOG"
+grep -q "^procd:param:command $TMP/daemon$" "$LOG"
+grep -q '^procd:param:respawn 3600 5 5$' "$LOG"
+grep -q '^procd:close$' "$LOG"
+! grep -q 'firewall' "$LOG"
+
+# Failed durable-data preparation must abort before sync/procd.
+: > "$LOG"
+export TVG_DATA_EXIT=7
+if sh "$TMP/harness" start >"$TMP/out" 2>"$TMP/err"; then
+    echo "FAIL: start_service ignored durable-data prepare failure" >&2
+    exit 1
+fi
+grep -q '^data:prepare$' "$LOG"
+! grep -q '^ctl:sync$' "$LOG"
+! grep -q '^procd:' "$LOG"
+export TVG_DATA_EXIT=0
+
+# Failed initial sync must abort before procd starts the daemon.
+: > "$LOG"
+export TVG_CTL_EXIT=7
+if sh "$TMP/harness" start >"$TMP/out" 2>"$TMP/err"; then
+    echo "FAIL: start_service ignored controller sync failure" >&2
+    exit 1
+fi
+grep -q '^data:prepare$' "$LOG"
+grep -q '^ctl:sync$' "$LOG"
+! grep -q '^procd:' "$LOG"
+export TVG_CTL_EXIT=0
+
+# Reload: only sync TV Guard state/rules; do not restart/open daemon instance.
+: > "$LOG"
+sh "$TMP/harness" reload
+[ "$(cat "$LOG")" = 'ctl:sync' ]
+
+# Trigger subscription must be TV Guard-only, never global firewall.
+: > "$LOG"
+sh "$TMP/harness" triggers
+[ "$(cat "$LOG")" = 'procd:trigger:tvguard' ]
+
+# Stop is intentionally policy-neutral and performs no firewall/global action.
+: > "$LOG"
+sh "$TMP/harness" stop
+[ ! -s "$LOG" ]
+
+echo "PASS: procd start prepares durable data, preserves local lifecycle and stays proxy-neutral"
+ "$LOG"
 grep -q '^procd:open$' "$LOG"
 grep -q "^procd:param:command $TMP/daemon$" "$LOG"
 grep -q '^procd:param:respawn 3600 5 5$' "$LOG"
