@@ -153,3 +153,16 @@ B/P 这里只是同一 N1 计数口径下的统计特征，不解释为真实物
 
 Phase 2A 只输出 pause hint、score、rolling B/P P50/P90、active-window count 与 trend；这些字段不参与 `USED_S` 或 gate。若 TX 特征后续无法稳定分离高流量暂停和真实播放，再进入 Phase 2B 双向流量实验。
 
+
+
+## Phase 2A 过渡否决：播放证据优先于暂停线索
+
+r5 真机证明：rolling B/P 很高并不等价于 paused。腾讯从暂停恢复播放约 60 秒后，B/P P50/P90 仍可达到 2439/5022，但 Phase 1 已给出 active 100%，当前 PPS 也超过 learned active floor。
+
+因此 high_ratio_pause 必须服从更高优先级的播放证据：
+- clear-current active（当前 PPS >= active floor）直接 veto；
+- 最近窗口呈强上升趋势时 veto；
+- pause hint 永远不能覆盖 Phase 1 active。
+
+这些规则的目的是避免把“播放恢复后的缓存/高吞吐阶段”误标为暂停。它们不是新的免计时条件。
+
