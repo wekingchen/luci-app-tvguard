@@ -79,6 +79,21 @@ Path(dest).write_text(s)
 PY
 chmod 700 "$CTL"
 
+# N1/BusyBox portability regression: some builds reject fractional sleep.
+# Force one stale-lock retry through a mock sleep that accepts integers only.
+cat > "$TMP/bin/sleep" <<'EOSLEEP'
+#!/bin/sh
+case "${1:-}" in
+    ''|*[!0-9]*) echo "sleep: invalid number '${1:-}'" >&2; exit 2 ;;
+    *) exit 0 ;;
+esac
+EOSLEEP
+chmod +x "$TMP/bin/sleep"
+mkdir -p "$TMP/run/lock"
+echo 999999 > "$TMP/run/lock/pid"
+sh "$CTL" sync
+[ ! -d "$TMP/run/lock" ] || { echo "FAIL: stale lock was not recovered" >&2; exit 1; }
+
 status() { sh "$CTL" status > "$TMP/status.json"; }
 check() { python3 - "$TMP/status.json" "$1" <<'PY'
 import json,sys
