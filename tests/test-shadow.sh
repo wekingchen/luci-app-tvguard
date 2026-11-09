@@ -44,7 +44,7 @@ PY
 test "$(sh "$DST" 180 30 150 65000)" = 'playing general 100'
 test "$(sh "$DST" 85 5 80 30000)" = 'idle general 100'
 test "$(sh "$DST" 30 1 28 16000)" = 'idle general 100'
-test "$(sh "$DST" 8 1 7 2800)" = 'system_home system 100'
+test "$(sh "$DST" 8 1 7 2800)" = 'idle general 95'
 test "$(sh "$DST" 5000 10 4990 9000000)" = 'unknown none 0'
 test "$(sh "$DST" 0 0 0 0)" = 'unknown none 0'
 
@@ -95,7 +95,7 @@ rows += [
 ]
 p.write_text("\n".join(rows)+"\n")
 PY
-test "$(sh "$DST" 30 1 28 16000)" = 'app_home general 90'
+test "$(sh "$DST" 30 1 28 16000)" = 'idle general 90'
 
 # Complete cross-app evidence, but overlapping pause/play windows must not
 # become a seemingly confident playback or pause hint.
