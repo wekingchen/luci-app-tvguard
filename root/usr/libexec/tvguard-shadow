@@ -41,6 +41,18 @@ function inside(label) {
            u>=umin[label]-5 && u<=umax[label]+5 &&
            b>=bmin[label]-4096 && b<=bmax[label]+4096
 }
+function inside_system_home_robust() {
+    # The launcher produces occasional TCP/byte bursts while visually idle.
+    # Keep PPS itself inside the low-activity home envelope, then accept one
+    # noisy secondary dimension. This is stricter than a generic low-PPS rule:
+    # it still needs 3/4 calibrated feature matches plus playback separation.
+    hits=0
+    if (p>=pmin["system_home"]-5 && p<=pmax["system_home"]+5) hits++
+    if (t>=tmin["system_home"]-4 && t<=tmax["system_home"]+4) hits++
+    if (u>=umin["system_home"]-5 && u<=umax["system_home"]+5) hits++
+    if (b>=bmin["system_home"]-4096 && b<=bmax["system_home"]+8192) hits++
+    return p<=pmax["system_home"]+5 && hits>=3
+}
 function separated_from(label) {
     return p<pmin[label]-10 || p>pmax[label]+10 ||
            t<tmin[label]-5 || t>tmax[label]+5 ||
@@ -94,14 +106,14 @@ END {
     # neutral idle label instead of whichever rule happens to run first.
     if (ready_sessions("system_home") && local_app_home_ready() &&
         playback_reference_ready() &&
-        inside("system_home") && inside("app_home") &&
+        inside_system_home_robust() && inside("app_home") &&
         separated_from("playing")) {
         print "idle general 95"
         exit
     }
 
     if (ready_sessions("system_home") && playback_reference_ready() &&
-        inside("system_home") && separated_from("playing")) {
+        inside_system_home_robust() && separated_from("playing")) {
         print "system_home system 100"
         exit
     }
