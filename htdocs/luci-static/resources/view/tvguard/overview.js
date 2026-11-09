@@ -193,6 +193,25 @@ function shadowName(value) {
     }[value] || '暂时无法判断';
 }
 
+function adaptiveName(value) {
+    return {
+        idle: '自适应闲置',
+        active: '自适应活跃',
+        ambiguous: '自适应模糊',
+        warming: '正在建立窗口',
+        unready: '模型未就绪'
+    }[value] || '自适应未知';
+}
+
+function pauseHintName(value) {
+    return {
+        high_ratio_pause: '高流量暂停候选',
+        bursty_pause: '突发型暂停候选',
+        idle_overlap: '低活跃暂停 / 首页重叠',
+        none: '无暂停线索'
+    }[value] || '无暂停线索';
+}
+
 function sceneName(value) {
     return {
         playing: '正常播放',
@@ -442,15 +461,28 @@ return view.extend({
             item.node.title = wouldExceed ? '添加后会超过今天的最大奖励额度' : '';
         });
 
-        n.shadowValue.textContent = shadowName(state.shadow_label);
-        if (state.billing_state === 'idle_verified')
-            n.shadowNote.textContent = '已连续确认约 ' + String(state.idle_streak_seconds || 0) +
-                ' 秒；当前暂停儿童计时。';
+        n.shadowValue.textContent = state.adaptive_state &&
+            state.adaptive_state !== 'unready' ?
+            adaptiveName(state.adaptive_state) : shadowName(state.shadow_label);
+        if (state.adaptive_pause_hint === 'high_ratio_pause')
+            n.shadowNote.textContent = '实验暂停线索：高流量暂停候选 · ' +
+                String(state.adaptive_pause_score || 0) + '%；B/P P50 ' +
+                String(state.adaptive_bp_p50 || 0) +
+                '。Phase 2A 只展示，仍按当前 active/ambiguous 计时。';
+        else if (state.adaptive_pause_hint === 'bursty_pause')
+            n.shadowNote.textContent = '实验暂停线索：突发型暂停候选；目前仍按模糊状态保守计时。';
+        else if (state.adaptive_pause_hint === 'idle_overlap')
+            n.shadowNote.textContent = '当前行为与低活跃暂停画像吻合，但和首页闲置重叠，不强行猜前台场景。';
+        else if (state.billing_state === 'idle_verified')
+            n.shadowNote.textContent = '滚动窗口已确认闲置约 ' +
+                String(state.idle_streak_seconds || 0) + ' 秒；当前暂停儿童计时。';
         else if (state.billing_state === 'idle_grace')
-            n.shadowNote.textContent = '当前一帧无法确定，但仍处于已确认闲置后的 ' +
+            n.shadowNote.textContent = '当前窗口暂时模糊，但仍处于已确认闲置后的 ' +
                 String(state.idle_grace_seconds || 0) + '/20 秒保持窗口。';
-        else if (state.shadow_label === 'system_home' || state.shadow_label === 'idle')
-            n.shadowNote.textContent = '正在确认闲置；连续达到 30 秒后才暂停计时。';
+        else if (state.adaptive_state === 'active')
+            n.shadowNote.textContent = '滚动窗口支持活跃/播放；继续计时。';
+        else if (state.adaptive_state === 'ambiguous' || state.adaptive_state === 'warming')
+            n.shadowNote.textContent = '自适应证据尚不足以确认闲置；按保守策略继续计时。';
         else if (state.shadow_label === 'unknown')
             n.shadowNote.textContent = '当前证据不足或样本重叠；按保守策略继续计时。';
         else
@@ -896,10 +928,18 @@ return view.extend({
             'class': 'description',
             'style': 'margin-top:10px;line-height:1.45'
         }, '');
-        var shadowValueNode = E('span', {}, shadowName(s.shadow_label));
-        var shadowNoteNode = E('span', {}, s.shadow_label === 'unknown' ?
-            '当前证据不足或样本重叠，不做推断。' :
-            '仅作为实验候选，不会自动免计时。');
+        var shadowValueNode = E('span', {},
+            s.adaptive_state && s.adaptive_state !== 'unready' ?
+                adaptiveName(s.adaptive_state) : shadowName(s.shadow_label));
+        var shadowNoteNode = E('span', {}, s.adaptive_pause_hint &&
+            s.adaptive_pause_hint !== 'none' ?
+            ('暂停线索：' + pauseHintName(s.adaptive_pause_hint) +
+                ' · 实验诊断，不会因此自动免计时。') :
+            (s.adaptive_state === 'idle' ?
+                '滚动窗口已确认闲置。' :
+                (s.shadow_label === 'unknown' ?
+                    '当前证据不足或样本重叠，不做精确场景推断。' :
+                    '当前候选仅用于辅助诊断。')));
         var trafficValueNode = E('span', {}, trafficName(s.traffic_class));
         var trafficNoteNode = E('span', {}, String(s.pps || 0) + ' PPS · ' +
             byteRate(s.bytes_per_second || 0));
@@ -992,7 +1032,7 @@ return view.extend({
                 rewardLimitNode
             ]),
 
-            panel('智能识别学习', '告诉 TV Guard 电视现在真实处于什么状态，选择采集时间后即可自动采集、结束并分析。', [
+            panel('智能识别学习', 'Adaptive Engine 会学习连续行为画像。Phase 2A 已加入暂停多原型诊断，但暂停线索暂不直接改变计时。', [
                 grid([
                     metric('当前自动判断', shadowValueNode, shadowNoteNode, false),
                     metric('网络活动强度', trafficValueNode, trafficNoteNode, false)
