@@ -211,3 +211,13 @@ r12 的 P0 验收硬门槛：真实正常播放（含免费 576p/720p）不得�
 - Shadow Soak 继续旁路运行，暂停线索/idle_overlap 没有获得 `USED_S` 或 firewall gate 权限。
 
 结论：**r12 P0 第一阶段真机通过。** 已实证切断 `TX-only idle/stable_low → idle_verified/free time` 的危险链。下一阶段仍需在不破坏此安全底线的前提下恢复“高可信首页/真正暂停免计时”的体验能力，并继续旁路验证 Redirect、IPv6、长静默等观测完整性风险。
+
+### P1 入口约束：Shadow idle 也暂不具备计费授权
+
+r12 真机前后的 576p 原始窗口表明，真实正常播放期间不仅 Adaptive 会输出 `idle/stable_low`，Shadow 也曾在个别窗口输出 `idle`。因此 P1 不能简单把计费授权从 Adaptive 转交给 Shadow：
+
+- `shadow=idle/app_home/paused` 继续只作为诊断/学习标签，不直接暂停 `USED_S`；
+- r13 若恢复任何免计时状态，必须使用比 generic `idle` 更窄的“verified”证据，并通过真实播放反例回放确保 `dangerous_idle_false_hints=0`；
+- 首选候选是设备级 `system_home`，但只能在其人工标注会话数量、稳定性、与真实 576p/4K 播放样本分离度足够时开放；
+- 如果系统首页与 App 首页/低码率播放的网络包络重叠，则宁可继续计时，也不为了体验恢复广义低流量免计时；
+- `paused` 仍属于 P2：网络层暂停与预缓冲播放天然可能重叠，在没有更强证据前不获得计费授权。
