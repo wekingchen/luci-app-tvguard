@@ -582,11 +582,11 @@ tick() {
             case "$7" in ''|*[!0-9]*) :;; *) ADAPTIVE_P50="$7";; esac
             case "$8" in ''|*[!0-9]*) :;; *) ADAPTIVE_P90="$8";; esac
             case "$9" in none|idle_overlap|bursty_pause|high_ratio_pause) ADAPTIVE_PAUSE_HINT="$9";; esac
-            case "$10" in ''|*[!0-9]*) :;; *) ADAPTIVE_PAUSE_SCORE="$10";; esac
-            case "$11" in ''|*[!0-9]*) :;; *) ADAPTIVE_BP50="$11";; esac
-            case "$12" in ''|*[!0-9]*) :;; *) ADAPTIVE_BP90="$12";; esac
-            case "$13" in ''|*[!0-9]*) :;; *) ADAPTIVE_ACTIVE_HITS="$13";; esac
-            case "$14" in ''|*[!0-9-]*) :;; *) ADAPTIVE_TREND_PCT="$14";; esac
+            case "${10}" in ''|*[!0-9]*) :;; *) ADAPTIVE_PAUSE_SCORE="${10}";; esac
+            case "${11}" in ''|*[!0-9]*) :;; *) ADAPTIVE_BP50="${11}";; esac
+            case "${12}" in ''|*[!0-9]*) :;; *) ADAPTIVE_BP90="${12}";; esac
+            case "${13}" in ''|*[!0-9]*) :;; *) ADAPTIVE_ACTIVE_HITS="${13}";; esac
+            case "${14}" in ''|*[!0-9-]*) :;; *) ADAPTIVE_TREND_PCT="${14}";; esac
         fi
     fi
     LAST_COUNT="$count"
