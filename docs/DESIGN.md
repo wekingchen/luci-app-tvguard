@@ -256,3 +256,14 @@ N1 当前未安装 `conntrack` 用户态工具，但 `/proc/net/nf_conntrack` �
 `nf_flow_table`/`xt_FLOWOFFLOAD` 模块虽已加载，但此前 UCI software/hardware flow offload 均为 0 且无 `FLOWOFFLOAD` 规则，因此模块存在本身不视为当前观测绕过证据。
 
 下一步只读确认 `nf_conntrack_acct` 是否启用、proc 条目是否含双向 `packets/bytes`，以及能否稳定过滤出 `192.168.101.76` 的 TCP/UDP 流。任何 conntrack 信号在真机区分度验证前仍只进入 Shadow/离线分析，不获得 billing authority。
+
+### P1-B Conntrack 真机能力边界（2026-11-09）
+
+N1 现场：`nf_conntrack_acct=1`、`nf_conntrack_timestamp=0`，`/proc/net/nf_conntrack` 可读；电视当前约 64 条相关记录（约 TCP 20 / UDP 38）。
+
+- N1 本地服务连接（例如电视到 `192.168.101.99:53` DNS）可看到双向 `packets/bytes`，说明 conntrack accounting 本身工作正常。
+- 电视到公网的 TCP 连接大量表现为 `[UNREPLIED]`，例如 `src=192.168.101.76 dst=<公网IP> dport=80/443 ... packets>0 bytes>0`，回复 tuple 的 `packets=0 bytes=0`。这与 Reply Observer 的 `RX_LAN=0` 一致：公网回程大多绕过 N1，因此 conntrack 不能作为完整下载方向统计。
+- 因此不能利用 conntrack reply bytes/packets 直接推断视频播放；但 conntrack 仍提供 aggregate TX 没有的流级维度：目的 IP/端口、协议、TCP state、UNREPLIED/ASSURED、同时流数量、每条流原始方向 packet/byte 增量。
+- 下一步只做差分 Shadow 验证：比较 `system_home / 576p playing / paused` 三种状态的公网 80/443 TCP/UDP 流数量、原始方向字节增量、新建/消失流数量与状态分布。若这些流级特征仍与低码率播放重叠，则不继续尝试从网络层恢复 verified-idle。
+
+约束保持：不安装 `conntrack` 工具、不启用 timestamp、不修改 sysctl/NAT/mangle/路由；conntrack 仅只读，`TX_IDLE_BILLING_AUTHORITY=0` 不变。
