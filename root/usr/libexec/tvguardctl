@@ -15,6 +15,8 @@ BUILD_ID_FILE=/usr/share/tvguard/build-id
 RUN=/var/run/tvguard.state
 DATA=/usr/libexec/tvguard-data
 DIR="$("$DATA" root)"
+DATA_MODE="$("$DATA" status 2>/dev/null | cut -d'|' -f1)"
+case "$DATA_MODE" in persistent|volatile) :;; *) DATA_MODE=unknown;; esac
 STATE="$DIR/state"
 EVENTS="$DIR/events.log"
 LOCK=/var/run/tvguard.lock
@@ -39,6 +41,7 @@ config() {
 }
 defaults() {
     STATE_PRESENT=0
+    DATA_ROOT_MODE="$DATA_MODE"
     TODAY="$(date +%Y-%m-%d)"
     MODE=child
     PARENT_UNTIL=0
@@ -114,6 +117,18 @@ defaults() {
 }
 load_state() {
     defaults
+    # /var/run is authoritative only while it belongs to the same selected
+    # data-root mode. If the mmc mount appears after boot, discard a volatile
+    # runtime snapshot and immediately reload the durable mmc state instead of
+    # letting a temporary fallback shadow it for the rest of this boot.
+    if [ -r "$RUN" ]; then
+        run_mode="$(awk -F= '$1=="DATA_ROOT_MODE" {print $2; exit}' "$RUN" 2>/dev/null || :)"
+        case "$run_mode" in persistent|volatile) :;; *) run_mode=unknown;; esac
+        if [ "$run_mode" != "$DATA_MODE" ]; then
+            rm -f "$RUN"
+        fi
+    fi
+
     # Only root-written files; never load untrusted input from a web request.
     if [ -r "$RUN" ]; then
         . "$RUN"
@@ -122,6 +137,10 @@ load_state() {
         . "$STATE"
         STATE_PRESENT=1
     fi
+    # A disk snapshot may have been created while using the RAM fallback.
+    # Once loaded from the currently selected root, normalize the marker to
+    # the current mode so the next runtime snapshot is self-consistent.
+    DATA_ROOT_MODE="$DATA_MODE"
     case "$MODE" in child|parent|locked) :;; *) MODE=locked;; esac
     case "$BILLING_STATE" in charge|idle_verified|idle_grace|idle_silent) :;; *) BILLING_STATE=charge;; esac
     case "$IDLE_REASON" in none|system_home|idle|paused|app_home|adaptive|silent) :;; *) IDLE_REASON=none;; esac
@@ -163,6 +182,7 @@ load_state() {
 save_runtime() {
     temp="${RUN}.$$"
     cat > "$temp" <<EOSTATE
+DATA_ROOT_MODE=$DATA_ROOT_MODE
 TODAY=$TODAY
 MODE=$MODE
 PARENT_UNTIL=$PARENT_UNTIL
