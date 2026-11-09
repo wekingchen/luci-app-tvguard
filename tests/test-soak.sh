@@ -26,6 +26,7 @@ s=Path(src).read_text()
 s=s.replace('DATA=/usr/libexec/tvguard-data','DATA='+tmp+'/data',1)
 s=s.replace('RING=/var/run/tvguard-soak-window.csv','RING='+tmp+'/run/ring.csv',1)
 s=s.replace('STATE=/var/run/tvguard-soak.state','STATE='+tmp+'/run/state',1)
+s=s.replace('SCHEMA_FILE=/var/run/tvguard-soak-schema','SCHEMA_FILE='+tmp+'/run/schema',1)
 Path(dst).write_text(s)
 PY
 chmod +x "$DST"
