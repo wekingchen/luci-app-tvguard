@@ -59,6 +59,22 @@ LAST_BP50=0
 LAST_BP90=0
 LAST_ACTIVE_HITS=0
 LAST_TREND=0
+TEMPORAL_HINT=none
+TEMPORAL_SCORE=0
+TEMPORAL_WINDOWS=0
+TEMPORAL_P10=0
+TEMPORAL_P50=0
+TEMPORAL_P90=0
+TEMPORAL_SPREAD=0
+TEMPORAL_MAX=0
+TEMPORAL_LAST_HINT=none
+TEMPORAL_CANDIDATE_START=0
+TEMPORAL_CANDIDATE_SAMPLES=0
+TEMPORAL_ENTERS=0
+TEMPORAL_EXITS=0
+TEMPORAL_SECONDS=0
+TEMPORAL_MAX_SECONDS=0
+TEMPORAL_LAST_DURATION=0
 
 . "$src"
 
@@ -110,7 +126,9 @@ echo "最近已结束候选协议均值: TCP $last_tcp_avg PPS · UDP $last_udp_
 echo "全部高 B/P 候选协议均值: TCP $all_tcp_avg PPS · UDP $all_udp_avg PPS · UDP占比 $all_udp_share% · BPS $all_bps_avg"
 echo "最后状态: adaptive=$LAST_ADAPTIVE_STATE overlap=$LAST_PAUSE_HINT rulescore=$LAST_PAUSE_SCORE"
 echo "最后窗口: PPS $LAST_PPS · TCP/UDP $LAST_TCP_PPS/$LAST_UDP_PPS · BPS $LAST_BPS · P50/P90 $LAST_P50/$LAST_P90 · B/P $LAST_BP50/$LAST_BP90 · active_hits $LAST_ACTIVE_HITS · trend $LAST_TREND%"
+echo "时序候选: $TEMPORAL_HINT · score $TEMPORAL_SCORE · $TEMPORAL_WINDOWS 窗 · P10/P50/P90 $TEMPORAL_P10/$TEMPORAL_P50/$TEMPORAL_P90 · spread $TEMPORAL_SPREAD · max $TEMPORAL_MAX"
+echo "时序候选进入/退出: $TEMPORAL_ENTERS / $TEMPORAL_EXITS · 已结束累计 $TEMPORAL_SECONDS 秒 · 最长 $TEMPORAL_MAX_SECONDS 秒 · 最近 $TEMPORAL_LAST_DURATION 秒"
 echo "RAM 原始环: $ring_lines/约2200 行 · $ring_bytes bytes"
 echo "持久摘要: $summary_bytes bytes"
 echo "最近持久 checkpoint: $CHECKPOINT_EPOCH"
-echo "说明: high_ratio_pause 目前只表示高 B/P 重叠特征，不代表暂停概率；原始窗口只在 /var/run，Shadow Soak 不参与 USED_S、billing_state 或 firewall gate。"
+echo "说明: high_ratio_pause 与 stable_low_plateau 都只是旁路研究特征，不代表暂停/首页已确认；原始窗口只在 /var/run，Shadow Soak 不参与 USED_S、billing_state 或 firewall gate."
