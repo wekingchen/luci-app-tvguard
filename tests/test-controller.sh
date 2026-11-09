@@ -57,6 +57,21 @@ case "${TVGUARD_TEST_SHADOW:-unknown}" in
 esac
 EOSHADOW
 chmod +x "$TMP/shadow"
+cat > "$TMP/learn" <<'EOLEARN'
+#!/bin/sh
+printf '%s\n' "$*" >> "$TVGUARD_TEST_LEARN_LOG"
+cat > "$TVGUARD_TEST_STATE/learning-last.txt" <<EOF
+学习分析
+状态: 自动测试
+会话: $1
+计划时长: $3秒
+EOF
+exit 0
+EOLEARN
+chmod +x "$TMP/learn"
+: > "$TMP/learn.log"
+export TVGUARD_TEST_LEARN_LOG="$TMP/learn.log"
+export TVGUARD_TEST_STATE="$TMP/state"
 echo '0 0 0 0 0 0' > "$TMP/sample"
 echo '0 0 0 0' > "$TMP/reply"
 : > "$TMP/repair.log"
@@ -81,6 +96,7 @@ mapping={
     'FW=/usr/libexec/tvguard-fw': 'FW='+root+'/fw',
     'AUDIT=/usr/libexec/tvguard-isolation-audit': 'AUDIT='+root+'/audit',
     'SHADOW=/usr/libexec/tvguard-shadow': 'SHADOW='+root+'/shadow',
+    'LEARN=/usr/libexec/tvguard-learn': 'LEARN='+root+'/learn',
     'RUN=/var/run/tvguard.state': 'RUN='+root+'/run/runtime',
     'DIR=/etc/tvguard': 'DIR='+root+'/state',
     'LOCK=/var/run/tvguard.lock': 'LOCK='+root+'/run/lock',
@@ -231,6 +247,23 @@ check 'assert s["calibration_phase"] == "completed" and s["calibration_active"] 
 check 'assert s["calibration_last_label"] == "playing" and s["calibration_last_app"] == "tencent"'
 check 'assert s["calibration_last_samples"] == 1 and s["calibration_last_result"] == "completed"'
 grep -q 'calibration_end' "$TMP/state/events.log"
+# New learning UI may choose 60/180/300 seconds and automatic analysis
+# receives the exact session duration after completion.
+sh "$CTL" calibrate system_home 180
+status
+check 'assert s["calibration_duration_seconds"] == 180 and s["calibration_remaining_seconds"] > 0, s'
+python3 - "$TMP/run/runtime" <<'PY'
+from pathlib import Path
+import sys
+p=Path(sys.argv[1])
+lines=p.read_text().splitlines()
+p.write_text('\n'.join('CAL_UNTIL=1' if line.startswith('CAL_UNTIL=') else line for line in lines)+'\n')
+PY
+sh "$CTL" tick
+status
+check 'assert s["calibration_last_duration_seconds"] == 180 and s["calibration_last_label"] == "system_home", s'
+grep -q 'system_home 180 system completed' "$TMP/learn.log"
+test -s "$TMP/state/learning-last.txt"
 # Manual stop must also persist a reason without overwriting the completed CSV.
 sh "$CTL" calibrate paused iqiyi
 sh "$CTL" calibrate stop
