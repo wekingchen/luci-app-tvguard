@@ -646,15 +646,15 @@ export TVGUARD_TEST_AUDIT=ok
 # returns. Persist parent mode in the durable store first.
 export TVGUARD_TEST_DATA_MODE=persistent
 sh "$CTL" mode parent
-grep -q '^DATA_ROOT_MODE=persistent "$TMP/run/runtime"
-grep -q '^MODE=parent "$TMP/state/state"
+grep -qx 'DATA_ROOT_MODE=persistent' "$TMP/run/runtime"
+grep -qx 'MODE=parent' "$TMP/state/state"
 
 # Lose the mount. The persistent-mode runtime must be discarded; a volatile
 # sync creates a RAM-only child snapshot marked volatile.
 export TVGUARD_TEST_DATA_MODE=volatile
 sh "$CTL" sync
-grep -q '^DATA_ROOT_MODE=volatile "$TMP/run/runtime"
-grep -q '^MODE=child "$TMP/volatile/state"
+grep -qx 'DATA_ROOT_MODE=volatile' "$TMP/run/runtime"
+grep -qx 'MODE=child' "$TMP/volatile/state"
 
 # Mount returns. The volatile runtime must be discarded and the durable
 # parent snapshot must become authoritative immediately.
