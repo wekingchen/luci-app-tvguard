@@ -1,0 +1,117 @@
+#!/bin/sh
+# App-agnostic, conservative network activity hint for TV Guard.
+# Never affects counting, firewall or permissions. Unknown means "no proof".
+# The 4 metrics are TV -> N1 outbound packets, NOT full video download traffic.
+# Usage: tvguard-shadow PPS TCP_PPS UDP_PPS OUTBOUND_BYTES_PER_S
+set -eu
+PATH=/usr/sbin:/usr/bin:/sbin:/bin
+export PATH
+CSV=/etc/tvguard/calibration-v3.csv
+
+[ "$#" -eq 4 ] || { echo 'unknown none 0'; exit 0; }
+for number in "$@"; do
+    case "$number" in ''|*[!0-9]*) echo 'unknown none 0'; exit 0;; esac
+done
+[ -s "$CSV" ] || { echo 'unknown none 0'; exit 0; }
+
+awk -F, -v p="$1" -v t="$2" -v u="$3" -v b="$4" '
+function low(a,b) { return a < b ? a : b }
+function high(a,b) { return a > b ? a : b }
+function ready(label) {
+    if (samples[label]<18 || sess_n[label]<3) return 0
+    # The system launcher is unique; other labels must contain independent
+    # samples from at least two different video applications.
+    if (label=="system_home") return 1
+    return app_n[label]>=2
+}
+function inside(label) {
+    # A sample must resemble the observed multi-app range across ALL metrics.
+    return p>=pmin[label]-5 && p<=pmax[label]+5 &&
+           t>=tmin[label]-3 && t<=tmax[label]+3 &&
+           u>=umin[label]-5 && u<=umax[label]+5 &&
+           b>=bmin[label]-4096 && b<=bmax[label]+4096
+}
+function separated_from(label) {
+    # A different class must have at least one nonoverlapping feature with
+    # conservative margins. If ranges overlap in every feature, abstain.
+    return p<pmin[label]-10 || p>pmax[label]+10 ||
+           t<tmin[label]-5 || t>tmax[label]+5 ||
+           u<umin[label]-10 || u>umax[label]+10 ||
+           b<bmin[label]-10240 || b>bmax[label]+10240
+}
+$2 ~ /^[0-9]+-[0-9]+$/ &&
+$3 ~ /^(playing|paused|app_home|system_home|sleep)$/ &&
+$4 ~ /^(general|tencent|iqiyi|mango|other|system)$/ &&
+$5 ~ /^[0-9]+$/ && $6 ~ /^[0-9]+$/ &&
+$7 ~ /^[0-9]+$/ && $8 ~ /^[0-9]+$/ {
+    label=$3
+    # Sleep may be packets bypassing N1; never train it as a proven sleep.
+    if (label=="sleep") next
+    if (label=="system_home" && $4!="system") next
+    if (label!="system_home" && $4=="system") next
+
+    samples[label]++
+    if (samples[label]==1) {
+        pmin[label]=pmax[label]=$5
+        tmin[label]=tmax[label]=$6
+        umin[label]=umax[label]=$7
+        bmin[label]=bmax[label]=$8
+    }
+    else {
+        pmin[label]=low(pmin[label],$5); pmax[label]=high(pmax[label],$5)
+        tmin[label]=low(tmin[label],$6); tmax[label]=high(tmax[label],$6)
+        umin[label]=low(umin[label],$7); umax[label]=high(umax[label],$7)
+        bmin[label]=low(bmin[label],$8); bmax[label]=high(bmax[label],$8)
+    }
+    session_seen[label SUBSEP $2]=1
+    # "other" and "general" may represent many unnamed apps; neither is
+    # proof of a second *independent* application for cross-app validation.
+    if ($4=="tencent" || $4=="iqiyi" || $4=="mango")
+        app_seen[label SUBSEP $4]=1
+}
+END {
+    for (k in session_seen) {
+        split(k,parts,SUBSEP)
+        sess_n[parts[1]]++
+    }
+    for (k in app_seen) {
+        split(k,parts,SUBSEP)
+        app_n[parts[1]]++
+    }
+
+    # Until three mutually distinguishable classes are adequately represented,
+    # with some cross-app evidence, the generic model must say "unknown".
+    if (!ready("playing") || !ready("paused") || !ready("app_home")) {
+        print "unknown none 0"
+        exit
+    }
+
+    candidates=0
+    for (i=1;i<=4;i++) {
+        if (i==1) label="playing"
+        else if (i==2) label="paused"
+        else if (i==3) label="app_home"
+        else label="system_home"
+
+        if (!ready(label) || !inside(label)) continue
+        distinct=1
+        for (j=1;j<=4;j++) {
+            if (j==1) rival="playing"
+            else if (j==2) rival="paused"
+            else if (j==3) rival="app_home"
+            else rival="system_home"
+            if (rival==label || !ready(rival)) continue
+            if (!separated_from(rival)) distinct=0
+        }
+        if (distinct) {
+            candidates++
+            selected=label
+        }
+    }
+    if (candidates==1) {
+        # No per-App identity is inferred, no accuracy percentage is claimed.
+        app=(selected=="system_home" ? "system" : "general")
+        print selected " " app " 0"
+    }
+    else print "unknown none 0"
+}' "$CSV"

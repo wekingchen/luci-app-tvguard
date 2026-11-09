@@ -1,0 +1,99 @@
+#!/bin/sh
+# Host tests the generic inference engine without changing the N1 firewall.
+set -eu
+ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
+TMP="$(mktemp -d)"
+trap 'rm -rf "$TMP"' EXIT HUP INT TERM
+SRC="$ROOT/root/usr/libexec/tvguard-shadow"
+DST="$TMP/tvguard-shadow"
+CSV="$TMP/calibration-v3.csv"
+
+python3 - "$SRC" "$DST" "$CSV" <<'PY'
+from pathlib import Path
+import sys
+src,dst,path=sys.argv[1:]
+s=Path(src).read_text()
+anchor="CSV=/etc/tvguard/calibration-v3.csv"
+assert anchor in s
+Path(dst).write_text(s.replace(anchor,"CSV="+path,1))
+
+# Generic model is trained on two representative apps, not every app.
+# Every window has unique session ID; each state has 6 independent sessions.
+rows=[]
+scenes={"playing":(180,30,150,65000),
+        "paused":(85,5,80,30000),
+        "app_home":(30,1,28,16000)}
+sid=0
+for app in ("tencent","iqiyi"):
+    for scene,base in scenes.items():
+        for session in range(3):
+            sid+=1
+            for window in range(8):
+                p,t,u,b=base
+                vals=(p+window%2,t+window%2,u+window%2,b+window*20)
+                rows.append(f"{1730000000+sid*120+window*10},{sid}-1,{scene},{app}," +
+                            ",".join(map(str,vals)))
+for session in range(3):
+    sid+=1
+    for window in range(8):
+        rows.append(f"{1730000000+sid*120+window*10},{sid}-1,system_home,system,8,1,7,2800")
+Path(path).write_text("\n".join(rows)+"\n")
+PY
+
+# No App is provided at prediction time: the output is universal.
+test "$(sh "$DST" 180 30 150 65000)" = 'playing general 0'
+test "$(sh "$DST" 85 5 80 30000)" = 'paused general 0'
+test "$(sh "$DST" 30 1 28 16000)" = 'app_home general 0'
+test "$(sh "$DST" 8 1 7 2800)" = 'system_home system 0'
+test "$(sh "$DST" 5000 10 4990 9000000)" = 'unknown none 0'
+test "$(sh "$DST" 0 0 0 0)" = 'unknown none 0'
+
+# With fewer than 2 different video applications, no generic inference.
+grep -v ',iqiyi,' "$CSV" > "$TMP/oneapp.csv"
+mv "$TMP/oneapp.csv" "$CSV"
+test "$(sh "$DST" 180 30 150 65000)" = 'unknown none 0'
+test "$(sh "$DST" 8 1 7 2800)" = 'unknown none 0'
+
+# A second app restored, but one whole pause class missing: abstain.
+python3 - "$CSV" <<'PY'
+from pathlib import Path
+import sys
+p=Path(sys.argv[1])
+rows=p.read_text().splitlines()
+rows += [
+    f"{1730000100+session*120+i*10},{900+session}-1,playing,iqiyi,180,30,150,65000"
+    for session in range(3) for i in range(8)
+]
+rows += [
+    f"{1730001100+session*120+i*10},{910+session}-1,app_home,iqiyi,30,1,28,16000"
+    for session in range(3) for i in range(8)
+]
+p.write_text("\n".join(rows)+"\n")
+PY
+test "$(sh "$DST" 30 1 28 16000)" = 'unknown none 0'
+
+# Complete cross-app evidence, but overlapping pause/play windows must not
+# become a seemingly confident playback or pause hint.
+python3 - "$CSV" <<'PY'
+from pathlib import Path
+import sys
+p=Path(sys.argv[1])
+rows=[]
+sid=1
+for app in ("tencent","iqiyi"):
+    for scene,vals in {
+        "playing":(100,2,97,50000),
+        "paused":(100,2,97,50000),
+        "app_home":(25,1,23,12000)
+    }.items():
+        for repeat in range(3):
+            sid+=1
+            for i in range(8):
+                rows.append(f"{1730000000+sid*120+i*10},{sid}-1,{scene},{app}," +
+                            ",".join(map(str,vals)))
+p.write_text("\n".join(rows)+"\n")
+PY
+test "$(sh "$DST" 100 2 97 50000)" = 'unknown none 0'
+test "$(sh "$DST" 25 1 23 12000)" = 'app_home general 0'
+
+echo 'PASS: universal shadow hints, multiple-app evidence, overlap rejection, unknown sleep'

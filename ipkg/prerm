@@ -1,0 +1,25 @@
+#!/bin/sh
+[ -n "$IPKG_INSTROOT" ] && exit 0
+
+# Best effort: leave the TV in observer/permissive policy before detaching the
+# hook. This changes only TV Guard's own config/gate and never proxy rules.
+/usr/libexec/tvguardctl enforce off 2>/dev/null || :
+/etc/init.d/tvguard stop 2>/dev/null || :
+
+if ! /usr/libexec/tvguard-fw remove; then
+    echo "TV Guard: firewall hook cleanup failed; aborting uninstall to avoid dangling rules" >&2
+    # Package files are still present because prerm failed. Resume the daemon
+    # best-effort so any retained TVG gate remains maintained.
+    /etc/init.d/tvguard start 2>/dev/null || :
+    exit 1
+fi
+
+# Delete only a section that is provably ours. A same-named foreign section is
+# left untouched even when the package is removed.
+if [ "$(uci -q get firewall.tvguard 2>/dev/null || true)" = include ] &&
+   [ "$(uci -q get firewall.tvguard.type 2>/dev/null || true)" = script ] &&
+   [ "$(uci -q get firewall.tvguard.path 2>/dev/null || true)" = /usr/libexec/tvguard-firewall-include ]; then
+    uci -q delete firewall.tvguard 2>/dev/null || :
+    uci commit firewall
+fi
+exit 0

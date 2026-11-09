@@ -1,0 +1,17 @@
+{
+  "luci-app-tvguard": {
+    "description": "TV Guard status, configuration and explicitly authorized actions",
+    "read": {
+      "file": {
+        "/usr/libexec/tvguard-status": ["exec"]
+      },
+      "uci": ["tvguard"]
+    },
+    "write": {
+      "file": {
+        "/usr/libexec/tvguardctl": ["exec"]
+      },
+      "uci": ["tvguard"]
+    }
+  }
+}

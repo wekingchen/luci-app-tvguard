@@ -1,0 +1,244 @@
+#!/bin/sh
+# TV Guard - firewall3/iptables-legacy adapter.
+# Requires root. Never flushes or overwrites unrelated chains.
+set -eu
+IPT=/usr/sbin/iptables
+[ -x "$IPT" ] || IPT="$(command -v iptables)"
+# Single choke point: TV Guard is technically unable to select nat/mangle/filter
+# through this adapter. Proxy tools own those tables.
+raw_ipt() { "$IPT" -w 2 -t raw "$@"; }
+RAW=TVG_RAW
+GATE=TVG_GATE
+AUDIT=/usr/libexec/tvguard-isolation-audit
+IP="$(uci -q get tvguard.main.ip || echo 192.168.101.76)"
+IFACE="$(uci -q get tvguard.main.interface || echo br-lan)"
+
+case "$IP" in ''|*[!0-9.]* ) echo "invalid TV IPv4 address" >&2; exit 2;; esac
+case "$IFACE" in ''|*[!a-zA-Z0-9_.:-]* ) echo "invalid interface" >&2; exit 2;; esac
+
+has() { raw_ipt -C "$@" >/dev/null 2>&1; }
+
+# Passive reply-observation hooks. They have NO -j target and never ACCEPT,
+# RETURN, DROP, MARK or alter routing. Disabled until explicitly authorized
+# through tvguard.main.observe_reply=1 after platform-specific validation.
+reply_enabled() {
+    [ "$(uci -q get tvguard.main.observe_reply || echo 0)" = 1 ]
+}
+reply_rules_present() {
+    has PREROUTING -i "$IFACE" -d "$IP" -m comment --comment TVG_RX_LAN &&
+    has OUTPUT -o "$IFACE" -d "$IP" -m comment --comment TVG_RX_LOCAL
+}
+core_rules_present() {
+    has PREROUTING -i "$IFACE" -s "$IP" -j "$RAW" &&
+    has "$RAW" -j "$GATE" &&
+    { has "$GATE" -j RETURN || has "$GATE" -j DROP; }
+}
+isolation_ok() {
+    [ -x "$AUDIT" ] || return 1
+    [ "$("$AUDIT" 2>/dev/null || true)" = ok ]
+}
+core_preflight() {
+    if ! isolation_ok; then
+        echo "TV Guard: firewall isolation audit failed; refusing core mutation" >&2
+        return 1
+    fi
+}
+add_reply_rules() {
+    has PREROUTING -i "$IFACE" -d "$IP" -m comment --comment TVG_RX_LAN ||
+        raw_ipt -I PREROUTING 1 -i "$IFACE" -d "$IP" -m comment --comment TVG_RX_LAN || return 1
+    has OUTPUT -o "$IFACE" -d "$IP" -m comment --comment TVG_RX_LOCAL ||
+        raw_ipt -I OUTPUT 1 -o "$IFACE" -d "$IP" -m comment --comment TVG_RX_LOCAL || return 1
+}
+remove_reply_rules() {
+    while has PREROUTING -i "$IFACE" -d "$IP" -m comment --comment TVG_RX_LAN; do
+        raw_ipt -D PREROUTING -i "$IFACE" -d "$IP" -m comment --comment TVG_RX_LAN || return 1
+    done
+    while has OUTPUT -o "$IFACE" -d "$IP" -m comment --comment TVG_RX_LOCAL; do
+        raw_ipt -D OUTPUT -o "$IFACE" -d "$IP" -m comment --comment TVG_RX_LOCAL || return 1
+    done
+}
+sync_reply_rules() {
+    if reply_enabled; then
+        # Fail closed: an experimental observer may exist only on top of a
+        # complete core hook and a passing read-only isolation audit.
+        if ! core_rules_present || ! isolation_ok; then
+            remove_reply_rules || :
+            echo "TV Guard: reply observation refused by isolation preflight" >&2
+            return 0
+        fi
+        # Optional diagnostic must not break the existing TVG gate if an older
+        # firmware lacks the raw OUTPUT capability or the table was reset.
+        if ! add_reply_rules; then
+            remove_reply_rules || :
+            echo "TV Guard: passive reply observation unavailable" >&2
+            return 0
+        fi
+        # Re-audit the final rule layout. Any unexpected target/table placement
+        # causes immediate rollback of observer-only rules.
+        if ! isolation_ok; then
+            remove_reply_rules || :
+            echo "TV Guard: reply observation rolled back by isolation audit" >&2
+        fi
+    else
+        remove_reply_rules
+    fi
+}
+read_reply_count() {
+    raw_ipt -L "$1" -n -v -x 2>/dev/null |
+        awk -v label="$2" '
+        index($0, "/* " label " */") {
+            if (found++) exit 2
+            packets=$1; bytes=$2
+        }
+        END {
+            if (found!=1 || packets !~ /^[0-9]+$/ || bytes !~ /^[0-9]+$/) exit 1
+            print packets, bytes
+        }'
+}
+create() {
+    # Before touching any pre-existing TVG namespace, prove it is either absent
+    # or already conforms to the strict TV-scoped raw-only layout.
+    core_preflight
+    raw_ipt -N "$RAW" 2>/dev/null || :
+    raw_ipt -N "$GATE" 2>/dev/null || :
+    # A rule with no jump target only counts matching packets.
+    has "$RAW" -m comment --comment TVG_COUNT ||
+        raw_ipt -A "$RAW" -m comment --comment TVG_COUNT
+    has "$RAW" -p tcp -m comment --comment TVG_TCP ||
+        raw_ipt -A "$RAW" -p tcp -m comment --comment TVG_TCP
+    has "$RAW" -p udp -m comment --comment TVG_UDP ||
+        raw_ipt -A "$RAW" -p udp -m comment --comment TVG_UDP
+    has "$RAW" -j "$GATE" ||
+        raw_ipt -A "$RAW" -j "$GATE"
+    # Configure the gate before adding its PREROUTING entry.
+    # No temporary unguarded window during first initialization.
+    if ! has "$GATE" -j RETURN && ! has "$GATE" -j DROP; then
+        gate "$(policy)"
+    fi
+    has PREROUTING -i "$IFACE" -s "$IP" -j "$RAW" ||
+        raw_ipt -I PREROUTING 1 -i "$IFACE" -s "$IP" -j "$RAW"
+    # Detect partial/mis-scoped writes before returning success.
+    core_preflight
+}
+gate() {
+    case "$1" in 0) TARGET=RETURN;; 1) TARGET=DROP;; *) exit 2;; esac
+    # Atomic replacement when already initialized; avoid temporary ACCEPT windows.
+    if raw_ipt -C "$GATE" -j RETURN 2>/dev/null ||
+       raw_ipt -C "$GATE" -j DROP 2>/dev/null; then
+        raw_ipt -R "$GATE" 1 -j "$TARGET"
+    else
+        raw_ipt -A "$GATE" -j "$TARGET"
+    fi
+}
+policy() {
+    ENFORCE="$(uci -q get tvguard.main.enforce || echo 0)"
+    ARMED="$(uci -q get tvguard.main.allow_enforcement || echo 0)"
+    # Match the controller's two-key interlock even during firewall reload.
+    [ "$ENFORCE" = 1 ] && [ "$ARMED" = 1 ] || { echo 0; return; }
+    FILE=/etc/tvguard/state
+    [ -r "$FILE" ] || { echo 1; return; }
+    MODE="$(sed -n 's/^MODE=//p' "$FILE" | tail -n 1)"
+    BLOCKED="$(sed -n 's/^BLOCKED=//p' "$FILE" | tail -n 1)"
+    UNTIL="$(sed -n 's/^PARENT_UNTIL=//p' "$FILE" | tail -n 1)"
+    case "$MODE" in
+        locked) echo 1 ;;
+        parent)
+            case "$UNTIL" in
+                ''|*[!0-9]*) echo 1 ;;
+                0) echo 0 ;;
+                *)
+                    # Positive values exist only for one-time migration of
+                    # pre-v0.1.7 timed parent sessions.
+                    [ "$(date +%s)" -ge "$UNTIL" ] && echo 1 || echo 0
+                    ;;
+            esac ;;
+        child)
+            case "$BLOCKED" in 0|1) echo "$BLOCKED";; *) echo 1;; esac ;;
+        *) echo 1 ;;
+    esac
+}
+case "${1:-}" in
+    sync)
+        create
+        gate "$(policy)"
+        # Full service/firewall sync may maintain the optional observer.
+        # Direct gate changes never call this path.
+        sync_reply_rules
+        ;;
+    sync-reply)
+        # Repair only the passive observation hooks, never touch TVG_GATE.
+        sync_reply_rules
+        ;;
+    gate)
+        create
+        gate "${2:-}"
+        ;;
+    inspect)
+        if ! has PREROUTING -i "$IFACE" -s "$IP" -j "$RAW"; then
+            echo absent
+        elif raw_ipt -C "$GATE" -j DROP >/dev/null 2>&1; then
+            echo blocked
+        elif raw_ipt -C "$GATE" -j RETURN >/dev/null 2>&1; then
+            echo allowed
+        else
+            echo unknown
+        fi
+        ;;
+    sample)
+        # Output: all_packets all_bytes tcp_packets tcp_bytes udp_packets udp_bytes
+        raw_ipt -L "$RAW" -n -v -x 2>/dev/null |
+            awk '
+                /TVG_COUNT/ {a=$1; b=$2; foundA=1}
+                /TVG_TCP/   {t=$1; u=$2; foundT=1}
+                /TVG_UDP/   {v=$1; w=$2; foundU=1}
+                END {
+                    if (!foundA || !foundT || !foundU) exit 1
+                    print a, b, t, u, v, w
+                }'
+        ;;
+    count)
+        raw_ipt -L "$RAW" -n -v -x 2>/dev/null |
+            awk '/TVG_COUNT/ {print $1; found=1; exit} END {if (!found) exit 1}'
+        ;;
+    inspect-reply)
+        if ! reply_enabled; then
+            echo disabled
+        elif reply_rules_present; then
+            echo ready
+        else
+            echo unavailable
+        fi
+        ;;
+    sample-reply)
+        # Output: prerouting_reply_packets bytes local_output_packets bytes.
+        # No return-path telemetry is accepted without BOTH matching hooks.
+        reply_enabled && reply_rules_present || exit 1
+        lan="$(read_reply_count PREROUTING TVG_RX_LAN)" || exit 1
+        local="$(read_reply_count OUTPUT TVG_RX_LOCAL)" || exit 1
+        printf '%s %s\n' "$lan" "$local"
+        ;;
+    remove)
+        # Destructive chain cleanup is permitted only when the current TVG
+        # namespace is fully proven to be ours. On any conflict, remove only
+        # exact TV-scoped hooks and leave disputed chain contents untouched.
+        owned=0
+        isolation_ok && owned=1
+        remove_reply_rules || :
+        while has PREROUTING -i "$IFACE" -s "$IP" -j "$RAW"; do
+            raw_ipt -D PREROUTING -i "$IFACE" -s "$IP" -j "$RAW" || break
+        done
+        if has PREROUTING -i "$IFACE" -s "$IP" -j "$RAW"; then
+            echo "TV Guard: failed to detach TV-scoped raw hook; refusing incomplete removal" >&2
+            exit 1
+        fi
+        if [ "$owned" = 1 ]; then
+            raw_ipt -F "$RAW" 2>/dev/null || :
+            raw_ipt -X "$RAW" 2>/dev/null || :
+            raw_ipt -F "$GATE" 2>/dev/null || :
+            raw_ipt -X "$GATE" 2>/dev/null || :
+        else
+            echo "TV Guard: isolation audit not clean; disputed TVG chains were not flushed/deleted" >&2
+        fi
+        ;;
+    *) echo "usage: tvguard-fw {sync|sync-reply|gate 0|gate 1|sample|count|inspect|inspect-reply|sample-reply|remove}" >&2; exit 2 ;;
+esac

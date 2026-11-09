@@ -1,0 +1,127 @@
+name: TV Guard static checks
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  static:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate shell syntax
+        shell: bash
+        run: |
+          set -eu
+          find root/usr/libexec root/etc/init.d ipkg -type f \
+            \( -name 'tvguard*' -o -name 'postinst' -o -name 'prerm' \) |
+          while read -r file; do
+            sh -n "$file"
+            dash -n "$file"
+          done
+      - name: Validate LuCI JSON and JavaScript syntax
+        shell: bash
+        run: |
+          set -eu
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          for path in Path('root/usr/share').rglob('*.json'):
+              json.loads(path.read_text())
+              print('JSON OK', path)
+          PY
+          node - <<'JS'
+          const fs = require('fs');
+          for (const p of ['htdocs/luci-static/resources/view/tvguard/overview.js',
+                           'htdocs/luci-static/resources/view/tvguard/settings.js']) {
+              new Function(fs.readFileSync(p, 'utf8'));
+              console.log('JS syntax OK:', p);
+          }
+          JS
+      - name: Execute LuCI page with mock DOM and calibrated states
+        run: node tests/test-ui.js
+      - name: Validate LuCI settings hierarchy and safety
+        run: node tests/test-settings-ui.js
+      - name: Validate LuCI overview/time-rules tab structure
+        run: node tests/test-menu-ui.js
+      - name: Verify LuCI read wrapper command allowlist
+        run: dash tests/test-status-wrapper.sh
+      - name: Exercise controller in mock FW3 environment
+        run: |
+          set -eu
+          dash tests/test-controller.sh
+      - name: Exercise deterministic policy/state unit tests
+        run: dash tests/test-policy.sh
+      - name: Exercise formal enforcement state machine
+        run: dash tests/test-enforcement.sh
+      - name: Enforce proxy isolation contract
+        run: python3 tests/test-proxy-isolation.py
+      - name: Exercise read-only runtime isolation audit
+        run: dash tests/test-isolation-audit.sh
+      - name: Verify package ownership and uninstall isolation
+        run: dash tests/test-package-safety.sh
+      - name: Verify firewall include cannot fail proxy reload
+        run: dash tests/test-firewall-include.sh
+      - name: Exercise procd service lifecycle
+        run: dash tests/test-init-service.sh
+      - name: Exercise daemon tick loop behavior
+        run: dash tests/test-daemon.sh
+      - name: Exercise one-shot proxy compatibility checker
+        run: dash tests/test-compat-check.sh
+      - name: Exercise firewall reload policy unit tests
+        run: dash tests/test-firewall-policy.sh
+      - name: Exercise mock firewall3 rule lifecycle
+        run: |
+          set -eu
+          dash tests/test-firewall.sh
+      - name: Validate shadow recognition evidence policy
+        run: python3 tests/test-calibration.py
+      - name: Test conservative shadow fingerprint suggestions
+        run: |
+          set -eu
+          dash tests/test-shadow.sh
+      - name: Validate unseen-app generalization and safe refusal
+        run: python3 tests/test-generalization.py
+      - name: Check intended safeguards
+        shell: bash
+        run: |
+          set -eu
+          grep -q "option enforce '0'" root/etc/config/tvguard
+          grep -q 'TVG_COUNT' root/usr/libexec/tvguard-fw
+          grep -q '"read"' root/usr/share/rpcd/acl.d/luci-app-tvguard.json
+          ! grep -q '"/bin/sh"' root/usr/share/rpcd/acl.d/luci-app-tvguard.json
+          ! grep -q 'TVGUARD_FW' root/usr/libexec/tvguardctl
+          ! grep -q 'TVGUARD_RUN' root/usr/libexec/tvguardctl
+          grep -q 'allow_enforcement' root/etc/config/tvguard
+          grep -q 'sample)' root/usr/libexec/tvguard-fw
+          grep -q "option observe_reply '0'" root/etc/config/tvguard
+          grep -q 'TVG_RX_LAN' root/usr/libexec/tvguard-fw
+          grep -q 'TVG_RX_LOCAL' root/usr/libexec/tvguard-fw
+          grep -q 'reply_coverage' root/usr/libexec/tvguardctl
+          grep -q 'proxy isolation audit is not ok' root/usr/libexec/tvguardctl
+          grep -q 'isolation)' root/usr/libexec/tvguard-status
+          grep -q 'tvguard-isolation-audit' scripts/build-ipk.sh
+          grep -q 'tvguard-compat-check' scripts/build-ipk.sh
+
+  package:
+    runs-on: ubuntu-latest
+    needs: static
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build and validate OpenWrt-compatible development IPK
+        run: |
+          set -eu
+          sh scripts/build-ipk.sh 0.1.12
+          PKG=dist/luci-app-tvguard_0.1.12-1_all.ipk
+          test -f "$PKG"
+          # OpenWrt ipkg-build uses gzip-compressed tar, not Debian ar.
+          test "$(od -An -tx1 -N2 "$PKG" | tr -d ' \n')" = 1f8b
+          tar -tzf "$PKG" | grep -q './control.tar.gz'
+          python3 scripts/verify-ipk.py "$PKG" 0.1.12
+      - name: Upload development IPK
+        uses: actions/upload-artifact@v4
+        with:
+          name: tvguard-v0.1.12-busybox-lock-fix-ipk
+          path: dist/*.ipk
+          if-no-files-found: error

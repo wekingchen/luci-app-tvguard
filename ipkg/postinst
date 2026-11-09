@@ -1,0 +1,31 @@
+#!/bin/sh
+[ -n "$IPKG_INSTROOT" ] && exit 0
+
+for path in /etc/init.d/tvguard /usr/libexec/tvguardctl /usr/libexec/tvguardd /usr/libexec/tvguard-status /usr/libexec/tvguard-fw /usr/libexec/tvguard-firewall-include /usr/libexec/tvguard-isolation-audit /usr/libexec/tvguard-compat-check /usr/libexec/tvguard-shadow; do
+    chmod 755 "$path" 2>/dev/null || :
+done
+
+fw_section_ours() {
+    [ "$(uci -q get firewall.tvguard 2>/dev/null || true)" = include ] &&
+    [ "$(uci -q get firewall.tvguard.type 2>/dev/null || true)" = script ] &&
+    [ "$(uci -q get firewall.tvguard.path 2>/dev/null || true)" = /usr/libexec/tvguard-firewall-include ]
+}
+
+if uci -q get firewall.tvguard >/dev/null 2>&1; then
+    if ! fw_section_ours; then
+        echo "TV Guard: firewall.tvguard already exists but is not owned by this package; refusing to modify it" >&2
+        exit 1
+    fi
+else
+    uci set firewall.tvguard=include
+    uci set firewall.tvguard.type='script'
+    uci set firewall.tvguard.path='/usr/libexec/tvguard-firewall-include'
+    uci set firewall.tvguard.enabled='1'
+    uci set firewall.tvguard.reload='1'
+    uci commit firewall
+fi
+
+/etc/init.d/rpcd reload 2>/dev/null || :
+/etc/init.d/tvguard enable
+/etc/init.d/tvguard start
+exit 0

@@ -1,0 +1,735 @@
+#!/bin/sh
+# TV Guard controller. All mutable commands are serialized and validated.
+set -eu
+umask 077
+
+# No environment-variable path overrides: rpcd file.exec accepts caller env.
+PATH=/usr/sbin:/usr/bin:/sbin:/bin
+export PATH
+FW=/usr/libexec/tvguard-fw
+AUDIT=/usr/libexec/tvguard-isolation-audit
+RUN=/var/run/tvguard.state
+DIR=/etc/tvguard
+STATE="$DIR/state"
+EVENTS="$DIR/events.log"
+LOCK=/var/run/tvguard.lock
+
+config() {
+    ENFORCE="$(uci -q get tvguard.main.enforce || echo 0)"
+    ARMED="$(uci -q get tvguard.main.allow_enforcement || echo 0)"
+    case "$ARMED" in 0|1) :;; *) ARMED=0;; esac
+    WEEKDAY="$(uci -q get tvguard.main.weekday_minutes || echo 60)"
+    WEEKEND="$(uci -q get tvguard.main.weekend_minutes || echo 120)"
+    BONUS_MAX="$(uci -q get tvguard.main.max_bonus_minutes || echo 120)"
+    SILENCE="$(uci -q get tvguard.main.silence_seconds || echo 60)"
+    ALLOW_START="$(uci -q get tvguard.main.allow_start || echo 08:00)"
+    ALLOW_END="$(uci -q get tvguard.main.allow_end || echo 21:00)"
+    case "$ENFORCE" in 0|1) :;; *) ENFORCE=0;; esac
+    # Deliberate two-key safety interlock: a stray enforce=1 is not enough.
+    [ "$ARMED" = 1 ] || ENFORCE=0
+    for n in WEEKDAY WEEKEND BONUS_MAX SILENCE; do
+        eval "v=\$$n"
+        case "$v" in ''|*[!0-9]*) echo "invalid numeric configuration: $n" >&2; exit 2;; esac
+    done
+}
+defaults() {
+    STATE_PRESENT=0
+    TODAY="$(date +%Y-%m-%d)"
+    MODE=child
+    PARENT_UNTIL=0
+    USED_S=0
+    BONUS_S=0
+    LAST_BONUS_S=0
+    LAST_BONUS_ID=0
+    EVENT_ID=0
+    LAST_EPOCH=0
+    LAST_PACKET_EPOCH=0
+    LAST_COUNT=0
+    LAST_BYTE_COUNT=0
+    LAST_TCP_COUNT=0
+    LAST_UDP_COUNT=0
+    PPS=0
+    TCP_PPS=0
+    UDP_PPS=0
+    BYTES_PER_S=0
+    # Reply counters are diagnostics ONLY, never used for USED_S or gate.
+    RX_STATE=disabled
+    RX_SAMPLE_STATUS=disabled
+    RX_REPAIR_AFTER=0
+    RX_LAST_EPOCH=0
+    RX_LAST_LAN_COUNT=0
+    RX_LAST_LAN_BYTES=0
+    RX_LAST_LOCAL_COUNT=0
+    RX_LAST_LOCAL_BYTES=0
+    RX_LAN_PPS=0
+    RX_LAN_BPS=0
+    RX_LOCAL_PPS=0
+    RX_LOCAL_BPS=0
+    TRAFFIC_CLASS=unknown
+    SHADOW_LABEL=unknown
+    SHADOW_APP=none
+    SHADOW_SCORE=0
+    CAL_LABEL=none
+    CAL_APP=none
+    CAL_SESSION=none
+    CAL_STARTED=0
+    CAL_SAMPLES=0
+    CAL_UNTIL=0
+    CAL_LAST_LABEL=none
+    CAL_LAST_APP=none
+    CAL_LAST_SESSION=none
+    CAL_LAST_SAMPLES=0
+    CAL_LAST_FINISHED=0
+    CAL_LAST_RESULT=none
+    SAVED_EPOCH=0
+    ACTIVITY=unknown
+    BLOCKED=0
+}
+load_state() {
+    defaults
+    # Only root-written files; never load untrusted input from a web request.
+    if [ -r "$RUN" ]; then
+        . "$RUN"
+        STATE_PRESENT=1
+    elif [ -r "$STATE" ]; then
+        . "$STATE"
+        STATE_PRESENT=1
+    fi
+    case "$MODE" in child|parent|locked) :;; *) MODE=locked;; esac
+    # An enforced installation must not turn corruption/lost state into a
+    # fresh, unspent child allowance after power failure.
+    if [ "$ENFORCE" = 1 ] && [ "$STATE_PRESENT" = 0 ]; then
+        MODE=locked
+        BLOCKED=1
+    fi
+}
+save_runtime() {
+    temp="${RUN}.$$"
+    cat > "$temp" <<EOSTATE
+TODAY=$TODAY
+MODE=$MODE
+PARENT_UNTIL=$PARENT_UNTIL
+USED_S=$USED_S
+BONUS_S=$BONUS_S
+LAST_BONUS_S=$LAST_BONUS_S
+LAST_BONUS_ID=$LAST_BONUS_ID
+EVENT_ID=$EVENT_ID
+LAST_EPOCH=$LAST_EPOCH
+LAST_PACKET_EPOCH=$LAST_PACKET_EPOCH
+LAST_COUNT=$LAST_COUNT
+LAST_BYTE_COUNT=$LAST_BYTE_COUNT
+LAST_TCP_COUNT=$LAST_TCP_COUNT
+LAST_UDP_COUNT=$LAST_UDP_COUNT
+PPS=$PPS
+TCP_PPS=$TCP_PPS
+UDP_PPS=$UDP_PPS
+BYTES_PER_S=$BYTES_PER_S
+RX_STATE=$RX_STATE
+RX_SAMPLE_STATUS=$RX_SAMPLE_STATUS
+RX_REPAIR_AFTER=$RX_REPAIR_AFTER
+RX_LAST_EPOCH=$RX_LAST_EPOCH
+RX_LAST_LAN_COUNT=$RX_LAST_LAN_COUNT
+RX_LAST_LAN_BYTES=$RX_LAST_LAN_BYTES
+RX_LAST_LOCAL_COUNT=$RX_LAST_LOCAL_COUNT
+RX_LAST_LOCAL_BYTES=$RX_LAST_LOCAL_BYTES
+RX_LAN_PPS=$RX_LAN_PPS
+RX_LAN_BPS=$RX_LAN_BPS
+RX_LOCAL_PPS=$RX_LOCAL_PPS
+RX_LOCAL_BPS=$RX_LOCAL_BPS
+TRAFFIC_CLASS=$TRAFFIC_CLASS
+SHADOW_LABEL=$SHADOW_LABEL
+SHADOW_APP=$SHADOW_APP
+SHADOW_SCORE=$SHADOW_SCORE
+CAL_LABEL=$CAL_LABEL
+CAL_APP=$CAL_APP
+CAL_SESSION=$CAL_SESSION
+CAL_STARTED=$CAL_STARTED
+CAL_SAMPLES=$CAL_SAMPLES
+CAL_UNTIL=$CAL_UNTIL
+CAL_LAST_LABEL=$CAL_LAST_LABEL
+CAL_LAST_APP=$CAL_LAST_APP
+CAL_LAST_SESSION=$CAL_LAST_SESSION
+CAL_LAST_SAMPLES=$CAL_LAST_SAMPLES
+CAL_LAST_FINISHED=$CAL_LAST_FINISHED
+CAL_LAST_RESULT=$CAL_LAST_RESULT
+SAVED_EPOCH=$SAVED_EPOCH
+ACTIVITY=$ACTIVITY
+BLOCKED=$BLOCKED
+EOSTATE
+    mv -f "$temp" "$RUN"
+}
+persist() {
+    mkdir -p "$DIR"
+    t="${STATE}.$$"
+    SAVED_EPOCH="$NOW"
+    save_runtime
+    cp "$RUN" "$t"
+    chmod 600 "$t"
+    mv -f "$t" "$STATE"
+}
+event() {
+    EVENT_ID=$((EVENT_ID + 1))
+    mkdir -p "$DIR"
+    printf '%s|%s|%s|%s\n' "$NOW" "$EVENT_ID" "$1" "$2" >> "$EVENTS"
+    if [ "$(wc -c < "$EVENTS")" -gt 262144 ]; then
+        tail -n 1500 "$EVENTS" > "${EVENTS}.$$"
+        mv -f "${EVENTS}.$$" "$EVENTS"
+    fi
+}
+lock() {
+    i=0
+    until mkdir "$LOCK" 2>/dev/null; do
+        if [ -r "$LOCK/pid" ]; then
+            pid="$(cat "$LOCK/pid" 2>/dev/null || echo '')"
+            case "$pid" in
+                ''|*[!0-9]*) : ;;
+                *) if ! kill -0 "$pid" 2>/dev/null; then
+                       rm -f "$LOCK/pid"
+                       rmdir "$LOCK" 2>/dev/null || :
+                   fi ;;
+            esac
+        fi
+        i=$((i + 1))
+        # BusyBox sleep on some OpenWrt/LEDE builds accepts integer seconds
+        # only. Keep the original ~5 second ceiling without relying on
+        # fractional sleep support.
+        [ "$i" -lt 6 ] || { echo "tvguard lock busy" >&2; exit 1; }
+        sleep 1
+    done
+    echo "$$" > "$LOCK/pid"
+    trap unlock EXIT
+    trap 'exit 130' INT
+    trap 'exit 143' TERM
+}
+unlock() {
+    rm -f "$LOCK/pid"
+    rmdir "$LOCK" 2>/dev/null || :
+}
+quota() {
+    weekday="$(date +%u)"
+    if [ "$weekday" -ge 6 ]; then
+        LIMIT_S=$((WEEKEND * 60 + BONUS_S))
+    else
+        LIMIT_S=$((WEEKDAY * 60 + BONUS_S))
+    fi
+}
+within_window() {
+    # Input is admin-managed UCI. Reject unexpected formats safely.
+    case "$ALLOW_START:$ALLOW_END" in *[!0-9:]* ) return 1;; esac
+    a="$(printf '%s' "$ALLOW_START" | awk -F: 'NF==2 && $1<24 && $2<60 {print $1*60+$2}')"
+    b="$(printf '%s' "$ALLOW_END" | awk -F: 'NF==2 && $1<24 && $2<60 {print $1*60+$2}')"
+    [ -n "$a" ] && [ -n "$b" ] || return 1
+    # POSIX-safe decimal conversion (08 and 09 break octal shell arithmetic).
+    current="$(date '+%H %M' | awk '{printf "%d", $1*60+$2}')" 
+    # Empty window means unrestricted clock time, not zero allowed time.
+    [ "$a" -eq "$b" ] && return 0
+    if [ "$a" -lt "$b" ]; then
+        [ "$current" -ge "$a" ] && [ "$current" -lt "$b" ]
+    else
+        [ "$current" -ge "$a" ] || [ "$current" -lt "$b" ]
+    fi
+}
+calculate() {
+    quota
+    # Compatibility only: pre-v0.1.7 builds stored a positive expiry timestamp
+    # for timed parent sessions. Let that old session expire normally, but all
+    # newly selected parent mode sessions use PARENT_UNTIL=0 and never expire.
+    if [ "$MODE" = parent ] && [ "$PARENT_UNTIL" -gt 0 ] &&
+       [ "$NOW" -ge "$PARENT_UNTIL" ]; then
+        MODE=child
+        PARENT_UNTIL=0
+        event parent_expired "旧版定时家长模式结束，自动恢复儿童模式"
+    fi
+    case "$MODE" in
+        locked) BLOCKED=1 ;;
+        parent) BLOCKED=0 ;;
+        child)
+            BLOCKED=0
+            [ "$USED_S" -lt "$LIMIT_S" ] || BLOCKED=1
+            if ! within_window; then BLOCKED=1; fi
+            ;;
+    esac
+}
+apply_gate() {
+    expected=allowed
+    [ "$ENFORCE" = 1 ] && [ "$BLOCKED" = 1 ] && expected=blocked
+    actual="$("$FW" inspect 2>/dev/null || echo unknown)"
+    # Avoid rewriting the iptables gate on every 10-second tick.
+    [ "$actual" = "$expected" ] && return 0
+    if [ "$expected" = blocked ]; then
+        "$FW" gate 1
+    else
+        "$FW" gate 0
+    fi
+}
+finish_calibration() {
+    # Record an immutable summary before clearing the active session.
+    # No automatic smart-idle exemption can be granted by this function.
+    [ "$CAL_LABEL" != none ] || return 0
+    CAL_LAST_LABEL="$CAL_LABEL"
+    CAL_LAST_APP="$CAL_APP"
+    CAL_LAST_SESSION="$CAL_SESSION"
+    CAL_LAST_SAMPLES="$CAL_SAMPLES"
+    CAL_LAST_FINISHED="$NOW"
+    CAL_LAST_RESULT="$1"
+    event calibration_end "$CAL_APP/$CAL_LABEL: $CAL_SAMPLES samples ($1)"
+    CAL_LABEL=none
+    CAL_APP=none
+    CAL_SESSION=none
+    CAL_STARTED=0
+    CAL_SAMPLES=0
+    CAL_UNTIL=0
+}
+rollover() {
+    today="$(date +%Y-%m-%d)"
+    if [ "$TODAY" != "$today" ]; then
+        TODAY="$today"
+        USED_S=0
+        BONUS_S=0
+        LAST_BONUS_S=0
+        LAST_BONUS_ID=0
+        LAST_EPOCH="$NOW"
+        ACTIVITY=unknown
+        SHADOW_LABEL=unknown
+        SHADOW_APP=none
+        SHADOW_SCORE=0
+        if [ "$CAL_LABEL" != none ]; then
+            finish_calibration interrupted
+        fi
+        CAL_APP=none
+        CAL_SESSION=none
+        CAL_STARTED=0
+        CAL_SAMPLES=0
+        CAL_UNTIL=0
+        event daily_reset "当天额度及奖励已重置"
+    fi
+}
+tick() {
+    previous_blocked="$BLOCKED"
+    previous_finished="$CAL_LAST_FINISHED"
+    sample="$("$FW" sample)" || { echo "TV Guard packet sample unavailable" >&2; return 1; }
+    set -- $sample
+    [ "$#" -eq 6 ] || { echo "Invalid packet sample" >&2; return 1; }
+    for number in "$@"; do
+        case "$number" in ''|*[!0-9]*) echo "Non-numeric packet counter" >&2; return 1;; esac
+    done
+    count="$1"
+    bytes="$2"
+    tcp_count="$3"
+    udp_count="$5"
+
+    dt=0
+    if [ "$LAST_EPOCH" -gt 0 ]; then
+        dt=$((NOW - LAST_EPOCH))
+    fi
+    # Avoid charging startup, stopped daemon, NTP jumps, or FW3 counter resets.
+    if [ "$dt" -lt 1 ] || [ "$dt" -gt 20 ] ||
+       [ "$count" -lt "$LAST_COUNT" ] ||
+       [ "$bytes" -lt "$LAST_BYTE_COUNT" ] ||
+       [ "$tcp_count" -lt "$LAST_TCP_COUNT" ] ||
+       [ "$udp_count" -lt "$LAST_UDP_COUNT" ]; then
+        dt=0
+    fi
+
+    PPS=0
+    TCP_PPS=0
+    UDP_PPS=0
+    BYTES_PER_S=0
+    TRAFFIC_CLASS=unknown
+    if [ "$dt" -gt 0 ]; then
+        dp=$((count - LAST_COUNT))
+        db=$((bytes - LAST_BYTE_COUNT))
+        d_tcp=$((tcp_count - LAST_TCP_COUNT))
+        d_udp=$((udp_count - LAST_UDP_COUNT))
+        PPS=$((dp / dt))
+        TCP_PPS=$((d_tcp / dt))
+        UDP_PPS=$((d_udp / dt))
+        BYTES_PER_S=$((db / dt))
+        if [ "$dp" -gt 0 ]; then LAST_PACKET_EPOCH="$NOW"; fi
+        # Network intensity is NOT proof of foreground app or media playback.
+        if [ "$dp" -eq 0 ]; then
+            TRAFFIC_CLASS=no_packets
+        elif [ "$PPS" -le 20 ]; then
+            TRAFFIC_CLASS=low_traffic
+        elif [ "$PPS" -lt 100 ]; then
+            TRAFFIC_CLASS=medium_traffic
+        else
+            TRAFFIC_CLASS=high_traffic
+        fi
+    fi
+
+    # The two optional reply observation points see different paths:
+    # raw PREROUTING (arriving at N1, destined for TV) and raw OUTPUT
+    # (generated locally by N1/proxy, destined for TV). Neither proves
+    # that all TV traffic follows N1, and neither changes session billing.
+    RX_LAN_PPS=0
+    RX_LAN_BPS=0
+    RX_LOCAL_PPS=0
+    RX_LOCAL_BPS=0
+    RX_STATE="$("$FW" inspect-reply 2>/dev/null || echo unavailable)"
+    case "$RX_STATE" in ready|disabled|unavailable) :;; *) RX_STATE=unavailable;; esac
+    RX_SAMPLE_STATUS="$RX_STATE"
+    if [ "$RX_STATE" = unavailable ] && [ "$NOW" -ge "$RX_REPAIR_AFTER" ]; then
+        # FW3 reload may remove only the passive hooks while TVG_GATE stays
+        # intact. Retry at most once a minute and NEVER sync a stale gate.
+        "$FW" sync-reply >/dev/null 2>&1 || :
+        RX_REPAIR_AFTER=$((NOW + 60))
+        RX_STATE="$("$FW" inspect-reply 2>/dev/null || echo unavailable)"
+        case "$RX_STATE" in ready|disabled|unavailable) :;; *) RX_STATE=unavailable;; esac
+        RX_SAMPLE_STATUS="$RX_STATE"
+    fi
+    if [ "$RX_STATE" = ready ]; then
+        reply_sample="$("$FW" sample-reply 2>/dev/null || echo '')"
+        set -- $reply_sample
+        reply_valid=1
+        [ "$#" -eq 4 ] || reply_valid=0
+        if [ "$reply_valid" = 1 ]; then
+            for number in "$@"; do
+                case "$number" in ''|*[!0-9]*) reply_valid=0;; esac
+            done
+        fi
+        if [ "$reply_valid" = 1 ]; then
+            lan_count="$1"
+            lan_bytes="$2"
+            local_count="$3"
+            local_bytes="$4"
+            rx_dt=0
+            if [ "$RX_LAST_EPOCH" -gt 0 ]; then
+                rx_dt=$((NOW - RX_LAST_EPOCH))
+            fi
+            # Observer has an independent baseline, so toggling the option,
+            # reloading FW3, or a counter reset cannot fabricate a huge rate.
+            if [ "$rx_dt" -lt 1 ] || [ "$rx_dt" -gt 20 ] ||
+               [ "$lan_count" -lt "$RX_LAST_LAN_COUNT" ] ||
+               [ "$lan_bytes" -lt "$RX_LAST_LAN_BYTES" ] ||
+               [ "$local_count" -lt "$RX_LAST_LOCAL_COUNT" ] ||
+               [ "$local_bytes" -lt "$RX_LAST_LOCAL_BYTES" ]; then
+                rx_dt=0
+            fi
+            if [ "$rx_dt" -gt 0 ]; then
+                lan_delta=$((lan_count - RX_LAST_LAN_COUNT))
+                local_delta=$((local_count - RX_LAST_LOCAL_COUNT))
+                RX_LAN_PPS=$((lan_delta / rx_dt))
+                RX_LAN_BPS=$(((lan_bytes - RX_LAST_LAN_BYTES) / rx_dt))
+                RX_LOCAL_PPS=$((local_delta / rx_dt))
+                RX_LOCAL_BPS=$(((local_bytes - RX_LAST_LOCAL_BYTES) / rx_dt))
+                RX_SAMPLE_STATUS=no_packets
+                if [ "$lan_delta" -gt 0 ] || [ "$local_delta" -gt 0 ]; then
+                    RX_SAMPLE_STATUS=observed
+                fi
+            else
+                RX_SAMPLE_STATUS=warming_up
+            fi
+            RX_LAST_EPOCH="$NOW"
+            RX_LAST_LAN_COUNT="$lan_count"
+            RX_LAST_LAN_BYTES="$lan_bytes"
+            RX_LAST_LOCAL_COUNT="$local_count"
+            RX_LAST_LOCAL_BYTES="$local_bytes"
+        else
+            RX_STATE=unavailable
+            RX_SAMPLE_STATUS=unavailable
+        fi
+    fi
+    if [ "$RX_STATE" != ready ]; then
+        RX_LAST_EPOCH=0
+        RX_LAST_LAN_COUNT=0
+        RX_LAST_LAN_BYTES=0
+        RX_LAST_LOCAL_COUNT=0
+        RX_LAST_LOCAL_BYTES=0
+    fi
+
+    SHADOW_LABEL=unknown
+    SHADOW_APP=none
+    SHADOW_SCORE=0
+    if [ "$dt" -gt 0 ] && [ -x /usr/libexec/tvguard-shadow ]; then
+        guess="$(/usr/libexec/tvguard-shadow "$PPS" "$TCP_PPS" "$UDP_PPS" "$BYTES_PER_S" 2>/dev/null || echo 'unknown none 0')"
+        set -- $guess
+        if [ "$#" -eq 3 ]; then
+            case "$1" in playing|paused|app_home|system_home|sleep|unknown) SHADOW_LABEL="$1";; esac
+            case "$2" in general|tencent|iqiyi|mango|other|system|none) SHADOW_APP="$2";; esac
+            case "$3" in ''|*[!0-9]*) :;; *) SHADOW_SCORE="$3";; esac
+        fi
+    fi
+    # Shadow suggestion never influences USED_S or BLOCKED.
+    LAST_COUNT="$count"
+    LAST_BYTE_COUNT="$bytes"
+    LAST_TCP_COUNT="$tcp_count"
+    LAST_UDP_COUNT="$udp_count"
+    if [ "$LAST_PACKET_EPOCH" -gt 0 ] &&
+       [ $((NOW - LAST_PACKET_EPOCH)) -lt "$SILENCE" ]; then
+        ACTIVITY=active
+    else
+        ACTIVITY=silent
+    fi
+
+    if [ "$CAL_LABEL" != none ]; then
+        if [ "$NOW" -lt "$CAL_UNTIL" ] && [ "$dt" -gt 0 ]; then
+            # Explicitly labeled by a parent; these samples never automatically
+            # grant "verified idle" exemptions or change today's quota.
+            printf '%s,%s,%s,%s,%s,%s,%s,%s\n' "$NOW" "$CAL_SESSION" "$CAL_LABEL" "$CAL_APP" \
+                "$PPS" "$TCP_PPS" "$UDP_PPS" "$BYTES_PER_S" >> "$DIR/calibration-v3.csv"
+            CAL_SAMPLES=$((CAL_SAMPLES + 1))
+            if [ "$(wc -c < "$DIR/calibration-v3.csv")" -gt 262144 ]; then
+                tail -n 1500 "$DIR/calibration-v3.csv" > "$DIR/calibration-v3.tmp"
+                mv -f "$DIR/calibration-v3.tmp" "$DIR/calibration-v3.csv"
+            fi
+
+            # Directional v4 evidence is written ONLY when the optional reply
+            # observer is actually ready and has a valid delta. It is a
+            # diagnostic dataset; current billing/classification never reads it.
+            case "$RX_SAMPLE_STATUS" in
+                observed|no_packets)
+                    if [ "$RX_STATE" = ready ]; then
+                        printf '%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s\n' \
+                            "$NOW" "$CAL_SESSION" "$CAL_LABEL" "$CAL_APP" \
+                            "$PPS" "$TCP_PPS" "$UDP_PPS" "$BYTES_PER_S" \
+                            "$RX_LAN_PPS" "$RX_LAN_BPS" "$RX_LOCAL_PPS" "$RX_LOCAL_BPS" \
+                            >> "$DIR/calibration-v4.csv"
+                        if [ "$(wc -c < "$DIR/calibration-v4.csv")" -gt 393216 ]; then
+                            tail -n 1800 "$DIR/calibration-v4.csv" > "$DIR/calibration-v4.tmp"
+                            mv -f "$DIR/calibration-v4.tmp" "$DIR/calibration-v4.csv"
+                        fi
+                    fi
+                    ;;
+            esac
+        elif [ "$NOW" -ge "$CAL_UNTIL" ]; then
+            finish_calibration completed
+        fi
+    elif [ "$CAL_APP" != none ] || [ "$CAL_SESSION" != none ]; then
+        # Repair stale metadata left by the previous development build.
+        CAL_APP=none
+        CAL_SESSION=none
+        CAL_STARTED=0
+        CAL_SAMPLES=0
+        CAL_UNTIL=0
+    fi
+
+    # Count children's network-use session, not claimed screen time.
+    # Both manual lock and quota exhaustion exclude blocked packets from billing.
+    if [ "$MODE" = child ] && [ "$ACTIVITY" = active ] && [ "$dt" -gt 0 ]; then
+        if [ "$ENFORCE" != 1 ] || [ "$BLOCKED" != 1 ]; then
+            USED_S=$((USED_S + dt))
+        fi
+    fi
+    LAST_EPOCH="$NOW"
+    calculate
+    apply_gate
+    save_runtime
+    if [ $((NOW - SAVED_EPOCH)) -ge 60 ] ||
+       [ "$BLOCKED" != "$previous_blocked" ] ||
+       [ "$CAL_LAST_FINISHED" != "$previous_finished" ]; then
+        persist
+    fi
+}
+status() {
+    quota
+    left=$((LIMIT_S - USED_S))
+    [ "$left" -gt 0 ] || left=0
+    firewall_state="$("$FW" inspect 2>/dev/null || echo unknown)"
+    case "$firewall_state" in blocked|allowed|absent|unknown) :;; *) firewall_state=unknown;; esac
+    actual=0
+    [ "$firewall_state" = blocked ] && actual=1
+    bonus_undo_available=0
+    [ "$LAST_BONUS_S" -gt 0 ] && bonus_undo_available=1
+    bonus_limit_seconds=$((BONUS_MAX * 60))
+    policy_reason=none
+    case "$MODE" in
+        locked) policy_reason=locked ;;
+        parent) policy_reason=none ;;
+        child)
+            if [ "$USED_S" -ge "$LIMIT_S" ]; then
+                policy_reason=quota
+            elif ! within_window; then
+                policy_reason=window
+            fi
+            ;;
+    esac
+
+    # The N1 clock is authoritative. No dependency on the phone clock, page
+    # refresh or JavaScript timers for elapsed/remaining time calculations.
+    cal_phase=idle
+    cal_elapsed=0
+    cal_remaining=0
+    cal_percent=0
+    cal_active=0
+    cal_app=none
+    cal_session=none
+    if [ "$CAL_LABEL" != none ]; then
+        cal_app="$CAL_APP"
+        cal_session="$CAL_SESSION"
+        cal_elapsed=$((NOW - CAL_STARTED))
+        [ "$cal_elapsed" -ge 0 ] || cal_elapsed=0
+        [ "$cal_elapsed" -le 120 ] || cal_elapsed=120
+        cal_remaining=$((CAL_UNTIL - NOW))
+        [ "$cal_remaining" -ge 0 ] || cal_remaining=0
+        cal_percent=$((cal_elapsed * 100 / 120))
+        if [ "$NOW" -lt "$CAL_UNTIL" ]; then
+            cal_phase=running
+            cal_active=1
+        else
+            cal_phase=finishing
+        fi
+    elif [ "$CAL_LAST_FINISHED" -gt 0 ]; then
+        cal_phase="$CAL_LAST_RESULT"
+    fi
+
+    printf '{"date":"%s","mode":"%s","activity":"%s","enforce":%s,"armed":%s,"would_block":%s,"blocked":%s,"firewall_state":"%s","used_seconds":%s,"quota_seconds":%s,"bonus_seconds":%s,"bonus_undo_available":%s,"bonus_limit_seconds":%s,"policy_reason":"%s","remaining_seconds":%s,"parent_until":%s,"last_packet_epoch":%s,"packet_counter":%s,"pps":%s,"tcp_pps":%s,"udp_pps":%s,"bytes_per_second":%s,"reply_observer":"%s","reply_sample_status":"%s","reply_prerouting_pps":%s,"reply_prerouting_bps":%s,"reply_local_pps":%s,"reply_local_bps":%s,"reply_coverage":"unverified","traffic_class":"%s","shadow_label":"%s","shadow_app":"%s","shadow_score":%s,"server_epoch":%s,"calibration_label":"%s","calibration_app":"%s","calibration_session":"%s","calibration_until":%s,"calibration_started":%s,"calibration_samples":%s,"calibration_phase":"%s","calibration_active":%s,"calibration_elapsed_seconds":%s,"calibration_remaining_seconds":%s,"calibration_percent":%s,"calibration_last_label":"%s","calibration_last_app":"%s","calibration_last_session":"%s","calibration_last_samples":%s,"calibration_last_finished":%s,"calibration_last_result":"%s"}\n' \
+        "$TODAY" "$MODE" "$ACTIVITY" "$ENFORCE" "$ARMED" "$BLOCKED" "$actual" "$firewall_state" \
+        "$USED_S" "$LIMIT_S" "$BONUS_S" "$bonus_undo_available" "$bonus_limit_seconds" "$policy_reason" "$left" "$PARENT_UNTIL" \
+        "$LAST_PACKET_EPOCH" "$LAST_COUNT" "$PPS" "$TCP_PPS" "$UDP_PPS" \
+        "$BYTES_PER_S" "$RX_STATE" "$RX_SAMPLE_STATUS" "$RX_LAN_PPS" "$RX_LAN_BPS" \
+        "$RX_LOCAL_PPS" "$RX_LOCAL_BPS" "$TRAFFIC_CLASS" "$SHADOW_LABEL" "$SHADOW_APP" "$SHADOW_SCORE" \
+        "$NOW" "$CAL_LABEL" "$cal_app" "$cal_session" "$CAL_UNTIL" "$CAL_STARTED" \
+        "$CAL_SAMPLES" "$cal_phase" "$cal_active" "$cal_elapsed" "$cal_remaining" "$cal_percent" \
+        "$CAL_LAST_LABEL" "$CAL_LAST_APP" "$CAL_LAST_SESSION" "$CAL_LAST_SAMPLES" "$CAL_LAST_FINISHED" "$CAL_LAST_RESULT"
+}
+mkdir -p /var/run "$DIR"
+config
+case "${1:-}" in
+    status)
+        load_state
+        NOW="$(date +%s)"
+        status
+        exit 0 ;;
+    log)
+        tail -n 80 "$EVENTS" 2>/dev/null || :
+        exit 0 ;;
+    calibration)
+        tail -n 80 "$DIR/calibration-v3.csv" 2>/dev/null || :
+        exit 0 ;;
+    calibration-v4)
+        tail -n 80 "$DIR/calibration-v4.csv" 2>/dev/null || :
+        exit 0 ;;
+    tick|mode|bonus|enforce|sync|calibrate)
+        lock
+        load_state
+        NOW="$(date +%s)"
+        rollover
+        if [ "$ENFORCE" = 1 ] && [ "$STATE_PRESENT" = 0 ]; then
+            event recovery_lock "持久状态缺失，强制锁定直至家长确认"
+        fi
+        ;;
+    *) echo "usage: tvguardctl {status|log|calibration|calibration-v4|tick|sync|mode|bonus|calibrate|enforce}" >&2; exit 2 ;;
+esac
+
+case "$1" in
+    tick)
+        # Firewall3 reloads can delete our custom chain. Recreate only when
+        # needed; otherwise do not transiently apply a stale disk snapshot.
+        hook_state="$("$FW" inspect 2>/dev/null || echo absent)"
+        case "$hook_state" in
+            allowed|blocked) : ;;
+            *) "$FW" sync ;;
+        esac
+        tick
+        ;;
+    sync)
+        calculate
+        save_runtime
+        persist
+        "$FW" sync
+        ;;
+    mode)
+        case "${2:-}" in
+            child) MODE=child; PARENT_UNTIL=0 ;;
+            locked) MODE=locked; PARENT_UNTIL=0 ;;
+            parent)
+                [ -z "${3:-}" ] ||
+                    { echo "parent mode no longer accepts a duration; use bonus for child extra time" >&2; exit 2; }
+                MODE=parent
+                PARENT_UNTIL=0
+                ;;
+            *) echo "invalid mode" >&2; exit 2 ;;
+        esac
+        event mode "切换为 $MODE"
+        calculate
+        save_runtime
+        persist
+        apply_gate
+        ;;
+    bonus)
+        case "${2:-}" in
+            15|30|60)
+                n=$(($2 * 60))
+                [ $((BONUS_S + n)) -le $((BONUS_MAX * 60)) ] ||
+                    { echo "daily bonus cap reached" >&2; exit 2; }
+                BONUS_S=$((BONUS_S + n))
+                LAST_BONUS_S="$n"
+                event reward "+$2 分钟"
+                LAST_BONUS_ID="$EVENT_ID"
+                ;;
+            undo)
+                [ "$LAST_BONUS_S" -gt 0 ] || { echo "nothing to undo" >&2; exit 2; }
+                BONUS_S=$((BONUS_S - LAST_BONUS_S))
+                event reward_revoke "-$((LAST_BONUS_S / 60)) 分钟"
+                LAST_BONUS_S=0
+                LAST_BONUS_ID=0
+                ;;
+            *) echo "invalid bonus" >&2; exit 2 ;;
+        esac
+        calculate
+        save_runtime
+        persist
+        apply_gate
+        ;;
+    calibrate)
+        if [ "$CAL_LABEL" != none ] && [ "$NOW" -ge "$CAL_UNTIL" ]; then
+            finish_calibration completed
+        fi
+        if [ "$CAL_LABEL" != none ] && [ "${2:-}" != stop ]; then
+            echo "calibration already running; stop it before starting another" >&2
+            exit 2
+        fi
+        case "${2:-}" in
+            playing|paused|app_home)
+                case "${3:-general}" in
+                    general|tencent|iqiyi|mango|other) CAL_APP="${3:-general}" ;;
+                    *) echo "unsupported application label" >&2; exit 2 ;;
+                esac
+                CAL_LABEL="$2"
+                CAL_STARTED="$NOW"
+                CAL_SAMPLES=0
+                CAL_UNTIL=$((NOW + 120))
+                event calibration_start "手工标注 $CAL_APP/$CAL_LABEL：120 秒"
+                CAL_SESSION="$NOW-$EVENT_ID"
+                ;;
+            system_home|sleep)
+                CAL_LABEL="$2"
+                CAL_APP=system
+                CAL_STARTED="$NOW"
+                CAL_SAMPLES=0
+                CAL_UNTIL=$((NOW + 120))
+                event calibration_start "手工标注 $CAL_LABEL：120 秒"
+                CAL_SESSION="$NOW-$EVENT_ID"
+                ;;
+            stop)
+                [ "$CAL_LABEL" != none ] || { echo "no active calibration" >&2; exit 2; }
+                finish_calibration stopped
+                ;;
+            *) echo "invalid calibration label" >&2; exit 2 ;;
+        esac
+        save_runtime
+        persist
+        ;;
+    enforce)
+        case "${2:-}" in
+            on)
+                [ "$ARMED" = 1 ] ||
+                    { echo "observer-only build: enable allow_enforcement=1 explicitly in UCI after testing" >&2; exit 2; }
+                audit_state="$("$AUDIT" 2>/dev/null || true)"
+                [ "$audit_state" = ok ] ||
+                    { echo "refusing enforcement: proxy isolation audit is not ok ($audit_state)" >&2; exit 2; }
+                ENFORCE=1
+                ;;
+            off) ENFORCE=0 ;;
+            *) exit 2 ;;
+        esac
+        uci set tvguard.main.enforce="$ENFORCE"
+        uci commit tvguard
+        event enforcement "enforce=$ENFORCE"
+        calculate
+        save_runtime
+        persist
+        apply_gate
+        ;;
+esac

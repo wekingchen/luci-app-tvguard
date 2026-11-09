@@ -1,0 +1,174 @@
+#!/bin/sh
+# Read-only runtime isolation audit for TV Guard.
+# It never writes firewall state. Exit 0 only when all TVG_* rules stay inside
+# the intended raw-table namespace and all hooks are scoped to this TV only.
+set -eu
+PATH=/usr/sbin:/usr/bin:/sbin:/bin
+export PATH
+
+IPT=/usr/sbin/iptables
+[ -x "$IPT" ] || IPT="$(command -v iptables 2>/dev/null || true)"
+[ -n "$IPT" ] && [ -x "$IPT" ] || {
+    echo "unavailable:iptables"
+    exit 2
+}
+
+IP=192.168.101.76
+IFACE=br-lan
+if command -v uci >/dev/null 2>&1; then
+    IP="$(uci -q get tvguard.main.ip || echo "$IP")"
+    IFACE="$(uci -q get tvguard.main.interface || echo "$IFACE")"
+fi
+case "$IP" in ''|*[!0-9.]* ) echo "unsafe:invalid_tv_ip"; exit 1;; esac
+case "$IFACE" in ''|*[!a-zA-Z0-9_.:-]* ) echo "unsafe:invalid_interface"; exit 1;; esac
+
+fail() {
+    echo "unsafe:$1"
+    exit 1
+}
+
+read_table() {
+    "$IPT" -w 2 -t "$1" -S
+}
+
+# TV Guard must never own rules or chains in tables used by transparent routing
+# or NAT. Missing optional tables are ignored; any TVG marker is a failure.
+for table in nat mangle filter; do
+    if ! dump="$(read_table "$table" 2>/dev/null)"; then
+        echo "unavailable:${table}_table"
+        exit 2
+    fi
+    if printf '%s\n' "$dump" | grep -q 'TVG_'; then
+        fail "tvg_marker_in_$table"
+    fi
+done
+
+if ! raw="$(read_table raw 2>/dev/null)"; then
+    echo "unavailable:raw_table"
+    exit 2
+fi
+
+# Token-level validation stays entirely in memory; no predictable /tmp files.
+if ! audit_reason="$(printf '%s\n' "$raw" | awk -v ip="$IP" -v iface="$IFACE" 'function die(msg) { print msg; bad=1; exit 1 }
+function hosteq(v) { return v==ip || v==ip "/32" }
+function core_hook(   i,hi,hs,hj) {
+    hi=hs=hj=0
+    for (i=3;i<=NF;i++) {
+        if ($i=="-i" && i<NF && $(i+1)==iface) { hi=1; i++; continue }
+        if ($i=="-s" && i<NF && hosteq($(i+1))) { hs=1; i++; continue }
+        if ($i=="-j" && i<NF && $(i+1)=="TVG_RAW") { hj=1; i++; continue }
+        return 0
+    }
+    return hi && hs && hj
+}
+function rx_lan_hook(   i,hi,hd,hm,hc) {
+    hi=hd=hm=hc=0
+    for (i=3;i<=NF;i++) {
+        if ($i=="-i" && i<NF && $(i+1)==iface) { hi=1; i++; continue }
+        if ($i=="-d" && i<NF && hosteq($(i+1))) { hd=1; i++; continue }
+        if ($i=="-m" && i<NF && $(i+1)=="comment") { hm=1; i++; continue }
+        if ($i=="--comment" && i<NF && $(i+1)=="TVG_RX_LAN") { hc=1; i++; continue }
+        return 0
+    }
+    return hi && hd && hm && hc
+}
+function rx_local_hook(   i,ho,hd,hm,hc) {
+    ho=hd=hm=hc=0
+    for (i=3;i<=NF;i++) {
+        if ($i=="-o" && i<NF && $(i+1)==iface) { ho=1; i++; continue }
+        if ($i=="-d" && i<NF && hosteq($(i+1))) { hd=1; i++; continue }
+        if ($i=="-m" && i<NF && $(i+1)=="comment") { hm=1; i++; continue }
+        if ($i=="--comment" && i<NF && $(i+1)=="TVG_RX_LOCAL") { hc=1; i++; continue }
+        return 0
+    }
+    return ho && hd && hm && hc
+}
+index($0,"TVG_")==0 { next }
+
+$1=="-N" {
+    if ($2=="TVG_RAW") { raw_chain++; next }
+    if ($2=="TVG_GATE") { gate_chain++; next }
+    die("unexpected_chain_" $2)
+}
+
+$1=="-A" && $2=="TVG_RAW" {
+    if ($3=="-m" && $4=="comment" && $5=="--comment" &&
+        $6=="TVG_COUNT" && NF==6) { count_rule++; next }
+    if ($3=="-p" && $4=="tcp" && $5=="-m" && $6=="comment" &&
+        $7=="--comment" && $8=="TVG_TCP" && NF==8) { tcp_rule++; next }
+    if ($3=="-p" && $4=="udp" && $5=="-m" && $6=="comment" &&
+        $7=="--comment" && $8=="TVG_UDP" && NF==8) { udp_rule++; next }
+    if ($3=="-j" && $4=="TVG_GATE" && NF==4) { gate_jump++; next }
+    die("unexpected_tvg_raw_rule")
+}
+
+$1=="-A" && $2=="TVG_GATE" {
+    if ($3=="-j" && ($4=="RETURN" || $4=="DROP") && NF==4) {
+        gate_rule++; next
+    }
+    die("unexpected_tvg_gate_rule")
+}
+
+$1=="-A" && $2=="PREROUTING" {
+    has_core=has_rx=0
+    for (i=1;i<=NF;i++) {
+        if ($i=="TVG_RAW") has_core=1
+        if ($i=="TVG_RX_LAN") has_rx=1
+        if ($i=="TVG_RX_LOCAL") die("rx_local_wrong_chain")
+    }
+    if (has_core) {
+        if (!core_hook()) die("core_hook_not_tv_scoped")
+        core_ref++
+        next
+    }
+    if (has_rx) {
+        if (!rx_lan_hook()) die("rx_lan_not_tv_scoped_or_has_target")
+        rx_lan++
+        next
+    }
+    die("unexpected_prerouting_tvg_rule")
+}
+
+$1=="-A" && $2=="OUTPUT" {
+    has_rx=0
+    for (i=1;i<=NF;i++) {
+        if ($i=="TVG_RX_LOCAL") has_rx=1
+        if ($i=="TVG_RAW" || $i=="TVG_RX_LAN") die("unexpected_output_tvg_rule")
+    }
+    if (has_rx) {
+        if (!rx_local_hook()) die("rx_local_not_tv_scoped_or_has_target")
+        rx_local++
+        next
+    }
+    die("unexpected_output_tvg_rule")
+}
+
+{ die("unexpected_tvg_rule") }
+
+END {
+    if (bad) exit 1
+    any=raw_chain+gate_chain+count_rule+tcp_rule+udp_rule+gate_jump+gate_rule+core_ref+rx_lan+rx_local
+    if (!any) exit 0
+
+    # Installed/core state must be complete and unique. This also prevents a
+    # future broad duplicate hook from affecting non-TV clients.
+    if (raw_chain!=1) die("raw_chain_count_" raw_chain)
+    if (gate_chain!=1) die("gate_chain_count_" gate_chain)
+    if (count_rule!=1) die("count_rule_count_" count_rule)
+    if (tcp_rule!=1) die("tcp_rule_count_" tcp_rule)
+    if (udp_rule!=1) die("udp_rule_count_" udp_rule)
+    if (gate_jump!=1) die("gate_jump_count_" gate_jump)
+    if (gate_rule!=1) die("gate_rule_count_" gate_rule)
+    if (core_ref!=1) die("core_hook_count_" core_ref)
+    # A single passive hook can be temporarily absent during fw3 rebuild and
+    # is safe to repair; duplicates are not accepted.
+    if (rx_lan>1) die("rx_lan_count_" rx_lan)
+    if (rx_local>1) die("rx_local_count_" rx_local)
+}
+' 2>&1)"; then
+    reason="$(printf '%s\n' "$audit_reason" | tail -n 1)"
+    [ -n "$reason" ] || reason=unexpected_rule
+    fail "$reason"
+fi
+
+echo "ok"

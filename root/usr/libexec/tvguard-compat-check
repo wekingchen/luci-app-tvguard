@@ -1,0 +1,87 @@
+#!/bin/sh
+# One-shot N1 compatibility check. It never reloads the global firewall and
+# never calls a proxy service. The only write operation is TV Guard's own sync.
+set -eu
+PATH=/usr/sbin:/usr/bin:/sbin:/bin
+export PATH
+
+IPT=/usr/sbin/iptables
+[ -x "$IPT" ] || IPT="$(command -v iptables 2>/dev/null || true)"
+CTL=/usr/libexec/tvguardctl
+FW=/usr/libexec/tvguard-fw
+AUDIT=/usr/libexec/tvguard-isolation-audit
+
+fail() {
+    echo "result=FAIL"
+    echo "reason=$1"
+    exit 1
+}
+
+[ -n "$IPT" ] && [ -x "$IPT" ] || fail iptables_unavailable
+[ -x "$CTL" ] || fail controller_unavailable
+[ -x "$FW" ] || fail firewall_adapter_unavailable
+[ -x "$AUDIT" ] || fail isolation_audit_unavailable
+
+enforce="$(uci -q get tvguard.main.enforce || echo 0)"
+armed="$(uci -q get tvguard.main.allow_enforcement || echo 0)"
+observe="$(uci -q get tvguard.main.observe_reply || echo 0)"
+[ "$enforce" = 0 ] || fail enforce_must_be_0
+[ "$armed" = 0 ] || fail allow_enforcement_must_be_0
+[ "$observe" = 0 ] || fail observe_reply_must_be_0
+
+audit_before="$("$AUDIT" 2>/dev/null || true)"
+[ "$audit_before" = ok ] || fail "isolation_before_$audit_before"
+gate_before="$("$FW" inspect 2>/dev/null || true)"
+[ "$gate_before" = allowed ] || fail "gate_before_$gate_before"
+
+tmp="$(mktemp -d /tmp/tvguard-compat.XXXXXX 2>/dev/null || mktemp -d)"
+trap 'rm -rf "$tmp"' EXIT HUP INT TERM
+
+snapshot() {
+    dest="$1"
+    : > "$dest"
+    for table in raw mangle nat filter; do
+        if ! rules="$("$IPT" -w 2 -t "$table" -S 2>/dev/null)"; then
+            return 1
+        fi
+        printf '### %s\n' "$table" >> "$dest"
+        # Keep every non-TVG line exactly in iptables -S order.
+        printf '%s\n' "$rules" | awk 'index($0,"TVG_")==0 {print}' >> "$dest"
+    done
+}
+
+snapshot "$tmp/before" || fail snapshot_before_unavailable
+
+# No firewall reload, no network reload, no proxy command: only TV Guard's
+# isolated raw-table sync path.
+"$CTL" sync >/dev/null 2>&1 || fail tvguard_sync_failed
+
+snapshot "$tmp/after" || fail snapshot_after_unavailable
+if ! cmp -s "$tmp/before" "$tmp/after"; then
+    echo "result=FAIL"
+    echo "reason=non_tvg_rules_changed"
+    echo "note=rerun_when_no_other_firewall_or_proxy_reload_is_in_progress"
+    exit 1
+fi
+
+audit_after="$("$AUDIT" 2>/dev/null || true)"
+[ "$audit_after" = ok ] || fail "isolation_after_$audit_after"
+gate_after="$("$FW" inspect 2>/dev/null || true)"
+[ "$gate_after" = allowed ] || fail "gate_after_$gate_after"
+
+include_type="$(uci -q get firewall.tvguard 2>/dev/null || true)"
+include_mode="$(uci -q get firewall.tvguard.type 2>/dev/null || true)"
+include_path="$(uci -q get firewall.tvguard.path 2>/dev/null || true)"
+[ "$include_type" = include ] || fail firewall_include_missing
+[ "$include_mode" = script ] || fail firewall_include_type_unexpected
+[ "$include_path" = /usr/libexec/tvguard-firewall-include ] || fail firewall_include_path_unexpected
+
+echo "result=PASS"
+echo "proxy_rules_unchanged=1"
+echo "isolation_audit=ok"
+echo "gate=allowed"
+echo "enforce=0"
+echo "allow_enforcement=0"
+echo "observe_reply=0"
+echo "reply_coverage=unverified"
+echo "iptables_version=$("$IPT" --version 2>/dev/null | head -n 1)"
