@@ -4,7 +4,7 @@ set -eu
 ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT HUP INT TERM
-mkdir -p "$TMP/bin" "$TMP/state" "$TMP/run"
+mkdir -p "$TMP/bin" "$TMP/state" "$TMP/volatile" "$TMP/run"
 cat > "$TMP/bin/uci" <<'EOUCI'
 #!/bin/sh
 if [ "${1:-}" = -q ]; then shift; fi
@@ -72,9 +72,24 @@ chmod +x "$TMP/adaptive"
 export TVGUARD_TEST_ADAPTIVE=unready
 cat > "$TMP/data" <<'EODATA'
 #!/bin/sh
+mode="${TVGUARD_TEST_DATA_MODE:-persistent}"
+case "$mode" in persistent|volatile) :;; *) exit 2;; esac
 case "${1:-root}" in
-    root|persistent-root) printf '%s\n' "$TVGUARD_TEST_STATE" ;;
-    status) printf 'persistent|%s|mounted\n' "$TVGUARD_TEST_STATE" ;;
+    root)
+        if [ "$mode" = persistent ]; then
+            printf '%s\n' "$TVGUARD_TEST_STATE"
+        else
+            printf '%s\n' "$TVGUARD_TEST_VOLATILE"
+        fi
+        ;;
+    persistent-root) printf '%s\n' "$TVGUARD_TEST_STATE" ;;
+    status)
+        if [ "$mode" = persistent ]; then
+            printf 'persistent|%s|mounted\n' "$TVGUARD_TEST_STATE"
+        else
+            printf 'volatile|%s|persistent_mount_unavailable\n' "$TVGUARD_TEST_VOLATILE"
+        fi
+        ;;
     prepare) : ;;
     *) exit 2 ;;
 esac
@@ -96,6 +111,8 @@ chmod +x "$TMP/learn"
 : > "$TMP/learn.log"
 export TVGUARD_TEST_LEARN_LOG="$TMP/learn.log"
 export TVGUARD_TEST_STATE="$TMP/state"
+export TVGUARD_TEST_VOLATILE="$TMP/volatile"
+export TVGUARD_TEST_DATA_MODE=persistent
 echo '0 0 0 0 0 0' > "$TMP/sample"
 echo '0 0 0 0' > "$TMP/reply"
 : > "$TMP/repair.log"
@@ -621,5 +638,29 @@ if sh "$CTL" enforce on > "$TMP/out" 2>&1; then
 fi
 grep -q 'proxy isolation audit is not ok' "$TMP/out"
 test "$(cat "$TMP/gate")" = 0
+export TVGUARD_TEST_ARMED=0
+export TVGUARD_TEST_AUDIT=ok
 
-echo "PASS: modes, billing, telemetry, calibration and two-key + live-audit enforcement safety"
+# Delayed-mount regression: a /var/run snapshot created while the durable
+# mount is unavailable must not shadow the real mmc state after the mount
+# returns. Persist parent mode in the durable store first.
+export TVGUARD_TEST_DATA_MODE=persistent
+sh "$CTL" mode parent
+grep -q '^DATA_ROOT_MODE=persistent "$TMP/run/runtime"
+grep -q '^MODE=parent "$TMP/state/state"
+
+# Lose the mount. The persistent-mode runtime must be discarded; a volatile
+# sync creates a RAM-only child snapshot marked volatile.
+export TVGUARD_TEST_DATA_MODE=volatile
+sh "$CTL" sync
+grep -q '^DATA_ROOT_MODE=volatile "$TMP/run/runtime"
+grep -q '^MODE=child "$TMP/volatile/state"
+
+# Mount returns. The volatile runtime must be discarded and the durable
+# parent snapshot must become authoritative immediately.
+export TVGUARD_TEST_DATA_MODE=persistent
+status
+check 'assert s["mode"]=="parent" and s["parent_until"]==0, s'
+grep -q '^MODE=parent "$TMP/state/state"
+
+echo "PASS: modes, billing, telemetry, calibration, data-root switching and two-key enforcement safety"
