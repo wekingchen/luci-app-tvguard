@@ -13,6 +13,11 @@ LEGACY_DIR=/etc/tvguard
 VOLATILE_DIR=/var/run/tvguard-data
 MOUNTS=/proc/mounts
 MIGRATION_MARK="$PERSIST_DIR/.layout-v1"
+CONFIG_FILE=/etc/config/tvguard
+DEFAULT_CONFIG=/usr/share/tvguard/default-config
+CONFIG_DIR="$PERSIST_DIR/config"
+CONFIG_BACKUP="$CONFIG_DIR/tvguard"
+CONFIG_OVERLAY_MARK=/etc/.tvguard-config-v1
 
 is_persistent_ready() {
     [ -r "$MOUNTS" ] || return 1
@@ -34,7 +39,7 @@ copy_verified_if_absent() {
     dst="$2"
     [ -f "$src" ] || return 0
     [ ! -e "$dst" ] || return 0
-    tmp="${dst}.$$"
+    tmp="${dst}.$"
     cp "$src" "$tmp"
     chmod 600 "$tmp"
     src_size="$(wc -c < "$src" | tr -d ' ')"
@@ -44,6 +49,87 @@ copy_verified_if_absent() {
         return 1
     }
     mv -f "$tmp" "$dst"
+}
+
+copy_verified_replace() {
+    src="$1"
+    dst="$2"
+    [ -f "$src" ] || return 1
+    tmp="${dst}.$"
+    cp "$src" "$tmp"
+    chmod 600 "$tmp"
+    src_size="$(wc -c < "$src" | tr -d ' ')"
+    dst_size="$(wc -c < "$tmp" | tr -d ' ')"
+    [ "$src_size" = "$dst_size" ] || {
+        rm -f "$tmp"
+        return 1
+    }
+    mv -f "$tmp" "$dst"
+}
+
+mark_overlay_config() {
+    mkdir -p "$(dirname "$CONFIG_OVERLAY_MARK")"
+    : > "$CONFIG_OVERLAY_MARK"
+    chmod 600 "$CONFIG_OVERLAY_MARK"
+}
+
+backup_config() {
+    is_persistent_ready || return 1
+    [ -f "$CONFIG_FILE" ] || return 1
+    mkdir -p "$CONFIG_DIR"
+    chmod 700 "$CONFIG_DIR"
+    if [ -f "$CONFIG_BACKUP" ] && cmp -s "$CONFIG_FILE" "$CONFIG_BACKUP"; then
+        mark_overlay_config
+        return 0
+    fi
+    copy_verified_replace "$CONFIG_FILE" "$CONFIG_BACKUP"
+    mark_overlay_config
+}
+
+restore_config() {
+    is_persistent_ready || return 1
+    [ -f "$CONFIG_BACKUP" ] || return 1
+    mkdir -p "$(dirname "$CONFIG_FILE")"
+    copy_verified_replace "$CONFIG_BACKUP" "$CONFIG_FILE"
+    mark_overlay_config
+}
+
+config_sync() {
+    # Never create a second persistent config database while mmc is absent.
+    is_persistent_ready || return 0
+    mkdir -p "$CONFIG_DIR"
+    chmod 700 "$CONFIG_DIR"
+
+    if [ -e "$CONFIG_OVERLAY_MARK" ]; then
+        if [ -f "$CONFIG_FILE" ]; then
+            backup_config
+        elif [ -f "$CONFIG_BACKUP" ]; then
+            restore_config
+        else
+            return 1
+        fi
+        return 0
+    fi
+
+    # New/rebuilt overlay. Prefer an existing durable backup only when the
+    # live config is missing, identical to the packaged default, or already
+    # identical to the backup. A non-default live config is treated as a
+    # preserved/newer administrator choice and becomes the new backup.
+    if [ -f "$CONFIG_BACKUP" ]; then
+        if [ ! -f "$CONFIG_FILE" ]; then
+            restore_config
+        elif cmp -s "$CONFIG_FILE" "$CONFIG_BACKUP"; then
+            mark_overlay_config
+        elif [ -f "$DEFAULT_CONFIG" ] && cmp -s "$CONFIG_FILE" "$DEFAULT_CONFIG"; then
+            restore_config
+        else
+            backup_config
+        fi
+    elif [ -f "$CONFIG_FILE" ]; then
+        backup_config
+    else
+        return 1
+    fi
 }
 
 seed_volatile_from_legacy() {
@@ -153,5 +239,9 @@ case "${1:-root}" in
     prepare) prepare ;;
     status) status ;;
     persistent-root) printf '%s\n' "$PERSIST_DIR" ;;
+    backup-config) backup_config ;;
+    restore-config) restore_config ;;
+    config-sync) config_sync ;;
+    config-backup-path) printf '%s\n' "$CONFIG_BACKUP" ;;
     *) exit 2 ;;
 esac
