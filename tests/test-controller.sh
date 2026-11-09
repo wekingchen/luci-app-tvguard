@@ -57,6 +57,18 @@ case "${TVGUARD_TEST_SHADOW:-unknown}" in
 esac
 EOSHADOW
 chmod +x "$TMP/shadow"
+cat > "$TMP/adaptive" <<'EOADAPT'
+#!/bin/sh
+case "${TVGUARD_TEST_ADAPTIVE:-unready}" in
+    idle) echo 'idle 95 6 stable_low 70 138 14 34' ;;
+    active) echo 'active 100 6 clear_current 70 138 160 233' ;;
+    ambiguous) echo 'ambiguous 50 6 overlap 70 138 18 101' ;;
+    warming) echo 'warming 0 3 need_window 70 138 16 20' ;;
+    *) echo 'unready 0 0 no_model 0 0 0 0' ;;
+esac
+EOADAPT
+chmod +x "$TMP/adaptive"
+export TVGUARD_TEST_ADAPTIVE=unready
 cat > "$TMP/learn" <<'EOLEARN'
 #!/bin/sh
 printf '%s\n' "$*" >> "$TVGUARD_TEST_LEARN_LOG"
@@ -96,6 +108,7 @@ mapping={
     'FW=/usr/libexec/tvguard-fw': 'FW='+root+'/fw',
     'AUDIT=/usr/libexec/tvguard-isolation-audit': 'AUDIT='+root+'/audit',
     'SHADOW=/usr/libexec/tvguard-shadow': 'SHADOW='+root+'/shadow',
+    'ADAPTIVE=/usr/libexec/tvguard-adaptive': 'ADAPTIVE='+root+'/adaptive',
     'LEARN=/usr/libexec/tvguard-learn': 'LEARN='+root+'/learn',
     'RUN=/var/run/tvguard.state': 'RUN='+root+'/run/runtime',
     'DIR=/etc/tvguard': 'DIR='+root+'/state',
@@ -504,6 +517,47 @@ after_unknown="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))
 delta_unknown=$((after_unknown - before_unknown))
 [ "$delta_unknown" -ge 9 ] && [ "$delta_unknown" -le 11 ]
 check 'assert s["billing_state"] == "charge" and s["idle_reason"] == "none" and s["idle_streak_seconds"] == 0, s'
+
+# Adaptive Phase 1: learned idle bypasses single-frame shadow instability
+# only after the rolling model itself says idle.
+export TVGUARD_TEST_ADAPTIVE=idle
+export TVGUARD_TEST_SHADOW=unknown
+python3 - "$TMP/run/runtime" <<'PY'
+from pathlib import Path
+import sys,time
+p=Path(sys.argv[1])
+lines=p.read_text().splitlines()
+now=int(time.time())
+p.write_text('\n'.join('LAST_EPOCH='+str(now-10) if x.startswith('LAST_EPOCH=') else x for x in lines)+'\n')
+PY
+set -- $(cat "$TMP/sample")
+echo "$(($1 + 120)) $(($2 + 12000)) $(($3 + 10)) $(($4 + 1000)) $(($5 + 100)) $(($6 + 11000))" > "$TMP/sample"
+before_adaptive="$(sh "$CTL" status | python3 -c 'import json,sys; print(json.load(sys.stdin)["used_seconds"])')"
+sh "$CTL" tick
+status
+after_adaptive="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["used_seconds"])' "$TMP/status.json")"
+[ "$after_adaptive" = "$before_adaptive" ]
+check 'assert s["adaptive_state"]=="idle" and s["billing_state"]=="idle_verified" and s["idle_reason"]=="adaptive", s'
+
+# Clear learned playback must resume charging immediately even if shadow is unknown.
+export TVGUARD_TEST_ADAPTIVE=active
+python3 - "$TMP/run/runtime" <<'PY'
+from pathlib import Path
+import sys,time
+p=Path(sys.argv[1])
+lines=p.read_text().splitlines()
+now=int(time.time())
+p.write_text('\n'.join('LAST_EPOCH='+str(now-10) if x.startswith('LAST_EPOCH=') else x for x in lines)+'\n')
+PY
+set -- $(cat "$TMP/sample")
+echo "$(($1 + 1600)) $(($2 + 180000)) $(($3 + 700)) $(($4 + 70000)) $(($5 + 900)) $(($6 + 110000))" > "$TMP/sample"
+before_active="$after_adaptive"
+sh "$CTL" tick
+status
+after_active="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["used_seconds"])' "$TMP/status.json")"
+[ $((after_active-before_active)) -ge 9 ] && [ $((after_active-before_active)) -le 11 ]
+check 'assert s["adaptive_state"]=="active" and s["billing_state"]=="charge", s'
+export TVGUARD_TEST_ADAPTIVE=unready
 
 # Missing reply counters after FW3 reload must request an OBSERVER-ONLY repair
 # at most once per minute. No call to the gate is made by sync-reply.
