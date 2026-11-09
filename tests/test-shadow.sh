@@ -146,6 +146,11 @@ from pathlib import Path
 import sys
 p=Path(sys.argv[1])
 rows=p.read_text().splitlines()
+# Extend the local App-home envelope down to the real N1 boundary seen in
+# field data (about 14 PPS) while preserving the original 30-PPS samples.
+sid=390
+for i in range(12):
+    rows.append(f"{1730450000+sid*120+i*10},{sid}-1,app_home,tencent,{14+i%2},{i%2},{13+i%2},{7000+i*20}")
 sid=400
 for session in range(3):
     sid += 1
@@ -153,6 +158,6 @@ for session in range(3):
         rows.append(f"{1730500000+sid*120+i*10},{sid}-1,system_home,system,{10+i%2},1,{9+i%2},{7000+i*20}")
 p.write_text("\n".join(rows)+"\n")
 PY
-test "$(sh "$DST" 13 1 13 10000)" = 'idle general 95'
+test "$(sh "$DST" 13 1 13 7055)" = 'idle general 95'
 
 echo 'PASS: system-home idle, cross-app generic idle, overlap rejection, unknown sleep'
