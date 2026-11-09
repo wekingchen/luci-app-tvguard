@@ -26,6 +26,11 @@ else
 fi
 
 /usr/libexec/tvguard-data prepare 2>/dev/null || :
+if [ -f /tmp/tvguard-config-restore-needed ]; then
+    /usr/libexec/tvguard-data restore-config 2>/dev/null || :
+    rm -f /tmp/tvguard-config-restore-needed
+fi
+/usr/libexec/tvguard-data config-sync 2>/dev/null || :
 /usr/libexec/tvguard-retention trim 2>/dev/null || :
 /etc/init.d/rpcd reload 2>/dev/null || :
 /etc/init.d/tvguard enable
