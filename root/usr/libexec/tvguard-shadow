@@ -89,6 +89,17 @@ END {
     # but it is exempted only when it is clearly outside an observed playback
     # envelope. This fixes the "sitting on TV home still consumes quota" case
     # without making a generic low-PPS exemption.
+    # If two independently safe idle envelopes overlap, we know the TV is
+    # idle but cannot honestly claim which home screen is foreground. Emit a
+    # neutral idle label instead of whichever rule happens to run first.
+    if (ready_sessions("system_home") && local_app_home_ready() &&
+        playback_reference_ready() &&
+        inside("system_home") && inside("app_home") &&
+        separated_from("playing")) {
+        print "idle general 95"
+        exit
+    }
+
     if (ready_sessions("system_home") && playback_reference_ready() &&
         inside("system_home") && separated_from("playing")) {
         print "system_home system 100"
