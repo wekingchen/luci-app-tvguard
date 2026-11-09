@@ -81,6 +81,8 @@ jobs:
         run: |
           set -eu
           dash tests/test-shadow.sh
+      - name: Test automatic learning-session analysis
+        run: dash tests/test-learning.sh
       - name: Validate unseen-app generalization and safe refusal
         run: python3 tests/test-generalization.py
       - name: Check intended safeguards
@@ -106,6 +108,8 @@ jobs:
           grep -q 'BILLING_STATE=idle_verified' root/usr/libexec/tvguardctl
           grep -q 'idle_grace' root/usr/libexec/tvguardctl
           grep -q 'BUILD_ID_FILE' root/usr/libexec/tvguardctl
+          grep -q 'tvguard-learn' scripts/build-ipk.sh
+          grep -q 'learning)' root/usr/libexec/tvguard-status
           grep -q 'system_home system 100' root/usr/libexec/tvguard-shadow
 
   package:
@@ -116,16 +120,16 @@ jobs:
       - name: Build and validate OpenWrt-compatible development IPK
         run: |
           set -eu
-          sh scripts/build-ipk.sh 0.1.13 2
-          PKG=dist/luci-app-tvguard_0.1.13-2_all.ipk
+          sh scripts/build-ipk.sh 0.1.13 3
+          PKG=dist/luci-app-tvguard_0.1.13-3_all.ipk
           test -f "$PKG"
           # OpenWrt ipkg-build uses gzip-compressed tar, not Debian ar.
           test "$(od -An -tx1 -N2 "$PKG" | tr -d ' \n')" = 1f8b
           tar -tzf "$PKG" | grep -q './control.tar.gz'
-          python3 scripts/verify-ipk.py "$PKG" 0.1.13 2
+          python3 scripts/verify-ipk.py "$PKG" 0.1.13 3
       - name: Upload development IPK
         uses: actions/upload-artifact@v4
         with:
-          name: tvguard-v0.1.13-r2-adaptive-idle-ipk
+          name: tvguard-v0.1.13-r3-learning-center-ipk
           path: dist/*.ipk
           if-no-files-found: error
