@@ -310,3 +310,9 @@ r14 真机按“播放 → 暂停 → 暂停 → 播放”观察时，播放两�
 同时发现升级状态污染：r13 曾可能留下 `TEMPORAL_LAST_HINT=stable_low_plateau` 但 `TEMPORAL_CANDIDATE_START=0`；r14 修复状态持久后首次退出会计算 `NOW-0`，从而产生约 Unix epoch 大小的虚假累计/最长时长。r15 为 temporal observer 引入独立 `TEMPORAL_STATE_SCHEMA=v2`，升级时只重置 temporal 候选/累计，保留原始 ring 与 high-B/P Soak 历史；只读 report 在 writable migration 发生前也会隐藏旧污染值。
 
 r15 不修改 `TX_IDLE_BILLING_AUTHORITY=0`、controller billing、firewall gate、NAT/mangle/route。
+
+### r16 P1-C 静默样本去重（2026-11-10）
+
+r15 重启后的干净 RAM ring 显示前 10 个窗口均为 `PPS=0`；按原条件，满 12 窗后纯静默也会满足低位稳定平台。纯静默已有 `activity=silent / billing_state=idle_silent` 专门处理，不应重复计入 `stable_low_plateau` 研究样本。
+
+r16 在 Shadow-only 条件中增加 `TEMPORAL_P50 > 0`：纯静默以及“11 个静默窗 + 1 个零星包”的近静默历史均不得进入候选；已确认系统首页、真实暂停正例和两段 576p 播放反例保持原有判定。该修改不改变 `TX_IDLE_BILLING_AUTHORITY=0`、controller billing、firewall gate、NAT/mangle/route。
