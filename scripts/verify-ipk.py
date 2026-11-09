@@ -61,6 +61,7 @@ for name in (
     "usr/libexec/tvguard-shadow",
     "usr/libexec/tvguard-learn",
     "usr/libexec/tvguard-adaptive",
+    "usr/libexec/tvguard-retention",
     "www/luci-static/resources/view/tvguard/overview.js",
 ):
     if name not in data:
