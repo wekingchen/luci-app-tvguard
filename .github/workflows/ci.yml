@@ -104,6 +104,8 @@ jobs:
           grep -q 'tvguard-isolation-audit' scripts/build-ipk.sh
           grep -q 'tvguard-compat-check' scripts/build-ipk.sh
           grep -q 'BILLING_STATE=idle_verified' root/usr/libexec/tvguardctl
+          grep -q 'idle_grace' root/usr/libexec/tvguardctl
+          grep -q 'BUILD_ID_FILE' root/usr/libexec/tvguardctl
           grep -q 'system_home system 100' root/usr/libexec/tvguard-shadow
 
   package:
@@ -114,16 +116,16 @@ jobs:
       - name: Build and validate OpenWrt-compatible development IPK
         run: |
           set -eu
-          sh scripts/build-ipk.sh 0.1.13
-          PKG=dist/luci-app-tvguard_0.1.13-1_all.ipk
+          sh scripts/build-ipk.sh 0.1.13 2
+          PKG=dist/luci-app-tvguard_0.1.13-2_all.ipk
           test -f "$PKG"
           # OpenWrt ipkg-build uses gzip-compressed tar, not Debian ar.
           test "$(od -An -tx1 -N2 "$PKG" | tr -d ' \n')" = 1f8b
           tar -tzf "$PKG" | grep -q './control.tar.gz'
-          python3 scripts/verify-ipk.py "$PKG" 0.1.13
+          python3 scripts/verify-ipk.py "$PKG" 0.1.13 2
       - name: Upload development IPK
         uses: actions/upload-artifact@v4
         with:
-          name: tvguard-v0.1.13-smart-billing-ipk
+          name: tvguard-v0.1.13-r2-adaptive-idle-ipk
           path: dist/*.ipk
           if-no-files-found: error
