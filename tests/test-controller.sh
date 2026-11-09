@@ -374,6 +374,52 @@ delta_idle=$((after_idle - before_smart))
 check 'assert s["billing_state"] == "idle_verified" and s["idle_reason"] == "system_home", s'
 check 'assert s["idle_streak_seconds"] >= 30, s'
 
+# Once idle is verified, switching between trusted idle labels must not
+# restart confirmation or bill another 10-second window. This reproduces the
+# N1 App-home -> system-home boundary transition seen in real traffic.
+export TVGUARD_TEST_SHADOW=app_home
+python3 - "$TMP/run/runtime" <<'PY'
+from pathlib import Path
+import sys,time
+p=Path(sys.argv[1])
+lines=p.read_text().splitlines()
+now=int(time.time())
+p.write_text('\n'.join(
+    'LAST_EPOCH='+str(now-10) if line.startswith('LAST_EPOCH=') else line
+    for line in lines
+)+'\n')
+PY
+set -- $(cat "$TMP/sample")
+echo "$(($1 + 100)) $(($2 + 10000)) $(($3 + 20)) $(($4 + 2000)) $(($5 + 70)) $(($6 + 7000))" > "$TMP/sample"
+before_transition="$after_idle"
+sh "$CTL" tick
+status
+after_transition="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["used_seconds"])' "$TMP/status.json")"
+[ "$after_transition" = "$before_transition" ]
+check 'assert s["billing_state"] == "idle_verified" and s["idle_reason"] == "app_home", s'
+check 'assert s["idle_streak_seconds"] >= 40, s'
+
+export TVGUARD_TEST_SHADOW=system_home
+python3 - "$TMP/run/runtime" <<'PY'
+from pathlib import Path
+import sys,time
+p=Path(sys.argv[1])
+lines=p.read_text().splitlines()
+now=int(time.time())
+p.write_text('\n'.join(
+    'LAST_EPOCH='+str(now-10) if line.startswith('LAST_EPOCH=') else line
+    for line in lines
+)+'\n')
+PY
+set -- $(cat "$TMP/sample")
+echo "$(($1 + 100)) $(($2 + 10000)) $(($3 + 20)) $(($4 + 2000)) $(($5 + 70)) $(($6 + 7000))" > "$TMP/sample"
+sh "$CTL" tick
+status
+after_transition2="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["used_seconds"])' "$TMP/status.json")"
+[ "$after_transition2" = "$before_transition" ]
+check 'assert s["billing_state"] == "idle_verified" and s["idle_reason"] == "system_home", s'
+check 'assert s["idle_streak_seconds"] >= 50, s'
+
 # Unknown evidence must resume charging immediately and clear the idle streak.
 export TVGUARD_TEST_SHADOW=unknown
 python3 - "$TMP/run/runtime" <<'PY'
