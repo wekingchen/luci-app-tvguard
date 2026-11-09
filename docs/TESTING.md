@@ -12,6 +12,7 @@ N1 的固件 overlay 在升级/重刷时可能被替换，因此 `/etc/tvguard` 
 - 若持久分区尚未挂载，新的写入只进入 `/var/run/tvguard-data`，不会重新把 overlay `/etc` 变成第二套持久数据库；
 - 持久盘恢复后，只合并挂载中断期间新增的 append-only 后缀；从旧库种入 RAM 供读取的前缀不会重复追加，避免学习样本被重复加权；
 - `/var/run/tvguard.state` 继续作为当前启动周期的运行态权威，磁盘状态是持久快照；
+- 若系统启动早于 mmc 挂载，RAM runtime 会记录当前数据根模式；当数据根从 `volatile` 切回 `persistent` 时，旧 RAM runtime 会被丢弃并立即重新加载 mmc 的持久状态，避免临时 child/default 状态压住真实模式与额度。
 - 原 r7 的 1 MiB append-only 总预算继续生效，迁移到 mmc 后仍会自动裁剪。
 
 当前正式持久文件：
@@ -24,11 +25,11 @@ N1 的固件 overlay 在升级/重刷时可能被替换，因此 `/etc/tvguard` 
 
 `tvguard-status storage` 会显示当前是 `persistent` 还是 `volatile`、实际数据目录、正式持久目录、挂载状态和剩余空间。
 
-CI #42598534187：static + package success；其中覆盖旧库迁移、挂载缺失 RAM fallback、恢复后只合并新增数据、学习数据不重复、存储上限、原有 controller/enforcement/firewall/proxy/Adaptive 回归。
+CI #42599800578：static + package success；其中覆盖旧库迁移、挂载缺失 RAM fallback、恢复后只合并新增数据、学习数据不重复、volatile→persistent 运行态切换后立即恢复 mmc 状态、存储上限、原有 controller/enforcement/firewall/proxy/Adaptive 回归。
 Package：`luci-app-tvguard_0.1.13-8_all.ipk`
-IPK SHA256：`aa0db29362b9ef87c5d6d1a7fe59a1968cb457ee3efab88788c989f74f417841`
+IPK SHA256：`d258470f95a0a545d309f2f3ea11229aa0642b4c9038d477b42a4eb5aeecf4b7`
 Artifact：`tvguard-v0.1.13-r8-durable-mmc-data-ipk`
-Artifact digest：`sha256:9ffe43ab29b8e92676616a4daf68acc5877249ca8b14402335ae8852e8700723`
+Artifact digest（CI #42599800578）：`sha256:cd6600b51327f887a9ece30301fd67dbc9dd5afcb1ef606514f896d7b7774abc`
 
 > 固件升级前必须先确认 `tvguard-status storage` 显示 `数据模式: persistent` 且当前目录为 `/mnt/mmcblk2p4/tvguard`。否则当前 r7 数据仍可能只在 overlay 中，不能宣称已具备跨固件升级持久性。
 
