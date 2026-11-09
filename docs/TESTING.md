@@ -1,3 +1,27 @@
+## v0.1.13-r4 Adaptive Engine Phase 1 · 2026-11-09
+
+N1 已完成四状态人工学习，机器可读高质量会话显示：
+- system_home：PPS P10/P50/P90 = 9/14/34，BPS median/P90 = 6409/29194
+- app_home：28/41/61，BPS = 37580/58416
+- playing #1：138/160/233，BPS = 50891/65964
+- playing #2：168/402/715，BPS = 47375/99570
+- paused：12/18/101，BPS = 4501/16262
+- 另有一条 playing stopped/low（8 samples，44% coverage），Adaptive Engine 明确忽略。
+
+Phase 1 决策：
+- 仅使用 `completed + high` 人工学习会话。
+- 至少需要 2 个高质量 idle 会话（system_home/app_home 合并）和 2 个高质量 playing 会话才启用；否则回退旧 shadow。
+- 从学习数据动态推导 idle P90 上界与 playing P10 下界，不把本机 61/138 写死。
+- 使用最近约 60 秒（最多 6 个有效窗口）的滚动统计；单个 unknown/漂移不会清空历史。
+- 明确 active 当前帧立即恢复计时；持续中高位活跃也可由滚动中位/投票识别为 active。
+- idle 需要低 median + 低 P90 双重支持。
+- paused 当前仍与低活跃/播放存在结构性重叠，Phase 1 保持 `ambiguous` 并继续计时；后续阶段再利用更多暂停会话和双向特征处理。
+
+CI #42586216893：static + package 全部通过。
+Artifact：`tvguard-v0.1.13-r4-adaptive-phase1-ipk`
+IPK SHA256：`afcefa73d1ccfde61569ece6a28803c1ee2d7cf8f87a170ae68c439e60074e9c`
+Artifact digest：`sha256:213f138fe9ad288e468ad95e3e4247e9711498aa2fe1fafa52fec0e41e492251`
+
 ## v0.1.13-r3 学习中心 · 2026-11-09
 
 “智能识别 · 实验”已重构为面向 Adaptive Learning 的“智能识别学习”中心：
