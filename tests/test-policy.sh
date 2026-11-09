@@ -69,7 +69,7 @@ cat > "$TMP/audit" <<'SH'
 echo ok
 SH
 
-chmod +x "$TMP/bin/uci" "$TMP/bin/date" "$TMP/fw" "$TMP/audit"
+chmod +x "$TMP/bin/uci" "$TMP/bin/date" "$TMP/fw" "$TMP/data" "$TMP/audit"
 echo 0 > "$TMP/gate"
 export TVG_GATE_FILE="$TMP/gate"
 export TVG_TEST_DATA="$TMP/state"
