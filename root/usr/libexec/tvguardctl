@@ -615,15 +615,15 @@ tick() {
     # Shadow Soak is observation-only. It receives a copy of already-computed
     # telemetry and cannot return a billing state or firewall action.
     if [ "$dt" -gt 0 ] && [ -x "$SOAK" ]; then
-        soak="$("$SOAK" "$NOW" "$MODE" "$ADAPTIVE_STATE" "$ADAPTIVE_SCORE"             "$ADAPTIVE_PAUSE_HINT" "$ADAPTIVE_PAUSE_SCORE" "$PPS" "$ADAPTIVE_P50"             "$ADAPTIVE_P90" "$ADAPTIVE_BP50" "$ADAPTIVE_BP90" "$ADAPTIVE_ACTIVE_HITS"             "$ADAPTIVE_TREND_PCT" "$SHADOW_LABEL" 2>/dev/null || echo 'none 0 0 0 0 0 0 0')"
+        soak="$("$SOAK" "$NOW" "$MODE" "$ADAPTIVE_STATE" "$ADAPTIVE_SCORE"             "$ADAPTIVE_PAUSE_HINT" "$ADAPTIVE_PAUSE_SCORE" "$PPS" "$TCP_PPS" "$UDP_PPS" "$BYTES_PER_S"             "$ADAPTIVE_P50" "$ADAPTIVE_P90" "$ADAPTIVE_BP50" "$ADAPTIVE_BP90" "$ADAPTIVE_ACTIVE_HITS"             "$ADAPTIVE_TREND_PCT" "$SHADOW_LABEL" 2>/dev/null || echo 'none 0 0 0 0 0 0 0')"
         set -- $soak
         if [ "$#" -eq 8 ]; then
             case "$1" in
                 enter)
-                    event soak_pause_enter "score=$ADAPTIVE_PAUSE_SCORE adaptive=$ADAPTIVE_STATE pps=$PPS p50=$ADAPTIVE_P50 p90=$ADAPTIVE_P90 bp50=$ADAPTIVE_BP50 bp90=$ADAPTIVE_BP90 hits=$ADAPTIVE_ACTIVE_HITS trend=$ADAPTIVE_TREND_PCT"
+                    event soak_pause_enter "rulescore=$ADAPTIVE_PAUSE_SCORE adaptive=$ADAPTIVE_STATE pps=$PPS tcp=$TCP_PPS udp=$UDP_PPS bps=$BYTES_PER_S p50=$ADAPTIVE_P50 p90=$ADAPTIVE_P90 bp50=$ADAPTIVE_BP50 bp90=$ADAPTIVE_BP90 hits=$ADAPTIVE_ACTIVE_HITS trend=$ADAPTIVE_TREND_PCT"
                     ;;
                 exit)
-                    event soak_pause_exit "duration=$2 adaptive=$ADAPTIVE_STATE pps=$PPS p50=$ADAPTIVE_P50 p90=$ADAPTIVE_P90 bp50=$ADAPTIVE_BP50 bp90=$ADAPTIVE_BP90 hits=$ADAPTIVE_ACTIVE_HITS trend=$ADAPTIVE_TREND_PCT"
+                    event soak_pause_exit "duration=$2 adaptive=$ADAPTIVE_STATE pps=$PPS tcp=$TCP_PPS udp=$UDP_PPS bps=$BYTES_PER_S p50=$ADAPTIVE_P50 p90=$ADAPTIVE_P90 bp50=$ADAPTIVE_BP50 bp90=$ADAPTIVE_BP90 hits=$ADAPTIVE_ACTIVE_HITS trend=$ADAPTIVE_TREND_PCT"
                     ;;
             esac
         fi
