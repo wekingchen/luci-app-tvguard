@@ -205,8 +205,8 @@ function adaptiveName(value) {
 
 function pauseHintName(value) {
     return {
-        high_ratio_pause: '高流量暂停候选',
-        bursty_pause: '突发型暂停候选',
+        high_ratio_pause: '高 B/P 重叠候选',
+        bursty_pause: '突发型暂停重叠候选',
         idle_overlap: '低活跃暂停 / 首页重叠',
         none: '无暂停线索'
     }[value] || '无暂停线索';
@@ -465,12 +465,12 @@ return view.extend({
             state.adaptive_state !== 'unready' ?
             adaptiveName(state.adaptive_state) : shadowName(state.shadow_label);
         if (state.adaptive_pause_hint === 'high_ratio_pause')
-            n.shadowNote.textContent = '实验暂停线索：高流量暂停候选 · ' +
-                String(state.adaptive_pause_score || 0) + '%；B/P P50 ' +
+            n.shadowNote.textContent = '实验重叠线索：高 B/P 行为 · 规则分 ' +
+                String(state.adaptive_pause_score || 0) + '；B/P P50 ' +
                 String(state.adaptive_bp_p50 || 0) +
-                '。Phase 2A 只展示，仍按当前 active/ambiguous 计时。';
+                '。该特征已知可与低码率播放重叠，只做旁路观察，不代表暂停概率。';
         else if (state.adaptive_pause_hint === 'bursty_pause')
-            n.shadowNote.textContent = '实验暂停线索：突发型暂停候选；目前仍按模糊状态保守计时。';
+            n.shadowNote.textContent = '实验重叠线索：突发型行为；只做旁路观察，目前仍按模糊状态保守计时。';
         else if (state.adaptive_pause_hint === 'idle_overlap')
             n.shadowNote.textContent = '当前行为与低活跃暂停画像吻合，但和首页闲置重叠，不强行猜前台场景。';
         else if (state.billing_state === 'idle_verified')
@@ -933,8 +933,8 @@ return view.extend({
                 adaptiveName(s.adaptive_state) : shadowName(s.shadow_label));
         var shadowNoteNode = E('span', {}, s.adaptive_pause_hint &&
             s.adaptive_pause_hint !== 'none' ?
-            ('暂停线索：' + pauseHintName(s.adaptive_pause_hint) +
-                ' · 实验诊断，不会因此自动免计时。') :
+            ('实验重叠线索：' + pauseHintName(s.adaptive_pause_hint) +
+                ' · 规则分仅表示原型持续满足，不是暂停概率，也不会因此自动免计时。') :
             (s.adaptive_state === 'idle' ?
                 '滚动窗口已确认闲置。' :
                 (s.shadow_label === 'unknown' ?
