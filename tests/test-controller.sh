@@ -662,6 +662,6 @@ grep -qx 'MODE=child' "$TMP/volatile/state"
 export TVGUARD_TEST_DATA_MODE=persistent
 status
 check 'assert s["mode"]=="parent" and s["parent_until"]==0, s'
-grep -q '^MODE=parent "$TMP/state/state"
+grep -qx 'MODE=parent' "$TMP/state/state"
 
 echo "PASS: modes, billing, telemetry, calibration, data-root switching and two-key enforcement safety"
