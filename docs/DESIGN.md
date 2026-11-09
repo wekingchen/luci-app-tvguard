@@ -232,3 +232,19 @@ N1 当前学习库：`playing` 53 样本/4 会话，`paused` 65/4，`app_home` 3
 - `playing` 两个高质量完成会话约 138/160/233 与 168/402/715 PPS，但真实 576p 已出现长时间 2–41 PPS 的播放形态，说明现有 playing 训练集缺少低码率/不同 CDN/协议传输 regime。
 
 结论：当前四类 aggregate TX 画像均不足以安全恢复任何非静默免计时。P1 下一步应提升**观测维度**，而不是继续收紧/放宽 PPS 阈值。优先验证已实现且默认关闭的 Reply Observer，判断 N1 对电视下行是否具有稳定覆盖；同时评估 conntrack/流级元数据是否可用。所有新信号先进入 Shadow/离线回放，`TX_IDLE_BILLING_AUTHORITY=0` 保持不变。
+
+### P1-A Reply Observer 真机结论（2026-11-09）
+
+在 r12 真机、`enforce=0`、`TX_IDLE_BILLING_AUTHORITY=0` 下显式启用 `tvguard.main.observe_reply=1`，`tvguard-isolation-audit=ok`，`tvguard-fw inspect-reply=ready`。两条规则均为 raw 表无 target 计数规则：
+
+- `PREROUTING -i br-lan -d 192.168.101.76 ... TVG_RX_LAN`
+- `OUTPUT -o br-lan -d 192.168.101.76 ... TVG_RX_LOCAL`
+
+对系统首页、芒果 576p 正常播放、同片暂停各约 2 分钟采样：
+
+- `RX_LAN_PPS/BPS` 三种状态全程均为 0；说明正常电视下行没有经过 N1 的 raw PREROUTING 回程观察点。
+- `RX_LOCAL` 绝大多数窗口为 0 PPS，仅有约 41–71 B/s 的极小本机输出，偶发 1–9 PPS / 数百 B/s；与视频播放吞吐量不匹配，不能作为视频下行代理。
+- 576p 播放仍能在 TX 侧观察到约 9–44 PPS / 3–8 KB/s，而系统首页约 3 PPS、暂停约 9–11 PPS；这再次说明当前 N1 主要可见的是电视发出的请求/ACK/QUIC 控制与上行，而不是完整下载方向。
+- 因此现有 Reply Observer 对该单臂旁路由拓扑**没有足够回程覆盖**，不能进入 `USED_S`、`billing_state` 或任何 verified-idle 授权逻辑。测试结束后应恢复 `observe_reply=0` 并删除两条 observer 规则。
+
+工程结论：P1 下一步不再投入现有 RX counter 方案；应评估连接/流级元数据（如 conntrack 只读统计）能否在不改 NAT/mangle/路由、不依赖 payload 的情况下提供比 aggregate TX 更强的状态证据。若仍无法与低码率播放可靠分离，则继续采用保守 charge，而不是恢复免计时。
