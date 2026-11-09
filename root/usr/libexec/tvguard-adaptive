@@ -238,7 +238,11 @@ pause_score=0
 # billing state below. The strongest prototype is high B/P pause, learned
 # dynamically from trusted playing and paused sessions.
 if [ "$n" -ge 4 ] && [ "$pause_high_n" -gt 0 ] &&
-   [ "$pause_ratio_floor" -gt 0 ] && [ "$bp50" -ge "$pause_ratio_floor" ]; then
+   [ "$pause_ratio_floor" -gt 0 ] && [ "$bp50" -ge "$pause_ratio_floor" ] &&
+   [ "$pps" -lt "$active_floor" ] && [ "$trend_pct" -ge -20 ]; then
+    # High B/P alone is not enough. N1 real-device playback after pause can
+    # also show very high B/P. A current clear-active PPS sample or a strongly
+    # rising 60-second PPS trend vetoes the pause hint immediately.
     pause_hint=high_ratio_pause
     pause_score=90
     [ "$n" -ge 6 ] && pause_score=95
