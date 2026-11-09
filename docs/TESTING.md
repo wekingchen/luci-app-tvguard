@@ -1,6 +1,18 @@
 # TV Guard v0.1 · N1 联调计划
 
-> 状态：v0.1.12 已在用户 N1 完成操作日志、移动端界面、代理兼容、手动正式锁定/恢复、儿童额度与奖励自动控制、TV Guard 自身 service reload，以及全局 fw3/firewall reload 后策略重建的真机验证。当前剩余重点为 N1 整机重启后的持久状态恢复，以及可选回程观测；当前仍为开发构建，不是稳定 Release。
+> 状态：v0.1.12 已在用户 N1 完成核心功能与可靠性真机闭环：操作日志、移动端界面、代理兼容、手动正式锁定/恢复、儿童额度与奖励自动控制、TV Guard service reload、全局 fw3/firewall reload，以及 N1 整机重启后的持久模式/额度/gate 恢复均已通过。实验性回程观测仍保持默认关闭，不作为稳定核心功能的前置条件。当前可作为首个稳定候选进入合并前收尾。
+
+## v0.1.12 N1 整机重启持久状态恢复真机通过 · 2026-11-09
+
+用户完成两轮 N1 整机重启，分别验证正式控制下的家长放行与锁定阻断：
+
+- 开机自启检查 `/etc/init.d/tvguard enabled` 返回成功。
+- **家长模式跨重启**：重启前 `mode=parent`、`enforce=1`、`armed=1`、`blocked=0`、`firewall_state=allowed`；重启后 `tvguardd` 正常运行，仍保持完全相同的家长模式与正式控制状态，`used_seconds=2926` 未丢失，核心 hook 为 `-s 192.168.101.76/32 -i br-lan -j TVG_RAW`，`TVG_GATE` 正确恢复为 `RETURN`。
+- **锁定模式跨重启**：重启前 `mode=locked`、`enforce=1`、`armed=1`、`blocked=1`；重启后仍保持锁定，`used_seconds=2926` 未被清零，隔离审计为 `ok`，核心 hook 精确恢复，`TVG_GATE` 正确恢复为 `DROP`，现场 DROP 计数为 526 packets / 81700 bytes。
+- 用户确认两轮重启后的电视联网/断网行为均符合预期。
+- 最终恢复家长放行、关闭正式控制、清除 armed 并切回儿童模式后，状态为 `enforce=0`、`armed=0`、`blocked=0`、`firewall_state=allowed`；`tvguard-compat-check` 再次返回 `result=PASS`、`proxy_rules_unchanged=1`、`isolation_audit=ok`。
+
+该结果确认 **TV Guard 的模式、已用额度与正式控制 gate 可以跨 N1 整机重启正确恢复**，且不会把持久状态错误重置为新的儿童额度或错误放行/封禁。
 
 ## v0.1.12 全局 firewall reload 策略重建真机通过 · 2026-11-09
 
