@@ -69,11 +69,12 @@ PY
 test "$(sh "$DST" 9 1 8 3000)" = 'system_home system 100'
 test "$(sh "$DST" 180 30 150 65000)" != 'system_home system 100'
 
-# With fewer than 2 different video applications, generic app-idle inference stays off;
-# repeated device-level system-home evidence may still be recognized safely.
+# With fewer than 2 different video applications, generic IDLE inference
+# stays off. Informational playing may still use a clearly separated local
+# playback reference because it never grants free time.
 grep -v ',iqiyi,' "$CSV" > "$TMP/oneapp.csv"
 mv "$TMP/oneapp.csv" "$CSV"
-test "$(sh "$DST" 180 30 150 65000)" = 'unknown none 0'
+test "$(sh "$DST" 180 30 150 65000)" = 'playing general 95'
 test "$(sh "$DST" 8 1 7 2800)" = 'system_home system 100'
 
 # A second app restored but pause evidence is still missing. Generic idle
