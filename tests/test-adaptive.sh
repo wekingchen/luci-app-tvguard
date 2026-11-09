@@ -11,7 +11,9 @@ from pathlib import Path
 import sys
 src,dst,state,window=sys.argv[1:]
 s=Path(src).read_text()
-s=s.replace('DIR=/etc/tvguard','DIR='+state,1)
+anchor='DATA=/usr/libexec/tvguard-data\nDIR="$("$DATA" root)"'
+assert anchor in s
+s=s.replace(anchor,'DIR='+state,1)
 s=s.replace('WINDOW=/var/run/tvguard-adaptive-window.csv','WINDOW='+window,1)
 s=s.replace('mkdir -p /var/run','mkdir -p '+str(Path(window).parent),1)
 Path(dst).write_text(s)
