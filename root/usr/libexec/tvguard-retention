@@ -6,7 +6,9 @@ umask 077
 PATH=/usr/sbin:/usr/bin:/sbin:/bin
 export PATH
 
-DIR=/etc/tvguard
+DATA=/usr/libexec/tvguard-data
+DIR="$("$DATA" root)"
+PERSIST_DIR="$("$DATA" persistent-root)"
 
 trim_file() {
     file="$1"
@@ -51,11 +53,22 @@ report() {
     total=$((events + v3 + v4 + sessions))
     small=$((last + state))
 
-    free_kb="$(df -k "$DIR" 2>/dev/null | awk 'NR==2 {print $4; exit}')"
+    data_status="$("$DATA" status 2>/dev/null || echo "unknown|$DIR|status_error")"
+    storage_mode="$(printf '%s' "$data_status" | cut -d'|' -f1)"
+    storage_path="$(printf '%s' "$data_status" | cut -d'|' -f2)"
+    storage_reason="$(printf '%s' "$data_status" | cut -d'|' -f3)"
+
+    free_target="$DIR"
+    [ "$storage_mode" = persistent ] && free_target="$PERSIST_DIR"
+    free_kb="$(df -Pk "$free_target" 2>/dev/null | awk 'NR>1 {v=$(NF-2)} END {print v}')"
     case "$free_kb" in ''|*[!0-9]*) free_kb=unknown;; esac
 
     cat <<EOF
 TV Guard 存储护栏
+数据模式: $storage_mode
+当前数据目录: $storage_path
+持久目录: $PERSIST_DIR
+状态: $storage_reason
 持久追加预算: 1048576 bytes (1 MiB)
 当前追加数据: $total bytes
 events.log: $events / 262144
@@ -63,7 +76,7 @@ calibration-v3.csv: $v3 / 262144
 calibration-v4.csv: $v4 / 393216
 learning-sessions.csv: $sessions / 131072
 覆盖写小文件: $small bytes
-文件系统可用: $free_kb KiB
+当前数据文件系统可用: $free_kb KiB
 Adaptive 滚动窗口: /var/run/tvguard-adaptive-window.csv（临时，最多约 12 行，不写入持久存储）
 EOF
 }
