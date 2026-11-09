@@ -9,6 +9,7 @@ export PATH
 FW=/usr/libexec/tvguard-fw
 AUDIT=/usr/libexec/tvguard-isolation-audit
 SHADOW=/usr/libexec/tvguard-shadow
+LEARN=/usr/libexec/tvguard-learn
 BUILD_ID_FILE=/usr/share/tvguard/build-id
 RUN=/var/run/tvguard.state
 DIR=/etc/tvguard
@@ -83,10 +84,12 @@ defaults() {
     CAL_STARTED=0
     CAL_SAMPLES=0
     CAL_UNTIL=0
+    CAL_DURATION=0
     CAL_LAST_LABEL=none
     CAL_LAST_APP=none
     CAL_LAST_SESSION=none
     CAL_LAST_SAMPLES=0
+    CAL_LAST_DURATION=0
     CAL_LAST_FINISHED=0
     CAL_LAST_RESULT=none
     SAVED_EPOCH=0
@@ -108,6 +111,12 @@ load_state() {
     case "$IDLE_REASON" in none|system_home|idle|paused|app_home|silent) :;; *) IDLE_REASON=none;; esac
     case "$IDLE_STREAK_S" in ''|*[!0-9]*) IDLE_STREAK_S=0;; esac
     case "$IDLE_GRACE_S" in ''|*[!0-9]*) IDLE_GRACE_S=0;; esac
+    case "$CAL_DURATION" in 0|60|120|180|300) :;; *) CAL_DURATION=0;; esac
+    case "$CAL_LAST_DURATION" in 0|60|120|180|300) :;; *) CAL_LAST_DURATION=0;; esac
+    if [ "$CAL_LABEL" != none ] && [ "$CAL_DURATION" -eq 0 ] &&
+       [ "$CAL_UNTIL" -gt "$CAL_STARTED" ]; then
+        CAL_DURATION=$((CAL_UNTIL - CAL_STARTED))
+    fi
     # An enforced installation must not turn corruption/lost state into a
     # fresh, unspent child allowance after power failure.
     if [ "$ENFORCE" = 1 ] && [ "$STATE_PRESENT" = 0 ]; then
@@ -162,10 +171,12 @@ CAL_SESSION=$CAL_SESSION
 CAL_STARTED=$CAL_STARTED
 CAL_SAMPLES=$CAL_SAMPLES
 CAL_UNTIL=$CAL_UNTIL
+CAL_DURATION=$CAL_DURATION
 CAL_LAST_LABEL=$CAL_LAST_LABEL
 CAL_LAST_APP=$CAL_LAST_APP
 CAL_LAST_SESSION=$CAL_LAST_SESSION
 CAL_LAST_SAMPLES=$CAL_LAST_SAMPLES
+CAL_LAST_DURATION=$CAL_LAST_DURATION
 CAL_LAST_FINISHED=$CAL_LAST_FINISHED
 CAL_LAST_RESULT=$CAL_LAST_RESULT
 SAVED_EPOCH=$SAVED_EPOCH
@@ -280,21 +291,26 @@ apply_gate() {
 }
 finish_calibration() {
     # Record an immutable summary before clearing the active session.
-    # No automatic smart-idle exemption can be granted by this function.
+    # Analysis is read-only with respect to billing/firewall decisions.
     [ "$CAL_LABEL" != none ] || return 0
     CAL_LAST_LABEL="$CAL_LABEL"
     CAL_LAST_APP="$CAL_APP"
     CAL_LAST_SESSION="$CAL_SESSION"
     CAL_LAST_SAMPLES="$CAL_SAMPLES"
+    CAL_LAST_DURATION="$CAL_DURATION"
     CAL_LAST_FINISHED="$NOW"
     CAL_LAST_RESULT="$1"
     event calibration_end "$CAL_APP/$CAL_LABEL: $CAL_SAMPLES samples ($1)"
+    if [ "$CAL_DURATION" -gt 0 ]; then
+        "$LEARN" "$CAL_SESSION" "$CAL_LABEL" "$CAL_DURATION" "$CAL_APP" "$1" "$NOW" >/dev/null 2>&1 || :
+    fi
     CAL_LABEL=none
     CAL_APP=none
     CAL_SESSION=none
     CAL_STARTED=0
     CAL_SAMPLES=0
     CAL_UNTIL=0
+    CAL_DURATION=0
 }
 rollover() {
     today="$(date +%Y-%m-%d)"
@@ -321,6 +337,7 @@ rollover() {
         CAL_STARTED=0
         CAL_SAMPLES=0
         CAL_UNTIL=0
+        CAL_DURATION=0
         event daily_reset "当天额度及奖励已重置"
     fi
 }
@@ -715,15 +732,18 @@ status() {
     cal_active=0
     cal_app=none
     cal_session=none
+    cal_duration=0
     if [ "$CAL_LABEL" != none ]; then
         cal_app="$CAL_APP"
         cal_session="$CAL_SESSION"
         cal_elapsed=$((NOW - CAL_STARTED))
         [ "$cal_elapsed" -ge 0 ] || cal_elapsed=0
-        [ "$cal_elapsed" -le 120 ] || cal_elapsed=120
+        cal_duration="$CAL_DURATION"
+        [ "$cal_duration" -gt 0 ] || cal_duration=120
+        [ "$cal_elapsed" -le "$cal_duration" ] || cal_elapsed="$cal_duration"
         cal_remaining=$((CAL_UNTIL - NOW))
         [ "$cal_remaining" -ge 0 ] || cal_remaining=0
-        cal_percent=$((cal_elapsed * 100 / 120))
+        cal_percent=$((cal_elapsed * 100 / cal_duration))
         if [ "$NOW" -lt "$CAL_UNTIL" ]; then
             cal_phase=running
             cal_active=1
@@ -734,15 +754,15 @@ status() {
         cal_phase="$CAL_LAST_RESULT"
     fi
 
-    printf '{"date":"%s","mode":"%s","activity":"%s","enforce":%s,"armed":%s,"would_block":%s,"blocked":%s,"firewall_state":"%s","used_seconds":%s,"quota_seconds":%s,"bonus_seconds":%s,"bonus_undo_available":%s,"bonus_limit_seconds":%s,"policy_reason":"%s","remaining_seconds":%s,"parent_until":%s,"last_packet_epoch":%s,"packet_counter":%s,"pps":%s,"tcp_pps":%s,"udp_pps":%s,"bytes_per_second":%s,"reply_observer":"%s","reply_sample_status":"%s","reply_prerouting_pps":%s,"reply_prerouting_bps":%s,"reply_local_pps":%s,"reply_local_bps":%s,"reply_coverage":"unverified","traffic_class":"%s","shadow_label":"%s","shadow_app":"%s","shadow_score":%s,"billing_state":"%s","idle_reason":"%s","idle_streak_seconds":%s,"idle_grace_seconds":%s,"server_epoch":%s,"calibration_label":"%s","calibration_app":"%s","calibration_session":"%s","calibration_until":%s,"calibration_started":%s,"calibration_samples":%s,"calibration_phase":"%s","calibration_active":%s,"calibration_elapsed_seconds":%s,"calibration_remaining_seconds":%s,"calibration_percent":%s,"calibration_last_label":"%s","calibration_last_app":"%s","calibration_last_session":"%s","calibration_last_samples":%s,"calibration_last_finished":%s,"calibration_last_result":"%s"}\n' \
+    printf '{"date":"%s","mode":"%s","activity":"%s","enforce":%s,"armed":%s,"would_block":%s,"blocked":%s,"firewall_state":"%s","used_seconds":%s,"quota_seconds":%s,"bonus_seconds":%s,"bonus_undo_available":%s,"bonus_limit_seconds":%s,"policy_reason":"%s","remaining_seconds":%s,"parent_until":%s,"last_packet_epoch":%s,"packet_counter":%s,"pps":%s,"tcp_pps":%s,"udp_pps":%s,"bytes_per_second":%s,"reply_observer":"%s","reply_sample_status":"%s","reply_prerouting_pps":%s,"reply_prerouting_bps":%s,"reply_local_pps":%s,"reply_local_bps":%s,"reply_coverage":"unverified","traffic_class":"%s","shadow_label":"%s","shadow_app":"%s","shadow_score":%s,"billing_state":"%s","idle_reason":"%s","idle_streak_seconds":%s,"idle_grace_seconds":%s,"server_epoch":%s,"calibration_label":"%s","calibration_app":"%s","calibration_session":"%s","calibration_until":%s,"calibration_started":%s,"calibration_samples":%s,"calibration_duration_seconds":%s,"calibration_phase":"%s","calibration_active":%s,"calibration_elapsed_seconds":%s,"calibration_remaining_seconds":%s,"calibration_percent":%s,"calibration_last_label":"%s","calibration_last_app":"%s","calibration_last_session":"%s","calibration_last_samples":%s,"calibration_last_duration_seconds":%s,"calibration_last_finished":%s,"calibration_last_result":"%s"}\n' \
         "$TODAY" "$MODE" "$ACTIVITY" "$ENFORCE" "$ARMED" "$BLOCKED" "$actual" "$firewall_state" \
         "$USED_S" "$LIMIT_S" "$BONUS_S" "$bonus_undo_available" "$bonus_limit_seconds" "$policy_reason" "$left" "$PARENT_UNTIL" \
         "$LAST_PACKET_EPOCH" "$LAST_COUNT" "$PPS" "$TCP_PPS" "$UDP_PPS" \
         "$BYTES_PER_S" "$RX_STATE" "$RX_SAMPLE_STATUS" "$RX_LAN_PPS" "$RX_LAN_BPS" \
         "$RX_LOCAL_PPS" "$RX_LOCAL_BPS" "$TRAFFIC_CLASS" "$SHADOW_LABEL" "$SHADOW_APP" "$SHADOW_SCORE" \
         "$BILLING_STATE" "$IDLE_REASON" "$IDLE_STREAK_S" "$IDLE_GRACE_S" "$NOW" "$CAL_LABEL" "$cal_app" "$cal_session" "$CAL_UNTIL" "$CAL_STARTED" \
-        "$CAL_SAMPLES" "$cal_phase" "$cal_active" "$cal_elapsed" "$cal_remaining" "$cal_percent" \
-        "$CAL_LAST_LABEL" "$CAL_LAST_APP" "$CAL_LAST_SESSION" "$CAL_LAST_SAMPLES" "$CAL_LAST_FINISHED" "$CAL_LAST_RESULT"
+        "$CAL_SAMPLES" "$cal_duration" "$cal_phase" "$cal_active" "$cal_elapsed" "$cal_remaining" "$cal_percent" \
+        "$CAL_LAST_LABEL" "$CAL_LAST_APP" "$CAL_LAST_SESSION" "$CAL_LAST_SAMPLES" "$CAL_LAST_DURATION" "$CAL_LAST_FINISHED" "$CAL_LAST_RESULT"
 }
 mkdir -p /var/run "$DIR"
 config
@@ -771,6 +791,9 @@ case "${1:-}" in
     calibration-v4)
         tail -n 80 "$DIR/calibration-v4.csv" 2>/dev/null || :
         exit 0 ;;
+    learning)
+        cat "$DIR/learning-last.txt" 2>/dev/null || echo "暂无学习分析"
+        exit 0 ;;
     tick|mode|bonus|enforce|sync|calibrate)
         lock
         load_state
@@ -780,7 +803,7 @@ case "${1:-}" in
             event recovery_lock "持久状态缺失，强制锁定直至家长确认"
         fi
         ;;
-    *) echo "usage: tvguardctl {status|brief|evidence|log|calibration|calibration-v4|tick|sync|mode|bonus|calibrate|enforce}" >&2; exit 2 ;;
+    *) echo "usage: tvguardctl {status|brief|evidence|log|calibration|calibration-v4|learning|tick|sync|mode|bonus|calibrate|enforce}" >&2; exit 2 ;;
 esac
 
 case "$1" in
@@ -853,24 +876,48 @@ case "$1" in
         fi
         case "${2:-}" in
             playing|paused|app_home)
-                case "${3:-general}" in
-                    general|tencent|iqiyi|mango|other) CAL_APP="${3:-general}" ;;
-                    *) echo "unsupported application label" >&2; exit 2 ;;
+                # New learning UI passes: calibrate LABEL DURATION.
+                # Legacy development callers may still pass APP [DURATION].
+                case "${3:-120}" in
+                    60|120|180|300)
+                        CAL_APP=general
+                        CAL_DURATION="${3:-120}"
+                        ;;
+                    general|tencent|iqiyi|mango|other)
+                        CAL_APP="${3:-general}"
+                        CAL_DURATION="${4:-120}"
+                        case "$CAL_DURATION" in 60|120|180|300) :;; *) echo "invalid learning duration" >&2; exit 2;; esac
+                        ;;
+                    *) echo "unsupported application label or duration" >&2; exit 2 ;;
                 esac
                 CAL_LABEL="$2"
                 CAL_STARTED="$NOW"
                 CAL_SAMPLES=0
-                CAL_UNTIL=$((NOW + 120))
-                event calibration_start "手工标注 $CAL_APP/$CAL_LABEL：120 秒"
+                CAL_UNTIL=$((NOW + CAL_DURATION))
+                event calibration_start "学习 $CAL_LABEL：$CAL_DURATION 秒"
                 CAL_SESSION="$NOW-$EVENT_ID"
                 ;;
-            system_home|sleep)
+            system_home)
                 CAL_LABEL="$2"
                 CAL_APP=system
+                CAL_DURATION="${3:-120}"
+                case "$CAL_DURATION" in 60|120|180|300) :;; *) CAL_DURATION=120;; esac
                 CAL_STARTED="$NOW"
                 CAL_SAMPLES=0
-                CAL_UNTIL=$((NOW + 120))
-                event calibration_start "手工标注 $CAL_LABEL：120 秒"
+                CAL_UNTIL=$((NOW + CAL_DURATION))
+                event calibration_start "学习 $CAL_LABEL：$CAL_DURATION 秒"
+                CAL_SESSION="$NOW-$EVENT_ID"
+                ;;
+            sleep)
+                # Kept only for backward-compatible development data; the new
+                # learning center intentionally exposes four user-facing states.
+                CAL_LABEL="$2"
+                CAL_APP=system
+                CAL_DURATION=120
+                CAL_STARTED="$NOW"
+                CAL_SAMPLES=0
+                CAL_UNTIL=$((NOW + CAL_DURATION))
+                event calibration_start "手工标注 $CAL_LABEL：$CAL_DURATION 秒"
                 CAL_SESSION="$NOW-$EVENT_ID"
                 ;;
             stop)
