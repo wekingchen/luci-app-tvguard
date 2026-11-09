@@ -138,3 +138,18 @@ Phase 1 真机确认 idle/active 稳定后，Phase 2 聚焦最难的 `paused`：
 - 在证明 RX 特征能稳定提高 paused 与 playing 的分离度之前，reply observer 不参与正式计费；
 - 只有完成多会话真机验证后，才考虑让高置信 paused 进入免计时集合。
 
+
+
+## Phase 2A：暂停不是单一画像
+
+暂停人工标签仍只有一个 `paused` ground truth，但 Adaptive Engine 不再假设所有暂停行为服从一个分布。每个 completed+high paused 学习会话先形成自己的 session profile，再根据相对 idle/playing 的位置归入诊断原型。
+
+当前原型语义：
+- `idle_overlap`：P50/P90 均落在学习出的 idle 安全范围。该行为可能是暂停，也可能是首页，因此只描述“重叠”，不强行识别具体页面。
+- `bursty_pause`：P50 仍低，但 P90 超出 idle 安全范围，表现为低基线 + 后台突发。
+- `high_ratio_pause`：session PPS 中位已离开普通 idle，但 BPS/PPS 中位与 trusted playing 的 B/P P90 有强分离。运行时使用最近约 60 秒的 rolling B/P median 作为辅助证据。
+
+B/P 这里只是同一 N1 计数口径下的统计特征，不解释为真实物理包大小；GSO/GRO、计数位置等都会影响绝对值。因此阈值必须从本机高质量 playing/paused 数据动态学习，不写死通用常数。
+
+Phase 2A 只输出 pause hint、score、rolling B/P P50/P90、active-window count 与 trend；这些字段不参与 `USED_S` 或 gate。若 TX 特征后续无法稳定分离高流量暂停和真实播放，再进入 Phase 2B 双向流量实验。
+
