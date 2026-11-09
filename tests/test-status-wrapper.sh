@@ -46,6 +46,8 @@ run_expect() {
 
 run_expect 'ctl:status'
 run_expect 'ctl:status' status
+run_expect 'ctl:brief' brief
+run_expect 'ctl:evidence' evidence
 run_expect 'ctl:log' log
 run_expect 'ctl:calibration' calibration
 run_expect 'ctl:calibration-v4' calibration-v4
@@ -70,4 +72,4 @@ if sh "$WRAPPER" '../../bin/sh' >"$TMP/out" 2>"$TMP/err"; then
 fi
 [ ! -s "$LOG" ]
 
-echo "PASS: LuCI read wrapper exposes only fixed status/log/calibration/isolation readers"
+echo "PASS: LuCI read wrapper exposes only fixed status/brief/evidence/log/calibration/isolation readers"
