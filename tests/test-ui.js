@@ -15,7 +15,10 @@ let state = {
     bonus_seconds: 0, bonus_undo_available: 0, bonus_limit_seconds: 7200,
     policy_reason: 'none', pps: 8, tcp_pps: 1, udp_pps: 7,
     bytes_per_second: 2900, traffic_class: 'low_traffic',
-    shadow_label: 'unknown', calibration_phase: 'idle',
+    shadow_label: 'unknown', adaptive_state: 'unready',
+    adaptive_pause_hint: 'none', adaptive_pause_score: 0,
+    adaptive_bp_p50: 0, adaptive_bp_p90: 0,
+    calibration_phase: 'idle',
     calibration_label: 'none', calibration_app: 'none',
     calibration_duration_seconds: 0, calibration_last_duration_seconds: 0,
     calibration_last_session: 'none'
@@ -193,6 +196,26 @@ const updates = [
     assert.equal(page._overviewNodes.rewardButtons[0].node.disabled, false);
     assert.match(page._overviewNodes.shadowValue.textContent, /疑似播放/);
     assert.match(page._overviewNodes.trafficNote.textContent, /2\.0 KB\/s/);
+
+    // Phase 2A pause prototypes are visible but explicitly remain diagnostic.
+    Object.assign(state, {
+        adaptive_state: 'active',
+        adaptive_pause_hint: 'high_ratio_pause',
+        adaptive_pause_score: 95,
+        adaptive_bp_p50: 1450,
+        adaptive_bp_p90: 2400
+    });
+    page.updateOverviewUI(state);
+    assert.match(page._overviewNodes.shadowValue.textContent, /自适应活跃/);
+    assert.match(page._overviewNodes.shadowNote.textContent, /高流量暂停候选/);
+    assert.match(page._overviewNodes.shadowNote.textContent, /仍按当前 active\/ambiguous 计时/);
+    Object.assign(state, {
+        adaptive_state: 'unready',
+        adaptive_pause_hint: 'none',
+        adaptive_pause_score: 0,
+        adaptive_bp_p50: 0,
+        adaptive_bp_p90: 0
+    });
 
     // A legacy timed parent session remains visibly temporary until it expires,
     // and the parent button offers an explicit migration to the new semantics.
