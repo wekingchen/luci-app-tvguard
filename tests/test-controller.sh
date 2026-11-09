@@ -49,6 +49,8 @@ cat > "$TMP/shadow" <<'EOSHADOW'
 #!/bin/sh
 case "${TVGUARD_TEST_SHADOW:-unknown}" in
     system_home) echo 'system_home system 100' ;;
+    app_home) echo 'app_home general 90' ;;
+    paused) echo 'paused general 90' ;;
     idle) echo 'idle general 100' ;;
     playing) echo 'playing general 100' ;;
     *) echo 'unknown none 0' ;;
