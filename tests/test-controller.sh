@@ -70,6 +70,17 @@ esac
 EOADAPT
 chmod +x "$TMP/adaptive"
 export TVGUARD_TEST_ADAPTIVE=unready
+cat > "$TMP/data" <<'EODATA'
+#!/bin/sh
+case "${1:-root}" in
+    root|persistent-root) printf '%s\n' "$TVGUARD_TEST_STATE" ;;
+    status) printf 'persistent|%s|mounted\n' "$TVGUARD_TEST_STATE" ;;
+    prepare) : ;;
+    *) exit 2 ;;
+esac
+EODATA
+chmod +x "$TMP/data"
+
 cat > "$TMP/learn" <<'EOLEARN'
 #!/bin/sh
 printf '%s\n' "$*" >> "$TVGUARD_TEST_LEARN_LOG"
@@ -111,8 +122,8 @@ mapping={
     'SHADOW=/usr/libexec/tvguard-shadow': 'SHADOW='+root+'/shadow',
     'ADAPTIVE=/usr/libexec/tvguard-adaptive': 'ADAPTIVE='+root+'/adaptive',
     'LEARN=/usr/libexec/tvguard-learn': 'LEARN='+root+'/learn',
+    'DATA=/usr/libexec/tvguard-data': 'DATA='+root+'/data',
     'RUN=/var/run/tvguard.state': 'RUN='+root+'/run/runtime',
-    'DIR=/etc/tvguard': 'DIR='+root+'/state',
     'LOCK=/var/run/tvguard.lock': 'LOCK='+root+'/run/lock',
 }
 for before,after in mapping.items():
