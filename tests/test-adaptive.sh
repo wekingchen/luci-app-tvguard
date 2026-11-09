@@ -179,4 +179,25 @@ run 6040 138 12 125 48192 >/dev/null
 out="$(run 6050 175 53 121 35397)"
 echo "$out" | awk '{exit !($1=="active" && $9=="none" && $11<800)}'
 
+# N1 real-device r5 regression: normal playback was clean, Tencent pause
+# produced high_ratio_pause, but after playback resumed the rolling B/P
+# remained high. Clear current active evidence must veto the pause hint.
+run 7000 100 0 100 195330 >/dev/null
+run 7010 118 2 116 240000 >/dev/null
+run 7020 194 4 190 300000 >/dev/null
+run 7030 112 1 111 260000 >/dev/null
+run 7040 130 2 128 390000 >/dev/null
+out="$(run 7050 144 3 141 723214)"
+echo "$out" | awk '{exit !($1=="active" && $9=="none" && $11>=1000)}'
+
+# Strongly rising playback must also veto a high-ratio pause hint even when
+# the latest PPS is temporarily below active_floor.
+run 8000 70 0 70 140000 >/dev/null
+run 8010 82 1 81 170000 >/dev/null
+run 8020 92 1 91 210000 >/dev/null
+run 8030 105 2 103 260000 >/dev/null
+run 8040 120 2 118 320000 >/dev/null
+out="$(run 8050 126 2 124 350000)"
+echo "$out" | awk '{exit !($9=="none" && $14 < -20)}'
+
 echo 'PASS: adaptive phase2A keeps phase1 billing and learns pause prototypes'
