@@ -70,6 +70,18 @@ esac
 EOADAPT
 chmod +x "$TMP/adaptive"
 export TVGUARD_TEST_ADAPTIVE=unready
+
+cat > "$TMP/soak" <<'EOSOAK'
+#!/bin/sh
+case "${TVGUARD_TEST_SOAK:-none}" in
+    enter) echo 'enter 0 1 0 0 0 1 1' ;;
+    exit) echo 'exit 30 1 1 30 30 2 1' ;;
+    *) echo 'none 0 0 0 0 0 0 0' ;;
+esac
+EOSOAK
+chmod +x "$TMP/soak"
+export TVGUARD_TEST_SOAK=none
+
 cat > "$TMP/data" <<'EODATA'
 #!/bin/sh
 mode="${TVGUARD_TEST_DATA_MODE:-persistent}"
@@ -139,6 +151,7 @@ mapping={
     'SHADOW=/usr/libexec/tvguard-shadow': 'SHADOW='+root+'/shadow',
     'ADAPTIVE=/usr/libexec/tvguard-adaptive': 'ADAPTIVE='+root+'/adaptive',
     'LEARN=/usr/libexec/tvguard-learn': 'LEARN='+root+'/learn',
+    'SOAK=/usr/libexec/tvguard-soak': 'SOAK='+root+'/soak',
     'DATA=/usr/libexec/tvguard-data': 'DATA='+root+'/data',
     'RUN=/var/run/tvguard.state': 'RUN='+root+'/run/runtime',
     'LOCK=/var/run/tvguard.lock': 'LOCK='+root+'/run/lock',
@@ -605,14 +618,39 @@ PY
 set -- $(cat "$TMP/sample")
 echo "$(($1 + 1200)) $(($2 + 1600000)) $(($3 + 20)) $(($4 + 20000)) $(($5 + 1180)) $(($6 + 1580000))" > "$TMP/sample"
 before_pause_hint="$(sh "$CTL" status | python3 -c 'import json,sys; print(json.load(sys.stdin)["used_seconds"])')"
+export TVGUARD_TEST_SOAK=enter
 sh "$CTL" tick
 status
 after_pause_hint="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["used_seconds"])' "$TMP/status.json")"
 [ $((after_pause_hint-before_pause_hint)) -ge 9 ] && [ $((after_pause_hint-before_pause_hint)) -le 11 ]
 check 'assert s["adaptive_state"]=="active" and s["adaptive_pause_hint"]=="high_ratio_pause" and s["adaptive_pause_score"]==95 and s["billing_state"]=="charge", s'
 check 'assert s["adaptive_bp_p50"]==1450 and s["adaptive_bp_p90"]==2400 and s["adaptive_trend_percent"]==24, s'
-export TVGUARD_TEST_ADAPTIVE=unready
+grep -q '|soak_pause_enter|' "$TMP/state/events.log"
 
+# Soak exit is also observation-only: playback remains charge and no gate
+# mutation can be requested by the helper output.
+export TVGUARD_TEST_ADAPTIVE=active
+export TVGUARD_TEST_SOAK=exit
+python3 - "$TMP/run/runtime" <<'PY'
+from pathlib import Path
+import sys,time
+p=Path(sys.argv[1])
+lines=p.read_text().splitlines()
+now=int(time.time())
+p.write_text('\n'.join('LAST_EPOCH='+str(now-10) if x.startswith('LAST_EPOCH=') else x for x in lines)+'\n')
+PY
+set -- $(cat "$TMP/sample")
+echo "$(($1 + 1600)) $(($2 + 180000)) $(($3 + 700)) $(($4 + 70000)) $(($5 + 900)) $(($6 + 110000))" > "$TMP/sample"
+before_soak_exit="$(sh "$CTL" status | python3 -c 'import json,sys; print(json.load(sys.stdin)["used_seconds"])')"
+sh "$CTL" tick
+status
+after_soak_exit="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["used_seconds"])' "$TMP/status.json")"
+[ $((after_soak_exit-before_soak_exit)) -ge 9 ] && [ $((after_soak_exit-before_soak_exit)) -le 11 ]
+check 'assert s["adaptive_state"]=="active" and s["billing_state"]=="charge" and s["blocked"]==0, s'
+grep -q '|soak_pause_exit|' "$TMP/state/events.log"
+test "$(cat "$TMP/gate")" = 0
+
+export TVGUARD_TEST_SOAK=none
 export TVGUARD_TEST_ADAPTIVE=unready
 
 # Missing reply counters after FW3 reload must request an OBSERVER-ONLY repair
