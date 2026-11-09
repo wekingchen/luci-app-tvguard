@@ -162,3 +162,15 @@ r12 的 P0 验收硬门槛：真实正常播放（含免费 576p/720p）不得�
 - `feat/v0.1.13-rNN-*`：一次性任务/验证分支，只从当前 v0.1.13 集成分支创建；通过 CI 后以 PR 合回集成分支，合并完成即应删除，不作为新的长期开发线。
 - v0.1.13 真机验收完成后：将集成分支合入 `main`，以稳定 release/tag 固化，然后删除 `feat/v0.1.13-smart-billing`；后续版本从最新 `main` 新建自己的集成分支，不沿用旧版本开发线。
 - 禁止长期同时维护多个互相分叉的同版本集成分支；若出现临时分支，必须在 PR/文档中明确目标基线和退出条件。
+
+## 2026-11-09 N1 现场路由观测
+
+在 r11 真机上只读检查得到：
+
+- `firewall.@defaults[0].flow_offloading=0`、`flow_offloading_hw=0`，filter 表没有 `FLOWOFFLOAD` 规则；当前低码率问题不能优先归因于 OpenWrt flow offload。
+- `ip -4 route get 1.1.1.1 from 192.168.101.76 iif br-lan` 返回 `via 192.168.101.1 dev br-lan` 且带 `cache <redirect>`；电视经 N1 转发到主路由时入/出接口同为 `br-lan`，满足 Linux 发送 ICMP Redirect 的典型条件。
+- `net.ipv4.conf.all.send_redirects=1`、`net.ipv4.conf.br-lan.send_redirects=1`，且 `/proc/net/snmp` 的 `OutRedirects=7233`。这证明 N1 已经实际发送过大量 Redirect；但该计数是全局的，尚不能单凭它证明全部来自电视或某个视频 CDN。
+- 电视 IPv6 邻居目前只观察到 link-local `fe80::b241:1dff:fe65:8b94`；尚无证据证明视频流正在通过可路由 IPv6 绕过当前 IPv4 TVG_RAW。
+- N1 未安装 `tcpdump`，但有 BusyBox/系统 `timeout`。
+
+工程含义：在继续调整 576p/720p Adaptive 阈值前，必须先确认 ICMP Redirect 是否导致电视部分流媒体连接绕过 N1。若存在，任何仅基于 N1 IPv4 TX 计数的低流量分类都可能把“路径绕过”误读成“空闲/暂停”。在证据明确前，不修改 `send_redirects`、不安装抓包工具、不改变现有代理/防火墙路径。
