@@ -821,19 +821,32 @@ brief() {
         locked) mode_name="锁定模式" ;;
         *) mode_name="未知" ;;
     esac
-    case "$BILLING_STATE" in
-        idle_verified)
-            case "$IDLE_REASON" in
-                system_home) billing_name="已暂停（系统首页已确认）" ;;
-                idle) billing_name="已暂停（App 首页/暂停已确认）" ;;
-                paused) billing_name="已暂停（暂停已确认）" ;;
-                app_home) billing_name="已暂停（App 首页已确认）" ;;
-                adaptive) billing_name="已暂停（Adaptive 闲置已确认）" ;;
-                *) billing_name="已暂停（闲置已确认）" ;;
-            esac ;;
-        idle_grace) billing_name="已暂停（短暂无法判断，保持闲置）" ;;
-        idle_silent) billing_name="已暂停（网络静默）" ;;
-        *) billing_name="计时中" ;;
+    case "$MODE" in
+        parent)
+            billing_name="已暂停（家长模式不计儿童额度）"
+            ;;
+        locked)
+            billing_name="已暂停（锁定模式）"
+            ;;
+        child)
+            case "$BILLING_STATE" in
+                idle_verified)
+                    case "$IDLE_REASON" in
+                        system_home) billing_name="已暂停（系统首页已确认）" ;;
+                        idle) billing_name="已暂停（App 首页/暂停已确认）" ;;
+                        paused) billing_name="已暂停（暂停已确认）" ;;
+                        app_home) billing_name="已暂停（App 首页已确认）" ;;
+                        adaptive) billing_name="已暂停（Adaptive 闲置已确认）" ;;
+                        *) billing_name="已暂停（闲置已确认）" ;;
+                    esac ;;
+                idle_grace) billing_name="已暂停（短暂无法判断，保持闲置）" ;;
+                idle_silent) billing_name="已暂停（网络静默）" ;;
+                *) billing_name="计时中" ;;
+            esac
+            ;;
+        *)
+            billing_name="计时状态未知"
+            ;;
     esac
     used_m=$((USED_S / 60)); used_r=$((USED_S % 60))
     left_m=$((left / 60)); left_r=$((left % 60))
