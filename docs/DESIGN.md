@@ -267,3 +267,15 @@ N1 现场：`nf_conntrack_acct=1`、`nf_conntrack_timestamp=0`，`/proc/net/nf_c
 - 下一步只做差分 Shadow 验证：比较 `system_home / 576p playing / paused` 三种状态的公网 80/443 TCP/UDP 流数量、原始方向字节增量、新建/消失流数量与状态分布。若这些流级特征仍与低码率播放重叠，则不继续尝试从网络层恢复 verified-idle。
 
 约束保持：不安装 `conntrack` 工具、不启用 timestamp、不修改 sysctl/NAT/mangle/路由；conntrack 仅只读，`TX_IDLE_BILLING_AUTHORITY=0` 不变。
+
+### P1-B 三状态 Conntrack 差分结论（2026-11-09）
+
+对 `system_home / PLAY_576P / paused` 各约 2 分钟读取 `/proc/net/nf_conntrack`。采样脚本中的 `NEW` 字段把“真正新流”和“同 key 计数回退/重建”混在一起，因此本轮不使用该字段做结论；其余 `FLOWS/DESTS/ACTIVE/TCP443/UDP443/DPKTS/DBYTES/UNREPLIED` 可用。
+
+- 三组公网流几乎 100% 为 `UNREPLIED`，再次证明 N1 只看到原始方向，流表中的回复计数不能代表视频下载。
+- `PLAY_576P` 的总流库存明显更高（本轮约 19–105，均值约 64），但随着旧连接超时快速下降；`system_home` 约 7–61（均值约 31），`paused` 约 17–30（均值约 22）。该差异包含大量历史连接寿命，不能作为当前屏幕状态的即时证据。
+- 最近窗口真正有原始方向增量的 `ACTIVE` 高度重叠：system_home 0–3，播放 0–6，暂停 0–13；暂停甚至出现比播放更高的活动窗。
+- `DPKTS/DBYTES` 同样重叠：播放可出现 0 增量，暂停也可出现较大突发。因此 conntrack 的流数量/端口/原始方向字节不能安全授予 idle。
+- 本轮再次观察到时间结构差异：暂停长段 TX PPS 约 9–11 且较稳定，而真实低码率播放虽然也会掉到个位/十位 PPS，但在此前 251 秒样本中呈现 2–41 PPS 周期性突发。下一步只研究**连续窗口节奏/波动/突发间隔**，不继续堆叠静态阈值。
+
+结论：conntrack 作为 P1 billing signal 暂停推进；不新增常驻 conntrack observer。P1-C 转向离线/Shadow 时序验证，继续坚持 `uncertain => charge` 和 `TX_IDLE_BILLING_AUTHORITY=0`。
