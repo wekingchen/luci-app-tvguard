@@ -166,3 +166,17 @@ r5 真机证明：rolling B/P 很高并不等价于 paused。腾讯从暂停恢�
 
 这些规则的目的是避免把“播放恢复后的缓存/高吞吐阶段”误标为暂停。它们不是新的免计时条件。
 
+
+
+## r6 真机结论：B/P 是上下文特征，不是 paused 绝对判据
+
+r6 进一步证明：正常播放也可能出现极高 rolling B/P（例如 P50/P90 3086/5246 或 4503/5290）。因此 B/P 只能与 learned active floor、rolling trend、active-window count 等共同使用，不能单独定义 paused。
+
+当前 high_ratio_pause 语义应理解为：
+- paused-like evidence：高；
+- billing authority：无；
+- 若出现 clear-active PPS 或明显 rising trend，则 playback evidence 优先并 veto pause hint；
+- 若 Phase 1 为 active，则计时继续，不因 pause hint 改变。
+
+这套优先级已通过 N1 的 play → pause → play 真机序列验证。
+
