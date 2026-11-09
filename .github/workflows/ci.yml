@@ -140,6 +140,8 @@ jobs:
           grep -q 'default-config' scripts/verify-ipk.py
           grep -q 'system_home system 100' root/usr/libexec/tvguard-shadow
           grep -q 'flow_offload_observation_risk' root/usr/libexec/tvguard-compat-check
+          grep -q 'stable_low_plateau' root/usr/libexec/tvguard-soak
+          grep -q 'TEMPORAL_ENTERS' root/usr/libexec/tvguard-soak-report
 
   package:
     runs-on: ubuntu-latest
@@ -149,17 +151,17 @@ jobs:
       - name: Build and validate OpenWrt-compatible development IPK
         run: |
           set -eu
-          sh scripts/build-ipk.sh 0.1.13 12
-          PKG=dist/luci-app-tvguard_0.1.13-12_all.ipk
+          sh scripts/build-ipk.sh 0.1.13 13
+          PKG=dist/luci-app-tvguard_0.1.13-13_all.ipk
           test -f "$PKG"
           # OpenWrt ipkg-build uses gzip-compressed tar, not Debian ar.
           test "$(od -An -tx1 -N2 "$PKG" | tr -d ' \n')" = 1f8b
           tar -tzf "$PKG" | grep -q './control.tar.gz'
-          python3 scripts/verify-ipk.py "$PKG" 0.1.13 12
+          python3 scripts/verify-ipk.py "$PKG" 0.1.13 13
           sha256sum "$PKG"
       - name: Upload development IPK
         uses: actions/upload-artifact@v4
         with:
-          name: tvguard-v0.1.13-r12-low-bitrate-p0-ipk
+          name: tvguard-v0.1.13-r13-temporal-shadow-ipk
           path: dist/*.ipk
           if-no-files-found: error

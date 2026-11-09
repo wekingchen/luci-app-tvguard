@@ -279,3 +279,15 @@ N1 现场：`nf_conntrack_acct=1`、`nf_conntrack_timestamp=0`，`/proc/net/nf_c
 - 本轮再次观察到时间结构差异：暂停长段 TX PPS 约 9–11 且较稳定，而真实低码率播放虽然也会掉到个位/十位 PPS，但在此前 251 秒样本中呈现 2–41 PPS 周期性突发。下一步只研究**连续窗口节奏/波动/突发间隔**，不继续堆叠静态阈值。
 
 结论：conntrack 作为 P1 billing signal 暂停推进；不新增常驻 conntrack observer。P1-C 转向离线/Shadow 时序验证，继续坚持 `uncertain => charge` 和 `TX_IDLE_BILLING_AUTHORITY=0`。
+
+### r13 P1-C 候选：时序低位平台 Shadow
+
+静态 TX、Reply Observer、conntrack 流级静态特征均不足以安全恢复 idle authority 后，r13 只增加一个**旁路时序候选**，不改变 r12 计费语义。
+
+- Shadow Soak 从内存环读取最近 12 个约 10 秒窗口，计算 PPS 的 P10/P50/P90、P90-P10 spread 与 max。
+- 只有在 12 窗齐全、`P90<=20`、`spread<=5`、`max<=25` 时输出诊断候选 `stable_low_plateau`（score=70）。这些阈值只用于候选搜集，不代表“已确认暂停/首页”。
+- 候选只记录进入/退出、累计时长、最长时长和最近窗口统计；不返回给 `tvguardctl` 的 billing state，也不修改 `USED_S`、firewall gate、NAT/mangle/route。
+- CI 固化两段真实正常 576p 回归：UDP-heavy 低流量连续段与 TCP-heavy 段均不得触发该候选；当前真实暂停 9–11 PPS 稳定段应能触发，用来验证 observer 本身工作。
+- 即使 r13 真机长期观察没有误报，也不能仅凭这一轮样本自动开放免计时；至少还需跨 App、跨清晰度、跨 CDN/协议的真实播放反例和首页/暂停正例。
+
+r13 的目的不是“恢复暂停免计时”，而是建立一个可被真实数据证伪的窄时序候选；任何播放误触发都应优先淘汰候选，而不是调高授权概率。

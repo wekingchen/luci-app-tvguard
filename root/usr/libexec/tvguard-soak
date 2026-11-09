@@ -105,6 +105,22 @@ LAST_BP90=0
 LAST_ACTIVE_HITS=0
 LAST_TREND=0
 LAST_SHADOW_LABEL=unknown
+TEMPORAL_HINT=none
+TEMPORAL_SCORE=0
+TEMPORAL_WINDOWS=0
+TEMPORAL_P10=0
+TEMPORAL_P50=0
+TEMPORAL_P90=0
+TEMPORAL_SPREAD=0
+TEMPORAL_MAX=0
+TEMPORAL_LAST_HINT=none
+TEMPORAL_CANDIDATE_START=0
+TEMPORAL_CANDIDATE_SAMPLES=0
+TEMPORAL_ENTERS=0
+TEMPORAL_EXITS=0
+TEMPORAL_SECONDS=0
+TEMPORAL_MAX_SECONDS=0
+TEMPORAL_LAST_DURATION=0
 SOAK_SCHEMA=v1
 
 if [ -r "$STATE" ]; then
@@ -164,6 +180,84 @@ for n in CANDIDATE_START CANDIDATE_SAMPLES CANDIDATE_MAX_SCORE CANDIDATE_MAX_BP5
 done
 case "$LAST_HINT" in none|idle_overlap|bursty_pause|high_ratio_pause) :;; *) LAST_HINT=none;; esac
 case "$LAST_TRANSITION" in none|enter|exit|checkpoint) :;; *) LAST_TRANSITION=none;; esac
+case "$TEMPORAL_LAST_HINT" in none|stable_low_plateau) :;; *) TEMPORAL_LAST_HINT=none;; esac
+for n in TEMPORAL_SCORE TEMPORAL_WINDOWS TEMPORAL_P10 TEMPORAL_P50 TEMPORAL_P90 TEMPORAL_SPREAD TEMPORAL_MAX          TEMPORAL_CANDIDATE_START TEMPORAL_CANDIDATE_SAMPLES TEMPORAL_ENTERS TEMPORAL_EXITS TEMPORAL_SECONDS          TEMPORAL_MAX_SECONDS TEMPORAL_LAST_DURATION; do
+    eval "v=\$n"
+    case "$v" in ''|*[!0-9]*) eval "$n=0";; esac
+done
+
+# P1-C diagnostic only: look for a very narrow low-PPS plateau over about
+# two minutes. This is deliberately conservative and has NO billing authority.
+# Real N1 field regressions must prove that low-bitrate playback does not
+# trigger it before any future authorization is considered.
+TEMPORAL_HINT=none
+TEMPORAL_SCORE=0
+TEMPORAL_WINDOWS=0
+TEMPORAL_P10=0
+TEMPORAL_P50=0
+TEMPORAL_P90=0
+TEMPORAL_SPREAD=0
+TEMPORAL_MAX=0
+temporal_recent="${RING}.temporal.$"
+tail -n 12 "$RING" > "$temporal_recent" 2>/dev/null || :
+temporal_calc="$(awk -F, '
+function sortarr(a,n,    i,j,x) {
+    for (i=2;i<=n;i++) {
+        x=a[i]; j=i-1
+        while (j>=1 && a[j]>x) { a[j+1]=a[j]; j-- }
+        a[j+1]=x
+    }
+}
+function q(a,n,num,den,    idx) {
+    idx=int((n*num + den - 1)/den)
+    if (idx<1) idx=1
+    if (idx>n) idx=n
+    return a[idx]
+}
+{
+    n++
+    p[n]=$7+0
+    if (n==1 || p[n]>mx) mx=p[n]
+}
+END {
+    if (n<1) { print "0 0 0 0 0"; exit }
+    sortarr(p,n)
+    p10=q(p,n,1,10); p50=q(p,n,1,2); p90=q(p,n,9,10)
+    printf "%d %d %d %d %d\n", n,p10,p50,p90,mx
+}' "$temporal_recent")"
+rm -f "$temporal_recent"
+set -- $temporal_calc
+TEMPORAL_WINDOWS="$1"; TEMPORAL_P10="$2"; TEMPORAL_P50="$3"; TEMPORAL_P90="$4"; TEMPORAL_MAX="$5"
+TEMPORAL_SPREAD=$((TEMPORAL_P90 - TEMPORAL_P10))
+[ "$TEMPORAL_SPREAD" -ge 0 ] || TEMPORAL_SPREAD=0
+if [ "$TEMPORAL_WINDOWS" -ge 12 ] &&
+   [ "$TEMPORAL_P90" -le 20 ] &&
+   [ "$TEMPORAL_SPREAD" -le 5 ] &&
+   [ "$TEMPORAL_MAX" -le 25 ]; then
+    TEMPORAL_HINT=stable_low_plateau
+    TEMPORAL_SCORE=70
+fi
+
+TEMPORAL_TRANSITION=none
+TEMPORAL_DURATION=0
+if [ "$TEMPORAL_HINT" = stable_low_plateau ]; then
+    if [ "$TEMPORAL_LAST_HINT" != stable_low_plateau ]; then
+        TEMPORAL_CANDIDATE_START="$NOW"
+        TEMPORAL_CANDIDATE_SAMPLES=0
+        TEMPORAL_ENTERS=$((TEMPORAL_ENTERS + 1))
+        TEMPORAL_TRANSITION=enter
+    fi
+    TEMPORAL_CANDIDATE_SAMPLES=$((TEMPORAL_CANDIDATE_SAMPLES + 1))
+elif [ "$TEMPORAL_LAST_HINT" = stable_low_plateau ]; then
+    TEMPORAL_DURATION=$((NOW - TEMPORAL_CANDIDATE_START))
+    [ "$TEMPORAL_DURATION" -ge 0 ] || TEMPORAL_DURATION=0
+    TEMPORAL_SECONDS=$((TEMPORAL_SECONDS + TEMPORAL_DURATION))
+    [ "$TEMPORAL_DURATION" -le "$TEMPORAL_MAX_SECONDS" ] || TEMPORAL_MAX_SECONDS="$TEMPORAL_DURATION"
+    TEMPORAL_LAST_DURATION="$TEMPORAL_DURATION"
+    TEMPORAL_EXITS=$((TEMPORAL_EXITS + 1))
+    TEMPORAL_TRANSITION=exit
+fi
+TEMPORAL_LAST_HINT="$TEMPORAL_HINT"
 
 TOTAL_SAMPLES=$((TOTAL_SAMPLES + 1))
 TRANSITION=none
@@ -294,6 +388,22 @@ LAST_BP90=$LAST_BP90
 LAST_ACTIVE_HITS=$LAST_ACTIVE_HITS
 LAST_TREND=$LAST_TREND
 LAST_SHADOW_LABEL=$LAST_SHADOW_LABEL
+TEMPORAL_HINT=$TEMPORAL_HINT
+TEMPORAL_SCORE=$TEMPORAL_SCORE
+TEMPORAL_WINDOWS=$TEMPORAL_WINDOWS
+TEMPORAL_P10=$TEMPORAL_P10
+TEMPORAL_P50=$TEMPORAL_P50
+TEMPORAL_P90=$TEMPORAL_P90
+TEMPORAL_SPREAD=$TEMPORAL_SPREAD
+TEMPORAL_MAX=$TEMPORAL_MAX
+TEMPORAL_LAST_HINT=$TEMPORAL_LAST_HINT
+TEMPORAL_CANDIDATE_START=$TEMPORAL_CANDIDATE_START
+TEMPORAL_CANDIDATE_SAMPLES=$TEMPORAL_CANDIDATE_SAMPLES
+TEMPORAL_ENTERS=$TEMPORAL_ENTERS
+TEMPORAL_EXITS=$TEMPORAL_EXITS
+TEMPORAL_SECONDS=$TEMPORAL_SECONDS
+TEMPORAL_MAX_SECONDS=$TEMPORAL_MAX_SECONDS
+TEMPORAL_LAST_DURATION=$TEMPORAL_LAST_DURATION
 EOF
     chmod 600 "$tmp"
     mv -f "$tmp" "$target"
