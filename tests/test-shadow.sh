@@ -48,7 +48,29 @@ test "$(sh "$DST" 8 1 7 2800)" = 'system_home system 100'
 test "$(sh "$DST" 5000 10 4990 9000000)" = 'unknown none 0'
 test "$(sh "$DST" 0 0 0 0)" = 'unknown none 0'
 
-# With fewer than 2 different video applications, generic app-idle inference stays off;\n# repeated device-level system-home evidence may still be recognized safely.
+# Real-N1 shaped regression: system home has 3 sessions / 24 samples,
+# while playback has only one labelled session / 11 samples. This should be
+# enough for system-home because playback is only a negative overlap reference.
+python3 - "$CSV" <<'PY'
+from pathlib import Path
+import sys
+p=Path(sys.argv[1])
+rows=[]
+sid=100
+for session in range(3):
+    sid += 1
+    for i in range(8):
+        rows.append(f"{1730100000+sid*120+i*10},{sid}-1,system_home,system,{8+i%2},1,{7+i%2},{2800+i*20}")
+sid += 1
+for i in range(11):
+    rows.append(f"{1730200000+sid*120+i*10},{sid}-1,playing,tencent,{180+i%2},{30+i%2},{150+i%2},{65000+i*20}")
+p.write_text("\n".join(rows)+"\n")
+PY
+test "$(sh "$DST" 9 1 8 3000)" = 'system_home system 100'
+test "$(sh "$DST" 180 30 150 65000)" != 'system_home system 100'
+
+# With fewer than 2 different video applications, generic app-idle inference stays off;
+# repeated device-level system-home evidence may still be recognized safely.
 grep -v ',iqiyi,' "$CSV" > "$TMP/oneapp.csv"
 mv "$TMP/oneapp.csv" "$CSV"
 test "$(sh "$DST" 180 30 150 65000)" = 'unknown none 0'
