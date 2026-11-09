@@ -1,3 +1,39 @@
+## v0.1.13-r9 Config Persistence · UCI 跨固件恢复
+
+r8 已将运行状态/学习数据迁到 `/mnt/mmcblk2p4/tvguard`。r9 继续把 `/etc/config/tvguard` 纳入跨固件保护，但保持 UCI 正式工作路径不变。
+
+正式备份：
+`/mnt/mmcblk2p4/tvguard/config/tvguard`
+
+关键语义：
+- `/etc/config/tvguard` 仍是 OpenWrt/UCI 的 live config，LuCI 与 `uci` 命令继续正常使用；
+- package 正常升级前，`preinst` 尝试先把当前 live config 备份到 mmc；
+- 新固件 overlay 中若安装前不存在 TV Guard 配置，`preinst` 写入一次性 restore marker，`postinst` 在文件解包后优先恢复 mmc 备份；
+- 若包被直接预置进新固件、没有经历普通 preinst 路径，启动阶段仍能识别“新 overlay + 包内默认配置 + mmc 已有自定义备份”，并恢复自定义备份；
+- 同一 overlay 上管理员主动把配置改回默认值时不会被旧备份反向覆盖，因为会有 `/etc/.tvguard-config-v1` overlay marker；
+- sysupgrade 若保留了一个非默认、更新的 `/etc/config/tvguard`，即使 overlay marker 未保留，也优先把这份 live custom config 视为新版本并刷新 mmc 备份；
+- mmc 未挂载时不会在别处创建第二份持久配置备份；继续使用当前 live UCI，待 mmc 恢复后再同步；
+- daemon 每轮只做 compare-first `config-sync`，内容未变化时不会重写 mmc 文件；service reload 后也会立即刷新备份。
+
+同时修正 `tvguard-status brief` 计时文案：
+- parent → `已暂停（家长模式不计儿童额度）`
+- locked → `已暂停（锁定模式）`
+- child → 才根据 Adaptive/静默/计时状态解释原因。
+
+CI #42607014521：static + package success，覆盖：
+- 正常 package upgrade vs fresh-overlay preinst 区分；
+- fresh firmware default config 自动恢复 durable custom config；
+- preserved newer custom config 不被旧 backup 覆盖；
+- 同 overlay 主动修改/回默认的语义；
+- mmc 临时缺失不产生第二持久配置源；
+- service start/reload/daemon config-sync；
+- 原有 controller/Adaptive/firewall/proxy isolation/storage/migration 回归。
+
+Package：`luci-app-tvguard_0.1.13-9_all.ipk`
+IPK SHA256：`f003c9d5877cf01bf40c662d31876452ef3234ace4328231099e8b014e41c1cb`
+Artifact：`tvguard-v0.1.13-r9-config-persistence-ipk`
+Artifact digest：`sha256:e8369bcdfce46f4278d71d98269af9bea21283802221a098435e47db7cb61df4`
+
 ## v0.1.13-r8 Durable MMC Data · 持久数据迁移
 
 N1 的固件 overlay 在升级/重刷时可能被替换，因此 `/etc/tvguard` 不再作为正式持久数据根。r8 将 TV Guard 的运行状态、学习资料和历史摘要统一迁到：
