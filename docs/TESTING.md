@@ -1,6 +1,19 @@
 # TV Guard v0.1 · N1 联调计划
 
-> 状态：v0.1.12 已在用户 N1 完成操作日志、移动端界面、代理兼容、手动正式锁定/恢复、儿童额度与奖励自动控制，以及 TV Guard 自身 service reload 的策略保持真机验证。当前剩余重点为全局 firewall reload、设备重启后的策略恢复，以及可选回程观测；当前仍为开发构建，不是稳定 Release。
+> 状态：v0.1.12 已在用户 N1 完成操作日志、移动端界面、代理兼容、手动正式锁定/恢复、儿童额度与奖励自动控制、TV Guard 自身 service reload，以及全局 fw3/firewall reload 后策略重建的真机验证。当前剩余重点为 N1 整机重启后的持久状态恢复，以及可选回程观测；当前仍为开发构建，不是稳定 Release。
+
+## v0.1.12 全局 firewall reload 策略重建真机通过 · 2026-11-09
+
+用户在 N1 正式控制开启状态下执行两轮 `/etc/init.d/firewall reload`，验证 fw3 清空并重建整套 IPv4/IPv6 表后 TV Guard 能否通过独立 include 恢复当前策略：
+
+- reload 前锁定状态为 `mode=locked`、`enforce=1`、`armed=1`、`blocked=1`，`TVG_GATE` 为 `DROP`；核心 hook 精确为 `-s 192.168.101.76/32 -i br-lan -j TVG_RAW`。
+- fw3 输出明确显示清空并重新 populate IPv4 raw table，随后执行 `/usr/libexec/tvguard-firewall-include`；`firewall_reload_rc=0`。
+- reload 后 `tvguardd` PID 仍为 `27433`，TV Guard 核心链和 hook 被重新建立，`TVG_GATE` 仍为 `DROP`，锁定状态保持，现场 DROP 计数 383 packets / 57494 bytes。
+- 保持 `enforce=1` 切换家长模式后再次执行全局 firewall reload，reload 后仍为 `blocked=0`、`firewall_state=allowed`，`TVG_GATE` 正确重建为 `RETURN`。
+- 最终退出正式控制后，`tvguard-compat-check` 再次返回 `result=PASS`、`proxy_rules_unchanged=1`、`isolation_audit=ok`、`gate=allowed`。
+- fw3 reload 过程中出现的 WAN、ZeroTier 以及若干缺失 include 的 warning 属于现有防火墙/插件配置输出；本轮没有证据表明它们由 TV Guard 引入，且 reload 返回 0、TV Guard include 正常执行、最终兼容检查通过。
+
+该结果确认 **全局 fw3/firewall reload 清空 raw 表后，TV Guard 能按持久状态自动重建目标电视专用 hook 与正确的 DROP/RETURN gate，且不会重启 tvguardd。**
 
 ## v0.1.12 TV Guard service reload 策略保持真机通过 · 2026-11-09
 
