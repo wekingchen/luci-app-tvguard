@@ -2,6 +2,16 @@
 
 > 状态：v0.1.11 已由用户于 2026-11-09 确认真机完成操作日志、移动端界面和代理兼容检查验收，并完成第一轮正式网络阻断实测：`mode=locked`、`enforce=1`、`armed=1` 时实际 gate 为 `DROP`，电视无法播放网络内容，而手机、电脑保持正常联网。恢复放行、儿童额度自动阻断、firewall reload/重启恢复及可选回程观测仍待专项验收。当前仍为开发构建，不是稳定 Release。
 
+## v0.1.12 N1 升级验证 · 2026-11-09
+
+用户已在 N1 从 `0.1.11-1` 升级到 `0.1.12-1`，现场确认：
+
+- `opkg status` 显示 `Version: 0.1.12-1`、`Status: install user installed`。
+- `/usr/libexec/tvguardctl` 已包含整数秒 `sleep 1`，不再存在 `sleep 0.1`。
+- 原有 `/etc/config/tvguard` 被 opkg conffile 机制保留；`enforce=0`、`allow_enforcement=0`、`observe_reply=0` 均保持安全默认状态。
+- 升级后再次运行 `tvguard-compat-check`：`result=PASS`、`proxy_rules_unchanged=1`、`isolation_audit=ok`、`gate=allowed`。
+- N1 环境没有 `diff` 命令；由于 v0.1.12 不新增 UCI 配置项，仅修复控制器锁等待，因此不影响本次升级结论。
+
 ## v0.1.12 N1 BusyBox 锁等待兼容修复 · 2026-11-09
 
 在继续验证“锁定 → 家长模式即时恢复”时，N1 现场出现：
