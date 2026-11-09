@@ -134,7 +134,7 @@ def evaluate(rows, script_path):
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Leave-one-video-app-out billing safety test"
+        description="Leave-one-video-app-out billing safety test")
     parser.add_argument("csv", help="export of N1 calibration-v3.csv")
     args = parser.parse_args()
     root = Path(__file__).resolve().parents[1]
