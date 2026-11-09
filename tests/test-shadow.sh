@@ -76,6 +76,25 @@ mv "$TMP/oneapp.csv" "$CSV"
 test "$(sh "$DST" 180 30 150 65000)" = 'unknown none 0'
 test "$(sh "$DST" 8 1 7 2800)" = 'system_home system 100'
 
+# Real-N1 shaped local App-home evidence: one labelled 12-window session,
+# plus one playback reference session, is enough to exempt only matching
+# App-home-like traffic. Playback remains non-idle.
+python3 - "$CSV" <<'PY'
+from pathlib import Path
+import sys
+p=Path(sys.argv[1])
+rows=[]
+sid=300
+for i in range(11):
+    rows.append(f"{1730300000+sid*120+i*10},{sid}-1,playing,tencent,{180+i%2},{5+i%2},{174+i%2},{55000+i*20}")
+sid += 1
+for i in range(12):
+    rows.append(f"{1730400000+sid*120+i*10},{sid}-1,app_home,tencent,{30+i%2},{1+i%2},{28+i%2},{24000+i*20}")
+p.write_text("\n".join(rows)+"\n")
+PY
+test "$(sh "$DST" 30 1 28 24000)" = 'app_home general 90'
+test "$(sh "$DST" 180 5 174 55000)" != 'app_home general 90'
+
 # A second app restored, but one whole pause class missing: abstain.
 python3 - "$CSV" <<'PY'
 from pathlib import Path
