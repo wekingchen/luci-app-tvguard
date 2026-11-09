@@ -145,7 +145,13 @@ END {
 
     if (ready_sessions("system_home") && playback_reference_ready() &&
         inside_system_home_robust() && separated_from("playing")) {
-        print "system_home system 100"
+        # Once App-home evidence exists, the same low-activity network shape
+        # may represent either screen. Report the billing-relevant truth
+        # (idle) instead of pretending network-only evidence knows the UI.
+        if (local_app_home_ready())
+            print "idle general 95"
+        else
+            print "system_home system 100"
         exit
     }
 
@@ -168,7 +174,10 @@ END {
     # PPS into free time; non-matching/unknown states continue to charge.
     if (local_app_home_ready() && playback_reference_ready() &&
         inside("app_home") && separated_from("playing")) {
-        print "app_home general 90"
+        if (ready_sessions("system_home"))
+            print "idle general 90"
+        else
+            print "app_home general 90"
         exit
     }
 
