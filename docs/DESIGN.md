@@ -140,3 +140,15 @@ SSR 透明代理或正常路由
 5. **工程保护**：保留儿童/家长/锁定、奖励及撤销、额度、正式 gate、SSR/代理隔离和已有回滚保障；所有实际防火墙变更必须继续满足原隔离门禁。严禁为了观测新增 NAT/mangle/路由改写。
 
 **可观测性边界**：固定 IP 能识别这台电视**经过 N1** 的包及连接，不等于能观察所有网络路径；能够识别高吞吐连接或疑似视频流量，不等于能从 HTTPS/QUIC 加密流量断言屏幕正在播放、暂停或使用哪个前台 App。长缓冲或本地缓存播放与暂停可能网络表现相同。必须承认不可判定状态，避免“低流量=已确认停止观看”的推断。
+
+## r12 P0 验证候选：先撤销 TX-only 闲置的计费授权
+
+r12 的第一步不是重新调低 PPS 阈值，而是把“识别标签”和“免计时授权”重新分开：
+
+- `tvguard-adaptive`、`tvguard-shadow` 和 Shadow Soak 继续原样输出，用于观察、学习和离线回放；
+- 生产代码固定 `TX_IDLE_BILLING_AUTHORITY=0`，不是 UCI/UI 开关；在该门关闭时，只要电视仍有经过 N1 的非静默网络窗口，儿童模式保持 `billing_state=charge`，即使 Adaptive 输出 `idle/stable_low` 或 Shadow 输出首页/idle；
+- 旧的智能闲置状态机暂时保留在代码中但没有生产授权，测试可以显式开启它，避免后续恢复时失去回归覆盖；
+- `ACTIVITY=silent → idle_silent` 暂时保留为“网络会话结束”边界，而**不是屏幕空闲证明**。这一点仍是 P0 剩余风险：必须用真实 576p/720p 长时间播放确认是否会出现超过当前 `silence_seconds=60` 的无包缓冲间隔；若出现，优先设计有界的 recent-playback hold，而不是让电视关机后无限计时；
+- Reply Observer 仍默认关闭且没有 billing authority。r12 只给兼容检查增加 flow-offload 风险报告；若系统启用 software/hardware flow offload 或实际存在 `FLOWOFFLOAD` 规则，只标记观测完整性风险，不自动关闭/修改全局加速。
+
+r12 的 P0 验收硬门槛：真实正常播放（含免费 576p/720p）不得出现 `dangerous_idle_false_hints` 导致的免计时；暂停/首页暂时继续计时属于保守退化，可以接受，但必须显式记录，不能伪装成识别成功。

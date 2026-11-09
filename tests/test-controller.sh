@@ -137,6 +137,7 @@ export TVGUARD_TEST_ARMED=0
 export TVGUARD_TEST_AUDIT=ok
 export TVGUARD_TEST_GATE="$TMP/gate"
 export TVGUARD_TEST_SHADOW=unknown
+export TVGUARD_TEST_TX_IDLE_AUTHORITY=0
 # Rewrite a disposable copy only. Production controller has no env path overrides.
 CTL="$TMP/controller"
 python3 - "$ROOT/root/usr/libexec/tvguardctl" "$CTL" "$TMP" <<'PY'
@@ -152,6 +153,7 @@ mapping={
     'ADAPTIVE=/usr/libexec/tvguard-adaptive': 'ADAPTIVE='+root+'/adaptive',
     'LEARN=/usr/libexec/tvguard-learn': 'LEARN='+root+'/learn',
     'SOAK=/usr/libexec/tvguard-soak': 'SOAK='+root+'/soak',
+    'TX_IDLE_BILLING_AUTHORITY=0': 'TX_IDLE_BILLING_AUTHORITY="${TVGUARD_TEST_TX_IDLE_AUTHORITY:-0}"',
     'DATA=/usr/libexec/tvguard-data': 'DATA='+root+'/data',
     'RUN=/var/run/tvguard.state': 'RUN='+root+'/run/runtime',
     'LOCK=/var/run/tvguard.lock': 'LOCK='+root+'/run/lock',
@@ -439,6 +441,65 @@ check 'assert s["reply_sample_status"] == "observed", s'
 check 'assert s["reply_prerouting_pps"] > 0 and s["reply_local_pps"] > 0, s'
 check 'assert s["enforce"] == 0 and s["blocked"] == 0, s'
 
+
+# P0 low-bitrate safety: TX-only idle labels are diagnostic-only by default.
+# Reproduce the dangerous shape directly: Adaptive says stable_low/idle while
+# packets are still flowing. Child time MUST continue to increase.
+export TVGUARD_TEST_TX_IDLE_AUTHORITY=0
+export TVGUARD_TEST_ADAPTIVE=idle
+export TVGUARD_TEST_SHADOW=system_home
+python3 - "$TMP/run/runtime" <<'PY'
+from pathlib import Path
+import sys,time
+p=Path(sys.argv[1])
+lines=p.read_text().splitlines()
+now=int(time.time())
+p.write_text('\n'.join(
+    'LAST_EPOCH='+str(now-10) if line.startswith('LAST_EPOCH=') else line
+    for line in lines
+)+'\n')
+PY
+set -- $(cat "$TMP/sample")
+echo "$(($1 + 220)) $(($2 + 48000)) $(($3 + 140)) $(($4 + 18000)) $(($5 + 80)) $(($6 + 30000))" > "$TMP/sample"
+before_p0_adaptive="$(sh "$CTL" status | python3 -c 'import json,sys; print(json.load(sys.stdin)["used_seconds"])')"
+sh "$CTL" tick
+status
+after_p0_adaptive="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["used_seconds"])' "$TMP/status.json")"
+delta_p0_adaptive=$((after_p0_adaptive-before_p0_adaptive))
+[ "$delta_p0_adaptive" -ge 9 ] && [ "$delta_p0_adaptive" -le 11 ]
+check 'assert s["adaptive_state"]=="idle" and s["adaptive_reason"]=="stable_low", s'
+check 'assert s["billing_state"]=="charge" and s["idle_reason"]=="none" and s["activity"]=="active", s'
+
+# The legacy Shadow fallback must not regain free-time authority when Adaptive
+# is unready. A low-traffic/system-home hint remains visible but still charges.
+export TVGUARD_TEST_ADAPTIVE=unready
+export TVGUARD_TEST_SHADOW=system_home
+python3 - "$TMP/run/runtime" <<'PY'
+from pathlib import Path
+import sys,time
+p=Path(sys.argv[1])
+lines=p.read_text().splitlines()
+now=int(time.time())
+p.write_text('\n'.join(
+    'LAST_EPOCH='+str(now-10) if line.startswith('LAST_EPOCH=') else line
+    for line in lines
+)+'\n')
+PY
+set -- $(cat "$TMP/sample")
+echo "$(($1 + 60)) $(($2 + 12000)) $(($3 + 10)) $(($4 + 2000)) $(($5 + 50)) $(($6 + 10000))" > "$TMP/sample"
+before_p0_shadow="$after_p0_adaptive"
+sh "$CTL" tick
+status
+after_p0_shadow="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["used_seconds"])' "$TMP/status.json")"
+delta_p0_shadow=$((after_p0_shadow-before_p0_shadow))
+[ "$delta_p0_shadow" -ge 9 ] && [ "$delta_p0_shadow" -le 11 ]
+check 'assert s["shadow_label"]=="system_home" and s["adaptive_state"]=="unready", s'
+check 'assert s["billing_state"]=="charge" and s["idle_reason"]=="none", s'
+
+# Keep the previous smart-idle state machine covered as dormant code. Tests may
+# opt it back in, but production r12 has the gate hardcoded off.
+export TVGUARD_TEST_TX_IDLE_AUTHORITY=1
+export TVGUARD_TEST_ADAPTIVE=unready
 
 # Smart billing: a verified idle hint must persist for 30 seconds before
 # pausing child time. The first two 10s windows still charge conservatively.
