@@ -1,3 +1,18 @@
+## v0.1.13-r5 Phase 2A 真机结果与 r6 修正
+
+N1 r5 三阶段真机结果：
+- 正常播放稳定后：Adaptive active 100%，Pause hint = none；通过。
+- 腾讯暂停约 60 秒：Adaptive 仍 active 95%，但 Pause hint = high_ratio_pause 95%；旁路暂停线索命中；通过。
+- 恢复播放约 60 秒：Adaptive active 100%，但 Pause hint 仍 high_ratio_pause 95%；未通过“恢复播放后退出暂停候选”。
+
+第三段关键数据：PPS P50/P90 144/213，当前 PPS 144 已超过 learned active floor 138，rolling B/P P50/P90 仍高达 2439/5022，trend=-68%。这证明“高 B/P”不是暂停独占特征，播放恢复/高吞吐阶段也可能出现。
+
+因此 r5 仅证明 high-ratio pause hint 有召回价值，不具备免计时资格。r6 增加两个播放优先 veto：
+- 当前 PPS >= learned active floor：立即取消 high_ratio_pause；
+- rolling PPS trend < -20%（明显上升）：取消 high_ratio_pause，即使当前窗口暂时低于 active floor。
+
+这两个 veto 只影响 pause shadow，不改变 Phase 1 idle/active/ambiguous 与计费逻辑。
+
 ## v0.1.13-r5 Adaptive Phase 2A · 暂停多原型（Shadow）
 
 N1 在 Phase 1 真机确认 `idle ↔ active` 稳定后，又补充了两组不同视频 App 的暂停采集。高质量 paused 会话现呈现三种明显不同的网络行为：
