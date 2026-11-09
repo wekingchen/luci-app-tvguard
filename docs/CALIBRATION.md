@@ -208,3 +208,17 @@ Shadow Soak 不产生新的模型权重，也不改变 paused/playing 分类边�
 
 高频原始窗口只保留在 `/var/run` 的有界环中。持久层只保存累计计数与当前/最近候选摘要，避免为了识别精度持续写 eMMC。只有当 Soak 长期数据证明假阳性足够低，才讨论下一阶段 `paused_verified`；在此之前 pause hint 始终没有 billing authority。
 
+
+
+## r11：高 B/P 必须视为重叠特征
+
+芒果 TV 576p 正常播放已经证明 high_ratio_pause 会在真实播放中长时间、多次触发，因此 Phase 2A 的“高流量暂停候选”语义过强。
+
+从 r11 起：
+- `high_ratio_pause` 内部字段暂保留兼容，但产品语义改为“高 B/P 重叠行为”；
+- `adaptive_pause_score` 只是规则持续满足的规则分，不解释为暂停概率；
+- 不再把 B/P 单独或结合较低 PPS 当作 paused_verified 依据；
+- Shadow Soak v2 额外采集 TCP PPS、UDP PPS 和 BPS，继续寻找协议组成、吞吐与时间结构的稳定差异。
+
+当前一个值得验证但尚未成立的假设：已知腾讯高吞吐暂停样本多为 UDP 主导，而芒果 576p 假阳性窗口至少观察到明显 TCP 成分。该假设只作为 Soak v2 的研究方向，未进入 billing classifier。
+
