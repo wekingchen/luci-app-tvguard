@@ -45,6 +45,16 @@ case "${TVGUARD_TEST_AUDIT:-ok}" in
 esac
 EOAUDIT
 chmod +x "$TMP/bin/uci" "$TMP/fw" "$TMP/audit"
+cat > "$TMP/shadow" <<'EOSHADOW'
+#!/bin/sh
+case "${TVGUARD_TEST_SHADOW:-unknown}" in
+    system_home) echo 'system_home system 100' ;;
+    idle) echo 'idle general 100' ;;
+    playing) echo 'playing general 100' ;;
+    *) echo 'unknown none 0' ;;
+esac
+EOSHADOW
+chmod +x "$TMP/shadow"
 echo '0 0 0 0 0 0' > "$TMP/sample"
 echo '0 0 0 0' > "$TMP/reply"
 : > "$TMP/repair.log"
@@ -56,6 +66,7 @@ export TVGUARD_TEST_OBSERVER=disabled
 export TVGUARD_TEST_ARMED=0
 export TVGUARD_TEST_AUDIT=ok
 export TVGUARD_TEST_GATE="$TMP/gate"
+export TVGUARD_TEST_SHADOW=unknown
 # Rewrite a disposable copy only. Production controller has no env path overrides.
 CTL="$TMP/controller"
 python3 - "$ROOT/root/usr/libexec/tvguardctl" "$CTL" "$TMP" <<'PY'
@@ -67,6 +78,7 @@ mapping={
     'PATH=/usr/sbin:/usr/bin:/sbin:/bin': 'PATH='+root+'/bin:/usr/sbin:/usr/bin:/sbin:/bin',
     'FW=/usr/libexec/tvguard-fw': 'FW='+root+'/fw',
     'AUDIT=/usr/libexec/tvguard-isolation-audit': 'AUDIT='+root+'/audit',
+    'SHADOW=/usr/libexec/tvguard-shadow': 'SHADOW='+root+'/shadow',
     'RUN=/var/run/tvguard.state': 'RUN='+root+'/run/runtime',
     'DIR=/etc/tvguard': 'DIR='+root+'/state',
     'LOCK=/var/run/tvguard.lock': 'LOCK='+root+'/run/lock',
@@ -328,10 +340,62 @@ sh "$CTL" tick
 status
 after_used="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["used_seconds"])' "$TMP/status.json")"
 [ "$after_used" = "$before_used" ]
-check 'assert s["activity"] == "silent", s'
+check 'assert s["activity"] == "silent" and s["billing_state"] == "idle_silent", s'
 check 'assert s["reply_sample_status"] == "observed", s'
 check 'assert s["reply_prerouting_pps"] > 0 and s["reply_local_pps"] > 0, s'
 check 'assert s["enforce"] == 0 and s["blocked"] == 0, s'
+
+
+# Smart billing: a verified idle hint must persist for 30 seconds before
+# pausing child time. The first two 10s windows still charge conservatively.
+export TVGUARD_TEST_OBSERVER=disabled
+export TVGUARD_TEST_SHADOW=system_home
+before_smart="$(sh "$CTL" status | python3 -c 'import json,sys; print(json.load(sys.stdin)["used_seconds"])')"
+for step in 1 2 3; do
+    python3 - "$TMP/run/runtime" <<'PY'
+from pathlib import Path
+import sys,time
+p=Path(sys.argv[1])
+lines=p.read_text().splitlines()
+now=int(time.time())
+p.write_text('\n'.join(
+    'LAST_EPOCH='+str(now-10) if line.startswith('LAST_EPOCH=') else line
+    for line in lines
+)+'\n')
+PY
+    set -- $(cat "$TMP/sample")
+    echo "$(($1 + 100)) $(($2 + 10000)) $(($3 + 20)) $(($4 + 2000)) $(($5 + 70)) $(($6 + 7000))" > "$TMP/sample"
+    sh "$CTL" tick
+done
+status
+after_idle="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["used_seconds"])' "$TMP/status.json")"
+delta_idle=$((after_idle - before_smart))
+[ "$delta_idle" -ge 18 ] && [ "$delta_idle" -le 22 ]
+check 'assert s["billing_state"] == "idle_verified" and s["idle_reason"] == "system_home", s'
+check 'assert s["idle_streak_seconds"] >= 30, s'
+
+# Unknown evidence must resume charging immediately and clear the idle streak.
+export TVGUARD_TEST_SHADOW=unknown
+python3 - "$TMP/run/runtime" <<'PY'
+from pathlib import Path
+import sys,time
+p=Path(sys.argv[1])
+lines=p.read_text().splitlines()
+now=int(time.time())
+p.write_text('\n'.join(
+    'LAST_EPOCH='+str(now-10) if line.startswith('LAST_EPOCH=') else line
+    for line in lines
+)+'\n')
+PY
+set -- $(cat "$TMP/sample")
+echo "$(($1 + 120)) $(($2 + 12000)) $(($3 + 30)) $(($4 + 3000)) $(($5 + 80)) $(($6 + 8000))" > "$TMP/sample"
+before_unknown="$after_idle"
+sh "$CTL" tick
+status
+after_unknown="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["used_seconds"])' "$TMP/status.json")"
+delta_unknown=$((after_unknown - before_unknown))
+[ "$delta_unknown" -ge 9 ] && [ "$delta_unknown" -le 11 ]
+check 'assert s["billing_state"] == "charge" and s["idle_reason"] == "none" and s["idle_streak_seconds"] == 0, s'
 
 # Missing reply counters after FW3 reload must request an OBSERVER-ONLY repair
 # at most once per minute. No call to the gate is made by sync-reply.
