@@ -6,7 +6,9 @@
 set -eu
 PATH=/usr/sbin:/usr/bin:/sbin:/bin
 export PATH
-CSV=/etc/tvguard/calibration-v3.csv
+DATA=/usr/libexec/tvguard-data
+DIR="$("$DATA" root)"
+CSV="$DIR/calibration-v3.csv"
 
 [ "$#" -eq 4 ] || { echo 'unknown none 0'; exit 0; }
 for number in "$@"; do
