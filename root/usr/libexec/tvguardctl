@@ -190,8 +190,11 @@ lock() {
             esac
         fi
         i=$((i + 1))
-        [ "$i" -lt 50 ] || { echo "tvguard lock busy" >&2; exit 1; }
-        sleep 0.1
+        # BusyBox sleep on some OpenWrt/LEDE builds accepts integer seconds
+        # only. Keep the original ~5 second ceiling without relying on
+        # fractional sleep support.
+        [ "$i" -lt 6 ] || { echo "tvguard lock busy" >&2; exit 1; }
+        sleep 1
     done
     echo "$$" > "$LOCK/pid"
     trap unlock EXIT
