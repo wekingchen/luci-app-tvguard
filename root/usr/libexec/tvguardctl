@@ -9,6 +9,7 @@ export PATH
 FW=/usr/libexec/tvguard-fw
 AUDIT=/usr/libexec/tvguard-isolation-audit
 SHADOW=/usr/libexec/tvguard-shadow
+ADAPTIVE=/usr/libexec/tvguard-adaptive
 LEARN=/usr/libexec/tvguard-learn
 BUILD_ID_FILE=/usr/share/tvguard/build-id
 RUN=/var/run/tvguard.state
@@ -72,6 +73,14 @@ defaults() {
     SHADOW_LABEL=unknown
     SHADOW_APP=none
     SHADOW_SCORE=0
+    ADAPTIVE_STATE=unready
+    ADAPTIVE_SCORE=0
+    ADAPTIVE_WINDOWS=0
+    ADAPTIVE_REASON=none
+    ADAPTIVE_IDLE_CEILING=0
+    ADAPTIVE_ACTIVE_FLOOR=0
+    ADAPTIVE_P50=0
+    ADAPTIVE_P90=0
     # Billing is conservative: unknown/playing traffic charges immediately.
     # Only a sustained high-confidence idle hint may pause child billing.
     BILLING_STATE=charge
@@ -108,7 +117,16 @@ load_state() {
     fi
     case "$MODE" in child|parent|locked) :;; *) MODE=locked;; esac
     case "$BILLING_STATE" in charge|idle_verified|idle_grace|idle_silent) :;; *) BILLING_STATE=charge;; esac
-    case "$IDLE_REASON" in none|system_home|idle|paused|app_home|silent) :;; *) IDLE_REASON=none;; esac
+    case "$IDLE_REASON" in none|system_home|idle|paused|app_home|adaptive|silent) :;; *) IDLE_REASON=none;; esac
+    case "$ADAPTIVE_STATE" in unready|warming|idle|active|ambiguous) :;; *) ADAPTIVE_STATE=unready;; esac
+    for n in ADAPTIVE_SCORE ADAPTIVE_WINDOWS ADAPTIVE_IDLE_CEILING ADAPTIVE_ACTIVE_FLOOR ADAPTIVE_P50 ADAPTIVE_P90; do
+        eval "v=\$n"
+        case "$v" in ''|*[!0-9]*) eval "$n=0";; esac
+    done
+    case "$ADAPTIVE_REASON" in
+        none|no_model|need_sessions|overlap_model|need_window|clear_current|active_votes|active_median|stable_low|overlap) :;;
+        *) ADAPTIVE_REASON=none;;
+    esac
     case "$IDLE_STREAK_S" in ''|*[!0-9]*) IDLE_STREAK_S=0;; esac
     case "$IDLE_GRACE_S" in ''|*[!0-9]*) IDLE_GRACE_S=0;; esac
     case "$CAL_DURATION" in 0|60|120|180|300) :;; *) CAL_DURATION=0;; esac
@@ -161,6 +179,14 @@ TRAFFIC_CLASS=$TRAFFIC_CLASS
 SHADOW_LABEL=$SHADOW_LABEL
 SHADOW_APP=$SHADOW_APP
 SHADOW_SCORE=$SHADOW_SCORE
+ADAPTIVE_STATE=$ADAPTIVE_STATE
+ADAPTIVE_SCORE=$ADAPTIVE_SCORE
+ADAPTIVE_WINDOWS=$ADAPTIVE_WINDOWS
+ADAPTIVE_REASON=$ADAPTIVE_REASON
+ADAPTIVE_IDLE_CEILING=$ADAPTIVE_IDLE_CEILING
+ADAPTIVE_ACTIVE_FLOOR=$ADAPTIVE_ACTIVE_FLOOR
+ADAPTIVE_P50=$ADAPTIVE_P50
+ADAPTIVE_P90=$ADAPTIVE_P90
 BILLING_STATE=$BILLING_STATE
 IDLE_REASON=$IDLE_REASON
 IDLE_STREAK_S=$IDLE_STREAK_S
@@ -325,6 +351,14 @@ rollover() {
         SHADOW_LABEL=unknown
         SHADOW_APP=none
         SHADOW_SCORE=0
+        ADAPTIVE_STATE=unready
+        ADAPTIVE_SCORE=0
+        ADAPTIVE_WINDOWS=0
+        ADAPTIVE_REASON=none
+        ADAPTIVE_IDLE_CEILING=0
+        ADAPTIVE_ACTIVE_FLOOR=0
+        ADAPTIVE_P50=0
+        ADAPTIVE_P90=0
         BILLING_STATE=charge
         IDLE_REASON=none
         IDLE_STREAK_S=0
@@ -487,6 +521,33 @@ tick() {
             case "$3" in ''|*[!0-9]*) :;; *) SHADOW_SCORE="$3";; esac
         fi
     fi
+
+    ADAPTIVE_STATE=unready
+    ADAPTIVE_SCORE=0
+    ADAPTIVE_WINDOWS=0
+    ADAPTIVE_REASON=none
+    ADAPTIVE_IDLE_CEILING=0
+    ADAPTIVE_ACTIVE_FLOOR=0
+    ADAPTIVE_P50=0
+    ADAPTIVE_P90=0
+    if [ "$dt" -gt 0 ] && [ -x "$ADAPTIVE" ]; then
+        adaptive="$("$ADAPTIVE" "$NOW" "$PPS" "$TCP_PPS" "$UDP_PPS" "$BYTES_PER_S" 2>/dev/null || echo 'unready 0 0 no_model 0 0 0 0')"
+        set -- $adaptive
+        if [ "$#" -eq 8 ]; then
+            case "$1" in unready|warming|idle|active|ambiguous) ADAPTIVE_STATE="$1";; esac
+            case "$2" in ''|*[!0-9]*) :;; *) ADAPTIVE_SCORE="$2";; esac
+            case "$3" in ''|*[!0-9]*) :;; *) ADAPTIVE_WINDOWS="$3";; esac
+            case "$4" in
+                no_model|need_sessions|overlap_model|need_window|clear_current|active_votes|active_median|stable_low|overlap)
+                    ADAPTIVE_REASON="$4"
+                    ;;
+            esac
+            case "$5" in ''|*[!0-9]*) :;; *) ADAPTIVE_IDLE_CEILING="$5";; esac
+            case "$6" in ''|*[!0-9]*) :;; *) ADAPTIVE_ACTIVE_FLOOR="$6";; esac
+            case "$7" in ''|*[!0-9]*) :;; *) ADAPTIVE_P50="$7";; esac
+            case "$8" in ''|*[!0-9]*) :;; *) ADAPTIVE_P90="$8";; esac
+        fi
+    fi
     LAST_COUNT="$count"
     LAST_BYTE_COUNT="$bytes"
     LAST_TCP_COUNT="$tcp_count"
@@ -498,49 +559,48 @@ tick() {
         ACTIVITY=silent
     fi
 
-    # Billing confidence is deliberately coarser than the diagnostic scene
-    # label. Trusted idle labels share one state, while brief low-traffic
-    # ambiguity after an already verified idle gets a bounded 20-second hold.
-    # Clear playback or medium/high ambiguous traffic resumes charging at once.
+    # Adaptive Engine Phase 1 uses a learned 60-second rolling window when
+    # enough high-quality human sessions exist. It deliberately collapses the
+    # exact UI scene into idle/active/ambiguous. If the model is not ready,
+    # preserve the previous conservative shadow fallback.
     if [ "$ACTIVITY" = silent ]; then
         BILLING_STATE=idle_silent
         IDLE_REASON=silent
         IDLE_STREAK_S=0
         IDLE_GRACE_S=0
     elif [ "$dt" -gt 0 ]; then
-        case "$SHADOW_LABEL" in
-            system_home|idle|paused|app_home)
-                case "$IDLE_REASON" in
-                    system_home|idle|paused|app_home)
-                        IDLE_STREAK_S=$((IDLE_STREAK_S + dt))
-                        ;;
-                    *)
-                        IDLE_STREAK_S="$dt"
-                        ;;
-                esac
-                IDLE_REASON=idle
-                IDLE_GRACE_S=0
-                if [ "$IDLE_STREAK_S" -ge 30 ]; then
-                    BILLING_STATE=idle_verified
+        case "$ADAPTIVE_STATE" in
+            idle)
+                if [ "$IDLE_REASON" = adaptive ] &&
+                   [ "$BILLING_STATE" = idle_verified ]; then
+                    IDLE_STREAK_S=$((IDLE_STREAK_S + dt))
                 else
-                    BILLING_STATE=charge
+                    IDLE_STREAK_S=$((ADAPTIVE_WINDOWS * 10))
                 fi
+                BILLING_STATE=idle_verified
+                IDLE_REASON=adaptive
+                IDLE_GRACE_S=0
                 ;;
-            playing)
+            active)
                 BILLING_STATE=charge
                 IDLE_REASON=none
                 IDLE_STREAK_S=0
                 IDLE_GRACE_S=0
                 ;;
-            unknown)
-                case "$BILLING_STATE" in
-                    idle_verified|idle_grace)
-                        if [ "$TRAFFIC_CLASS" = low_traffic ] &&
+            ambiguous|warming)
+                # A rolling window already absorbs isolated noisy frames.
+                # If a previously verified adaptive idle has only just become
+                # ambiguous, keep at most the existing 20-second transition
+                # grace, but never across a learned active boundary.
+                case "$BILLING_STATE:$IDLE_REASON" in
+                    idle_verified:adaptive|idle_grace:adaptive)
+                        if [ "$ADAPTIVE_ACTIVE_FLOOR" -gt 0 ] &&
+                           [ "$PPS" -lt "$ADAPTIVE_ACTIVE_FLOOR" ] &&
                            [ "$IDLE_GRACE_S" -lt 20 ]; then
                             IDLE_GRACE_S=$((IDLE_GRACE_S + dt))
                             if [ "$IDLE_GRACE_S" -le 20 ]; then
                                 BILLING_STATE=idle_grace
-                                IDLE_REASON=idle
+                                IDLE_REASON=adaptive
                             else
                                 BILLING_STATE=charge
                                 IDLE_REASON=none
@@ -562,11 +622,68 @@ tick() {
                         ;;
                 esac
                 ;;
-            *)
-                BILLING_STATE=charge
-                IDLE_REASON=none
-                IDLE_STREAK_S=0
-                IDLE_GRACE_S=0
+            unready)
+                case "$SHADOW_LABEL" in
+                    system_home|idle|paused|app_home)
+                        case "$IDLE_REASON" in
+                            system_home|idle|paused|app_home)
+                                IDLE_STREAK_S=$((IDLE_STREAK_S + dt))
+                                ;;
+                            *)
+                                IDLE_STREAK_S="$dt"
+                                ;;
+                        esac
+                        IDLE_REASON=idle
+                        IDLE_GRACE_S=0
+                        if [ "$IDLE_STREAK_S" -ge 30 ]; then
+                            BILLING_STATE=idle_verified
+                        else
+                            BILLING_STATE=charge
+                        fi
+                        ;;
+                    playing)
+                        BILLING_STATE=charge
+                        IDLE_REASON=none
+                        IDLE_STREAK_S=0
+                        IDLE_GRACE_S=0
+                        ;;
+                    unknown)
+                        case "$BILLING_STATE" in
+                            idle_verified|idle_grace)
+                                if [ "$TRAFFIC_CLASS" = low_traffic ] &&
+                                   [ "$IDLE_GRACE_S" -lt 20 ]; then
+                                    IDLE_GRACE_S=$((IDLE_GRACE_S + dt))
+                                    if [ "$IDLE_GRACE_S" -le 20 ]; then
+                                        BILLING_STATE=idle_grace
+                                        IDLE_REASON=idle
+                                    else
+                                        BILLING_STATE=charge
+                                        IDLE_REASON=none
+                                        IDLE_STREAK_S=0
+                                        IDLE_GRACE_S=0
+                                    fi
+                                else
+                                    BILLING_STATE=charge
+                                    IDLE_REASON=none
+                                    IDLE_STREAK_S=0
+                                    IDLE_GRACE_S=0
+                                fi
+                                ;;
+                            *)
+                                BILLING_STATE=charge
+                                IDLE_REASON=none
+                                IDLE_STREAK_S=0
+                                IDLE_GRACE_S=0
+                                ;;
+                        esac
+                        ;;
+                    *)
+                        BILLING_STATE=charge
+                        IDLE_REASON=none
+                        IDLE_STREAK_S=0
+                        IDLE_GRACE_S=0
+                        ;;
+                esac
                 ;;
         esac
     fi
@@ -649,6 +766,7 @@ brief() {
                 idle) billing_name="已暂停（App 首页/暂停已确认）" ;;
                 paused) billing_name="已暂停（暂停已确认）" ;;
                 app_home) billing_name="已暂停（App 首页已确认）" ;;
+                adaptive) billing_name="已暂停（Adaptive 闲置已确认）" ;;
                 *) billing_name="已暂停（闲置已确认）" ;;
             esac ;;
         idle_grace) billing_name="已暂停（短暂无法判断，保持闲置）" ;;
@@ -662,6 +780,13 @@ brief() {
     printf '模式: %s\n' "$mode_name"
     printf '计时: %s\n' "$billing_name"
     printf '识别: %s · 连续闲置 %ss · 保持 %ss/20s\n' "$SHADOW_LABEL" "$IDLE_STREAK_S" "$IDLE_GRACE_S"
+    if [ "$ADAPTIVE_STATE" = unready ]; then
+        printf '自适应: 未就绪 · %s\n' "$ADAPTIVE_REASON"
+    else
+        printf '自适应: %s · %s%% · %s窗 · P50 %s / P90 %s · 边界 idle≤%s / active≥%s\n' \
+            "$ADAPTIVE_STATE" "$ADAPTIVE_SCORE" "$ADAPTIVE_WINDOWS" "$ADAPTIVE_P50" "$ADAPTIVE_P90" \
+            "$ADAPTIVE_IDLE_CEILING" "$ADAPTIVE_ACTIVE_FLOOR"
+    fi
     printf '用量: %dm%02ds · 剩余 %dm%02ds\n' "$used_m" "$used_r" "$left_m" "$left_r"
     printf '流量: %s PPS (TCP %s / UDP %s) · %s B/s\n' "$PPS" "$TCP_PPS" "$UDP_PPS" "$BYTES_PER_S"
     printf '控制: gate=%s · enforce=%s · armed=%s\n' "$firewall_state" "$ENFORCE" "$ARMED"
@@ -754,12 +879,13 @@ status() {
         cal_phase="$CAL_LAST_RESULT"
     fi
 
-    printf '{"date":"%s","mode":"%s","activity":"%s","enforce":%s,"armed":%s,"would_block":%s,"blocked":%s,"firewall_state":"%s","used_seconds":%s,"quota_seconds":%s,"bonus_seconds":%s,"bonus_undo_available":%s,"bonus_limit_seconds":%s,"policy_reason":"%s","remaining_seconds":%s,"parent_until":%s,"last_packet_epoch":%s,"packet_counter":%s,"pps":%s,"tcp_pps":%s,"udp_pps":%s,"bytes_per_second":%s,"reply_observer":"%s","reply_sample_status":"%s","reply_prerouting_pps":%s,"reply_prerouting_bps":%s,"reply_local_pps":%s,"reply_local_bps":%s,"reply_coverage":"unverified","traffic_class":"%s","shadow_label":"%s","shadow_app":"%s","shadow_score":%s,"billing_state":"%s","idle_reason":"%s","idle_streak_seconds":%s,"idle_grace_seconds":%s,"server_epoch":%s,"calibration_label":"%s","calibration_app":"%s","calibration_session":"%s","calibration_until":%s,"calibration_started":%s,"calibration_samples":%s,"calibration_duration_seconds":%s,"calibration_phase":"%s","calibration_active":%s,"calibration_elapsed_seconds":%s,"calibration_remaining_seconds":%s,"calibration_percent":%s,"calibration_last_label":"%s","calibration_last_app":"%s","calibration_last_session":"%s","calibration_last_samples":%s,"calibration_last_duration_seconds":%s,"calibration_last_finished":%s,"calibration_last_result":"%s"}\n' \
+    printf '{"date":"%s","mode":"%s","activity":"%s","enforce":%s,"armed":%s,"would_block":%s,"blocked":%s,"firewall_state":"%s","used_seconds":%s,"quota_seconds":%s,"bonus_seconds":%s,"bonus_undo_available":%s,"bonus_limit_seconds":%s,"policy_reason":"%s","remaining_seconds":%s,"parent_until":%s,"last_packet_epoch":%s,"packet_counter":%s,"pps":%s,"tcp_pps":%s,"udp_pps":%s,"bytes_per_second":%s,"reply_observer":"%s","reply_sample_status":"%s","reply_prerouting_pps":%s,"reply_prerouting_bps":%s,"reply_local_pps":%s,"reply_local_bps":%s,"reply_coverage":"unverified","traffic_class":"%s","shadow_label":"%s","shadow_app":"%s","shadow_score":%s,"adaptive_state":"%s","adaptive_score":%s,"adaptive_windows":%s,"adaptive_reason":"%s","adaptive_idle_ceiling":%s,"adaptive_active_floor":%s,"adaptive_window_p50":%s,"adaptive_window_p90":%s,"billing_state":"%s","idle_reason":"%s","idle_streak_seconds":%s,"idle_grace_seconds":%s,"server_epoch":%s,"calibration_label":"%s","calibration_app":"%s","calibration_session":"%s","calibration_until":%s,"calibration_started":%s,"calibration_samples":%s,"calibration_duration_seconds":%s,"calibration_phase":"%s","calibration_active":%s,"calibration_elapsed_seconds":%s,"calibration_remaining_seconds":%s,"calibration_percent":%s,"calibration_last_label":"%s","calibration_last_app":"%s","calibration_last_session":"%s","calibration_last_samples":%s,"calibration_last_duration_seconds":%s,"calibration_last_finished":%s,"calibration_last_result":"%s"}\n' \
         "$TODAY" "$MODE" "$ACTIVITY" "$ENFORCE" "$ARMED" "$BLOCKED" "$actual" "$firewall_state" \
         "$USED_S" "$LIMIT_S" "$BONUS_S" "$bonus_undo_available" "$bonus_limit_seconds" "$policy_reason" "$left" "$PARENT_UNTIL" \
         "$LAST_PACKET_EPOCH" "$LAST_COUNT" "$PPS" "$TCP_PPS" "$UDP_PPS" \
         "$BYTES_PER_S" "$RX_STATE" "$RX_SAMPLE_STATUS" "$RX_LAN_PPS" "$RX_LAN_BPS" \
         "$RX_LOCAL_PPS" "$RX_LOCAL_BPS" "$TRAFFIC_CLASS" "$SHADOW_LABEL" "$SHADOW_APP" "$SHADOW_SCORE" \
+        "$ADAPTIVE_STATE" "$ADAPTIVE_SCORE" "$ADAPTIVE_WINDOWS" "$ADAPTIVE_REASON" "$ADAPTIVE_IDLE_CEILING" "$ADAPTIVE_ACTIVE_FLOOR" "$ADAPTIVE_P50" "$ADAPTIVE_P90" \
         "$BILLING_STATE" "$IDLE_REASON" "$IDLE_STREAK_S" "$IDLE_GRACE_S" "$NOW" "$CAL_LABEL" "$cal_app" "$cal_session" "$CAL_UNTIL" "$CAL_STARTED" \
         "$CAL_SAMPLES" "$cal_duration" "$cal_phase" "$cal_active" "$cal_elapsed" "$cal_remaining" "$cal_percent" \
         "$CAL_LAST_LABEL" "$CAL_LAST_APP" "$CAL_LAST_SESSION" "$CAL_LAST_SAMPLES" "$CAL_LAST_DURATION" "$CAL_LAST_FINISHED" "$CAL_LAST_RESULT"
