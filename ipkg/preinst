@@ -1,0 +1,19 @@
+#!/bin/sh
+# Preserve the live UCI config before package upgrade. On a fresh firmware
+# overlay, remember that no TV Guard config existed before extraction so
+# postinst can restore the durable mmc copy instead of accepting defaults.
+[ -n "${IPKG_INSTROOT:-}" ] && exit 0
+
+MARK=/tmp/tvguard-config-restore-needed
+
+if [ -f /etc/config/tvguard ]; then
+    rm -f "$MARK"
+    if [ -x /usr/libexec/tvguard-data ]; then
+        /usr/libexec/tvguard-data backup-config >/dev/null 2>&1 || :
+    fi
+else
+    : > "$MARK"
+    chmod 600 "$MARK"
+fi
+
+exit 0
