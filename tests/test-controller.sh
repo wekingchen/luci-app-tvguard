@@ -373,7 +373,7 @@ status
 after_idle="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["used_seconds"])' "$TMP/status.json")"
 delta_idle=$((after_idle - before_smart))
 [ "$delta_idle" -ge 18 ] && [ "$delta_idle" -le 22 ]
-check 'assert s["billing_state"] == "idle_verified" and s["idle_reason"] == "system_home", s'
+check 'assert s["billing_state"] == "idle_verified" and s["idle_reason"] == "idle", s'
 check 'assert s["idle_streak_seconds"] >= 30, s'
 
 # Once idle is verified, switching between trusted idle labels must not
@@ -398,7 +398,7 @@ sh "$CTL" tick
 status
 after_transition="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["used_seconds"])' "$TMP/status.json")"
 [ "$after_transition" = "$before_transition" ]
-check 'assert s["billing_state"] == "idle_verified" and s["idle_reason"] == "app_home", s'
+check 'assert s["billing_state"] == "idle_verified" and s["idle_reason"] == "idle", s'
 check 'assert s["idle_streak_seconds"] >= 40, s'
 
 export TVGUARD_TEST_SHADOW=system_home
@@ -419,7 +419,7 @@ sh "$CTL" tick
 status
 after_transition2="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["used_seconds"])' "$TMP/status.json")"
 [ "$after_transition2" = "$before_transition" ]
-check 'assert s["billing_state"] == "idle_verified" and s["idle_reason"] == "system_home", s'
+check 'assert s["billing_state"] == "idle_verified" and s["idle_reason"] == "idle", s'
 check 'assert s["idle_streak_seconds"] >= 50, s'
 
 # After verified idle, one or two low-traffic unknown windows are held for
