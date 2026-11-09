@@ -182,7 +182,7 @@ case "$LAST_HINT" in none|idle_overlap|bursty_pause|high_ratio_pause) :;; *) LAS
 case "$LAST_TRANSITION" in none|enter|exit|checkpoint) :;; *) LAST_TRANSITION=none;; esac
 case "$TEMPORAL_LAST_HINT" in none|stable_low_plateau) :;; *) TEMPORAL_LAST_HINT=none;; esac
 for n in TEMPORAL_SCORE TEMPORAL_WINDOWS TEMPORAL_P10 TEMPORAL_P50 TEMPORAL_P90 TEMPORAL_SPREAD TEMPORAL_MAX          TEMPORAL_CANDIDATE_START TEMPORAL_CANDIDATE_SAMPLES TEMPORAL_ENTERS TEMPORAL_EXITS TEMPORAL_SECONDS          TEMPORAL_MAX_SECONDS TEMPORAL_LAST_DURATION; do
-    eval "v=\$n"
+    eval "v=\$$n"
     case "$v" in ''|*[!0-9]*) eval "$n=0";; esac
 done
 
@@ -198,7 +198,7 @@ TEMPORAL_P50=0
 TEMPORAL_P90=0
 TEMPORAL_SPREAD=0
 TEMPORAL_MAX=0
-temporal_recent="${RING}.temporal.$"
+temporal_recent="${RING}.temporal.$$"
 tail -n 12 "$RING" > "$temporal_recent" 2>/dev/null || :
 temporal_calc="$(awk -F, '
 function sortarr(a,n,    i,j,x) {
