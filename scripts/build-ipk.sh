@@ -6,7 +6,7 @@ set -eu
 
 ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
 VERSION="${1:-0.1.13}"
-RELEASE="${2:-3}"
+RELEASE="${2:-4}"
 OUT="$ROOT/dist"
 PACKAGE="luci-app-tvguard"
 ARCH="all"
@@ -27,7 +27,8 @@ for f in \
     usr/libexec/tvguard-isolation-audit \
     usr/libexec/tvguard-compat-check \
     usr/libexec/tvguard-shadow \
-    usr/libexec/tvguard-learn; do
+    usr/libexec/tvguard-learn \
+    usr/libexec/tvguard-adaptive; do
     chmod 755 "$WORK/data/$f"
 done
 
