@@ -51,6 +51,7 @@ report() {
     last="$(bytes_of "$DIR/learning-last.txt")"
     state="$(bytes_of "$DIR/state")"
     config_backup="$(bytes_of "$PERSIST_DIR/config/tvguard")"
+    soak_summary="$(bytes_of "$PERSIST_DIR/soak-summary")"
     total=$((events + v3 + v4 + sessions))
     small=$((last + state))
 
@@ -78,6 +79,7 @@ calibration-v4.csv: $v4 / 393216
 learning-sessions.csv: $sessions / 131072
 覆盖写小文件: $small bytes
 UCI 配置备份: $config_backup bytes
+Shadow Soak 持久摘要: $soak_summary bytes（覆盖写，不计入 1 MiB 追加预算）
 当前数据文件系统可用: $free_kb KiB
 Adaptive 滚动窗口: /var/run/tvguard-adaptive-window.csv（临时，最多约 12 行，不写入持久存储）
 EOF
