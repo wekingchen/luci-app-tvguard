@@ -201,6 +201,8 @@ if sh "$CTL" bonus 999 > "$TMP/out" 2>&1; then exit 1; fi
 sh "$CTL" mode parent
 status
 check 'assert s["mode"] == "parent" and s["parent_until"] == 0 and s["policy_reason"] == "none"'
+sh "$CTL" brief > "$TMP/brief"
+grep -q '计时: 已暂停（家长模式不计儿童额度）' "$TMP/brief"
 # A stale cached UI must not turn an old timed-parent request into indefinite access.
 if sh "$CTL" mode parent 30 > "$TMP/out" 2>&1; then
     echo "FAIL: legacy timed parent command was accepted" >&2
@@ -212,6 +214,8 @@ check 'assert s["mode"] == "parent" and s["parent_until"] == 0'
 sh "$CTL" mode locked
 status
 check 'assert s["mode"] == "locked" and s["would_block"] == 1 and s["blocked"] == 0'
+sh "$CTL" brief > "$TMP/brief"
+grep -q '计时: 已暂停（锁定模式）' "$TMP/brief"
 check 'assert s["policy_reason"] == "locked"'
 sh "$CTL" mode child
 
