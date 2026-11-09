@@ -181,7 +181,7 @@ function trafficName(value) {
 function shadowName(value) {
     return {
         playing: '疑似播放',
-        paused: '疑似暂停',
+        idle: '已确认闲置',\n        paused: '疑似暂停',
         app_home: '疑似应用首页',
         system_home: '疑似系统首页',
         sleep: '疑似待机',
@@ -318,7 +318,11 @@ function childPolicyNote(state) {
         return state.enforce ? '今日儿童额度已用完，正式控制会阻断联网' : '今日儿童额度已用完；观察模式下仍不会断网';
     if (state.policy_reason === 'window')
         return state.enforce ? '当前不在允许使用时段，正式控制会阻断联网' : '当前不在允许使用时段；观察模式下仍不会断网';
-    return '儿童额度会按联网活动估算消耗';
+    if (state.billing_state === 'idle_verified')
+        return '已连续确认闲置，儿童计时已暂停；一旦无法确认会立即恢复计时';
+    if (state.billing_state === 'idle_silent')
+        return '当前网络静默，儿童计时已暂停';
+    return '当前未确认闲置，按儿童使用时间继续计时';
 }
 
 function childPolicySummary(state) {
@@ -326,6 +330,10 @@ function childPolicySummary(state) {
         return '儿童额度已用完';
     if (state.policy_reason === 'window')
         return '当前不在允许时段';
+    if (state.billing_state === 'idle_verified')
+        return state.idle_reason === 'system_home' ? '系统首页 · 已暂停计时' : '已确认闲置 · 暂停计时';
+    if (state.billing_state === 'idle_silent')
+        return '网络静默 · 暂停计时';
     return '按儿童额度和时段管理';
 }
 
@@ -423,9 +431,15 @@ return view.extend({
         });
 
         n.shadowValue.textContent = shadowName(state.shadow_label);
-        n.shadowNote.textContent = state.shadow_label === 'unknown' ?
-            '当前证据不足或样本重叠，不做推断。' :
-            '仅作为实验候选，不会自动免计时。';
+        if (state.billing_state === 'idle_verified')
+            n.shadowNote.textContent = '已连续确认约 ' + String(state.idle_streak_seconds || 0) +
+                ' 秒；当前暂停儿童计时。';
+        else if (state.shadow_label === 'system_home' || state.shadow_label === 'idle')
+            n.shadowNote.textContent = '正在确认闲置；连续达到 30 秒后才暂停计时。';
+        else if (state.shadow_label === 'unknown')
+            n.shadowNote.textContent = '当前证据不足或样本重叠；按保守策略继续计时。';
+        else
+            n.shadowNote.textContent = '当前没有可靠闲置证据；继续计时。';
         n.trafficValue.textContent = trafficName(state.traffic_class);
         n.trafficNote.textContent = String(state.pps || 0) + ' PPS · ' +
             byteRate(state.bytes_per_second || 0);
