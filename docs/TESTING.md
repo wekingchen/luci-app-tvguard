@@ -1,6 +1,19 @@
 # TV Guard v0.1 · N1 联调计划
 
-> 状态：v0.1.11 已由用户于 2026-11-09 确认真机完成操作日志、移动端界面和代理兼容检查验收，并完成第一轮正式网络阻断实测：`mode=locked`、`enforce=1`、`armed=1` 时实际 gate 为 `DROP`，电视无法播放网络内容，而手机、电脑保持正常联网。恢复放行、儿童额度自动阻断、firewall reload/重启恢复及可选回程观测仍待专项验收。当前仍为开发构建，不是稳定 Release。
+> 状态：v0.1.12 已在用户 N1 完成操作日志、移动端界面、代理兼容、手动正式锁定/恢复，以及儿童额度自动阻断、奖励恢复、撤销奖励重新阻断的完整真机验证。当前剩余重点为 firewall reload / 服务或设备重启后的策略恢复，以及可选回程观测；当前仍为开发构建，不是稳定 Release。
+
+## v0.1.12 儿童额度 / 奖励自动控制真机通过 · 2026-11-09
+
+用户在电视端逐步实测并确认全部通过。本轮将工作日额度临时设为 35 分钟，以便使用已累计的儿童用量直接触发额度耗尽，然后完整验证：
+
+- 切回儿童模式后：`used_seconds=2281`、`quota_seconds=2100`、`policy_reason=quota`、`blocked=1`、`firewall_state=blocked`，`TVG_GATE` 为 `DROP`；电视实际无法联网。
+- 执行 `bonus 15` 后：`quota_seconds=3000`、`bonus_seconds=900`、`policy_reason=none`、`blocked=0`、`firewall_state=allowed`，`TVG_GATE` 切回 `RETURN`；电视实际恢复联网。
+- 执行 `bonus undo` 后：`quota_seconds=2100`、`bonus_seconds=0`、`policy_reason=quota`、`blocked=1`、`firewall_state=blocked`，`TVG_GATE` 再次为 `DROP`；电视再次断网。
+- 随后切换家长模式可恢复 `allowed`。
+- 结束测试后恢复工作日额度 60 分钟、退出正式控制并切回儿童模式，最终状态为 `enforce=0`、`armed=0`、`blocked=0`、`firewall_state=allowed`。
+- 最终 `tvguard-compat-check` 再次返回 `result=PASS`、`proxy_rules_unchanged=1`、`isolation_audit=ok`，`observe_reply=0`。
+
+该结果确认日常家庭控制的核心自动链路 **“儿童额度耗尽自动断网 → 奖励时间即时恢复 → 撤销奖励再次断网 → 家长模式放行”** 已在 N1 / iptables-legacy 真机通过。
 
 ## v0.1.12 正式控制完整手动链路真机通过 · 2026-11-09
 
