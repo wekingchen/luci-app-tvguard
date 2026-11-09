@@ -83,7 +83,7 @@ jobs:
           dash tests/test-shadow.sh
       - name: Test automatic learning-session analysis
         run: dash tests/test-learning.sh
-      - name: Test Adaptive Engine Phase 1
+      - name: Test Adaptive Engine Phase 2A pause prototypes
         run: dash tests/test-adaptive.sh
       - name: Validate unseen-app generalization and safe refusal
         run: python3 tests/test-generalization.py
@@ -113,6 +113,8 @@ jobs:
           grep -q 'tvguard-learn' scripts/build-ipk.sh
           grep -q 'tvguard-adaptive' scripts/build-ipk.sh
           grep -q 'ADAPTIVE_STATE' root/usr/libexec/tvguardctl
+          grep -q 'ADAPTIVE_PAUSE_HINT' root/usr/libexec/tvguardctl
+          grep -q 'high_ratio_pause' root/usr/libexec/tvguard-adaptive
           grep -q 'learning)' root/usr/libexec/tvguard-status
           grep -q 'system_home system 100' root/usr/libexec/tvguard-shadow
 
@@ -124,17 +126,17 @@ jobs:
       - name: Build and validate OpenWrt-compatible development IPK
         run: |
           set -eu
-          sh scripts/build-ipk.sh 0.1.13 4
-          PKG=dist/luci-app-tvguard_0.1.13-4_all.ipk
+          sh scripts/build-ipk.sh 0.1.13 5
+          PKG=dist/luci-app-tvguard_0.1.13-5_all.ipk
           test -f "$PKG"
           # OpenWrt ipkg-build uses gzip-compressed tar, not Debian ar.
           test "$(od -An -tx1 -N2 "$PKG" | tr -d ' \n')" = 1f8b
           tar -tzf "$PKG" | grep -q './control.tar.gz'
-          python3 scripts/verify-ipk.py "$PKG" 0.1.13 4
+          python3 scripts/verify-ipk.py "$PKG" 0.1.13 5
           sha256sum "$PKG"
       - name: Upload development IPK
         uses: actions/upload-artifact@v4
         with:
-          name: tvguard-v0.1.13-r4-adaptive-phase1-ipk
+          name: tvguard-v0.1.13-r5-adaptive-pause-shadow-ipk
           path: dist/*.ipk
           if-no-files-found: error
