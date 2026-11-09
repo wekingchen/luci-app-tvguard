@@ -1,0 +1,142 @@
+#!/bin/sh
+# Select and prepare TV Guard's data directory.
+# /mnt/mmcblk2p4/tvguard is the only durable store. If that mount is absent,
+# use /var/run only so firmware overlay never becomes a second persistent DB.
+set -eu
+umask 077
+PATH=/usr/sbin:/usr/bin:/sbin:/bin
+export PATH
+
+PERSIST_MOUNT=/mnt/mmcblk2p4
+PERSIST_DIR="$PERSIST_MOUNT/tvguard"
+LEGACY_DIR=/etc/tvguard
+VOLATILE_DIR=/var/run/tvguard-data
+MOUNTS=/proc/mounts
+MIGRATION_MARK="$PERSIST_DIR/.layout-v1"
+
+is_persistent_ready() {
+    [ -r "$MOUNTS" ] || return 1
+    awk -v m="$PERSIST_MOUNT" '$2==m {found=1} END {exit !found}' "$MOUNTS" &&
+        [ -d "$PERSIST_MOUNT" ] &&
+        [ -w "$PERSIST_MOUNT" ]
+}
+
+root_path() {
+    if is_persistent_ready; then
+        printf '%s\n' "$PERSIST_DIR"
+    else
+        printf '%s\n' "$VOLATILE_DIR"
+    fi
+}
+
+copy_verified_if_absent() {
+    src="$1"
+    dst="$2"
+    [ -f "$src" ] || return 0
+    [ ! -e "$dst" ] || return 0
+    tmp="${dst}.$$"
+    cp "$src" "$tmp"
+    chmod 600 "$tmp"
+    src_size="$(wc -c < "$src" | tr -d ' ')"
+    dst_size="$(wc -c < "$tmp" | tr -d ' ')"
+    [ "$src_size" = "$dst_size" ] || {
+        rm -f "$tmp"
+        return 1
+    }
+    mv -f "$tmp" "$dst"
+}
+
+seed_volatile_from_legacy() {
+    mkdir -p "$VOLATILE_DIR"
+    # Only seed an empty fallback. Once runtime has started writing here,
+    # never re-import stale overlay data.
+    [ -z "$(ls -A "$VOLATILE_DIR" 2>/dev/null || :)" ] || return 0
+    [ -d "$LEGACY_DIR" ] && [ ! -L "$LEGACY_DIR" ] || return 0
+    for name in state events.log calibration-v3.csv calibration-v4.csv learning-sessions.csv learning-last.txt; do
+        copy_verified_if_absent "$LEGACY_DIR/$name" "$VOLATILE_DIR/$name"
+    done
+}
+
+migrate_legacy_once() {
+    [ -e "$MIGRATION_MARK" ] && return 0
+    [ -d "$LEGACY_DIR" ] && [ ! -L "$LEGACY_DIR" ] || {
+        : > "$MIGRATION_MARK"
+        chmod 600 "$MIGRATION_MARK"
+        return 0
+    }
+
+    for name in state events.log calibration-v3.csv calibration-v4.csv learning-sessions.csv learning-last.txt; do
+        copy_verified_if_absent "$LEGACY_DIR/$name" "$PERSIST_DIR/$name"
+    done
+
+    : > "$MIGRATION_MARK"
+    chmod 600 "$MIGRATION_MARK"
+
+    # Remove only files we have just migrated. Unknown admin files are never
+    # deleted automatically.
+    for name in state events.log calibration-v3.csv calibration-v4.csv learning-sessions.csv learning-last.txt; do
+        if [ -f "$LEGACY_DIR/$name" ] && [ -f "$PERSIST_DIR/$name" ]; then
+            src_size="$(wc -c < "$LEGACY_DIR/$name" | tr -d ' ')"
+            dst_size="$(wc -c < "$PERSIST_DIR/$name" | tr -d ' ')"
+            [ "$src_size" = "$dst_size" ] && rm -f "$LEGACY_DIR/$name"
+        fi
+    done
+    if rmdir "$LEGACY_DIR" 2>/dev/null; then
+        ln -s "$PERSIST_DIR" "$LEGACY_DIR" 2>/dev/null || :
+    fi
+}
+
+merge_volatile() {
+    [ -d "$VOLATILE_DIR" ] || return 0
+
+    # Append-only files contain only the interval during which the durable
+    # mount was unavailable, so they can be appended once and then removed.
+    for name in events.log calibration-v3.csv calibration-v4.csv learning-sessions.csv; do
+        if [ -s "$VOLATILE_DIR/$name" ]; then
+            cat "$VOLATILE_DIR/$name" >> "$PERSIST_DIR/$name"
+            rm -f "$VOLATILE_DIR/$name"
+        fi
+    done
+
+    # Latest report is a snapshot; the fallback copy is newer by definition.
+    if [ -f "$VOLATILE_DIR/learning-last.txt" ]; then
+        tmp="$PERSIST_DIR/learning-last.txt.$$"
+        cp "$VOLATILE_DIR/learning-last.txt" "$tmp"
+        chmod 600 "$tmp"
+        mv -f "$tmp" "$PERSIST_DIR/learning-last.txt"
+        rm -f "$VOLATILE_DIR/learning-last.txt"
+    fi
+
+    # Runtime state in /var/run/tvguard.state remains authoritative within a
+    # boot. Copy fallback state only when no durable state exists.
+    copy_verified_if_absent "$VOLATILE_DIR/state" "$PERSIST_DIR/state"
+    rm -f "$VOLATILE_DIR/state" 2>/dev/null || :
+    rmdir "$VOLATILE_DIR" 2>/dev/null || :
+}
+
+prepare() {
+    if is_persistent_ready; then
+        mkdir -p "$PERSIST_DIR"
+        chmod 700 "$PERSIST_DIR"
+        migrate_legacy_once
+        merge_volatile
+    else
+        seed_volatile_from_legacy
+    fi
+}
+
+status() {
+    if is_persistent_ready; then
+        printf 'persistent|%s|mounted\n' "$PERSIST_DIR"
+    else
+        printf 'volatile|%s|persistent_mount_unavailable\n' "$VOLATILE_DIR"
+    fi
+}
+
+case "${1:-root}" in
+    root) root_path ;;
+    prepare) prepare ;;
+    status) status ;;
+    persistent-root) printf '%s\n' "$PERSIST_DIR" ;;
+    *) exit 2 ;;
+esac
