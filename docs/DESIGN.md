@@ -187,3 +187,13 @@ r12 的 P0 验收硬门槛：真实正常播放（含免费 576p/720p）不得�
 - 本轮 5 分钟流媒体播放没有出现 10 秒级零包窗口，暂未观察到 `silence_seconds=60` 的风险条件；这只降低风险，不等于跨 App/片源已经证明不存在。
 
 结论：r12 的 `TX_IDLE_BILLING_AUTHORITY=0` 方向成立。现阶段优先把 TX-only `idle/stable_low` 降级为诊断信号，而不是试图通过单一 PPS 阈值解决 576p 泛化；Redirect 与 60 秒 silence 分别作为路径/长缓冲风险继续旁路验证。
+
+### 同片源 576p 两段原始窗口对比（2026-11-09）
+
+将两次芒果 576p 正常播放的 `/var/run/tvguard-soak-window.csv` 原始 10 秒窗口直接对齐后发现：
+
+- 早期低流量段（36 窗、约 366 秒）：Adaptive `idle` 26 窗、`ambiguous` 9 窗、`active` 1 窗；PPS 中位约 21.5。自 1794230668 至 1794230919 连续约 251 秒共 25 窗全部为 `idle`，该连续段 PPS 中位约 17、P90 约 39、平均约 18.2；TCP 平均约 2.4 PPS、UDP 平均约 15.4 PPS，明显以 UDP 为主。
+- 最新 576p 段（30 窗、约 304 秒）：Adaptive `active` 11 窗、`ambiguous` 19 窗、`idle` 0 窗；PPS 中位约 75、P90 约 134；TCP 平均约 77.5 PPS、UDP 平均约 7.4 PPS，明显以 TCP 为主。
+- 两段均由现场确认画面持续播放，且均无 10 秒级零包窗口。因此“同为 576p”并不能唯一决定网络画像；CDN/传输协议/连接策略切换会让 PPS 与 TCP/UDP 结构发生数量级差异。
+- 这进一步否定了“降低一个 PPS 阈值即可解决低码率播放”的方案，也说明不能把 UDP-heavy/TCP-heavy 任一协议形态硬编码为播放或空闲。
+- r12 的安全策略应保持：Adaptive/Shadow 仍可输出 `idle/ambiguous/active` 供研究，但 TX-only `idle/stable_low` 不再获得儿童免计时授权。当前真实流媒体样本尚未出现 60 秒完全静默，因此 r12 P0 真机验证前暂不增加 recent-playback hold，避免提前引入新的关机/首页多计时副作用。
