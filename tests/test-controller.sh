@@ -1,6 +1,6 @@
 #!/bin/sh
 # Host-only functional test, never invokes actual router iptables.
-set -eux
+set -eu
 ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT HUP INT TERM
@@ -498,8 +498,9 @@ check 'assert s["billing_state"] == "idle_verified" and s["idle_reason"] == "idl
 check 'assert s["idle_streak_seconds"] >= 50, s'
 
 # After verified idle, one or two low-traffic unknown windows are held for
-# at most 20 seconds and must not consume child time. A third window expires
-# the hold and resumes charging.
+# at most 20 seconds and must not consume child time. Keep each synthetic
+# window at 9 seconds so CI wall-clock rollover cannot turn the second step
+# into 21 seconds and exercise the intentionally-expired branch instead.
 export TVGUARD_TEST_SHADOW=unknown
 for grace_step in 1 2; do
     python3 - "$TMP/run/runtime" <<'PY'
@@ -509,7 +510,7 @@ p=Path(sys.argv[1])
 lines=p.read_text().splitlines()
 now=int(time.time())
 p.write_text('\n'.join(
-    'LAST_EPOCH='+str(now-10) if line.startswith('LAST_EPOCH=') else line
+    'LAST_EPOCH='+str(now-9) if line.startswith('LAST_EPOCH=') else line
     for line in lines
 )+'\n')
 PY
