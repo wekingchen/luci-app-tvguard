@@ -1,3 +1,30 @@
+## v0.1.13-r10 Shadow Soak · 长期旁路观察
+
+在 r6 已完成 play → pause → play 真机闭环后，r10 开始 Shadow Soak。目标不是立即让 paused 自动免计时，而是先证明高流量暂停候选在日常真实观看中的假阳性率足够低。
+
+数据策略：
+- 每个有效 tick 将 already-computed Adaptive telemetry 复制给 `tvguard-soak`；
+- 原始 10 秒窗口只写 `/var/run/tvguard-soak-window.csv`，约保留最近 6 小时，超过约 2200 行自动回落到 2160 行；
+- `/var/run/tvguard-soak.state` 保存当前累计/候选会话状态，RAM-only；
+- `/mnt/mmcblk2p4/tvguard/soak-summary` 为 overwrite-only 小摘要，只在 high_ratio_pause 进入/退出或最多每小时 checkpoint 时写一次；
+- 进入/退出事件复用已有、受 256 KiB 上限保护的 `events.log`，不新增 append-only 持久日志；
+- Soak summary 不计入原有 1 MiB append-only 预算，因为它是原子覆盖写的小文件。
+
+安全隔离：
+- `tvguard-soak` 只接收 telemetry 副本；
+- 返回值没有 billing/gate 动作字段；
+- controller 只读取 transition/duration 并可记录事件；
+- 自动回归明确验证 soak enter/exit 时 `USED_S`、`billing_state`、`blocked/gate` 仍由原有逻辑决定。
+
+只读查看：
+`/usr/libexec/tvguard-status soak`
+
+CI #42609884752：static + package success。
+Package：`luci-app-tvguard_0.1.13-10_all.ipk`
+IPK SHA256：`b47d304168d38990b4b6d4885e8cdd48f148059a7ec9c236b7577186d01f6bb0`
+Artifact：`tvguard-v0.1.13-r10-shadow-soak-ipk`
+Artifact digest：`sha256:4a55bf52071c4382a4b3bb5cb638eacc6d03098fbf11b4b4daf58a15205197dc`
+
 ## v0.1.13-r9 Config Persistence · UCI 跨固件恢复
 
 r8 已将运行状态/学习数据迁到 `/mnt/mmcblk2p4/tvguard`。r9 继续把 `/etc/config/tvguard` 纳入跨固件保护，但保持 UCI 正式工作路径不变。
