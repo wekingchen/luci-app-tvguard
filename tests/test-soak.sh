@@ -101,6 +101,10 @@ done
 [ "$(wc -c < "$TMP/persist/soak-summary")" -lt 4096 ]
 
 
+# Restore production-sized ring limits after the bounded-ring test so the
+# temporal observer can inspect its full 12-window history.
+sed -i 's/MAX_LINES=5/MAX_LINES=2160/; s/TRIM_AT=7/TRIM_AT=2200/' "$DST"
+
 # P1-C temporal regression: a genuinely stable low plateau may be observed as
 # a Shadow-only candidate after ~2 minutes. It still has no billing authority.
 rm -f "$TMP/run/state" "$TMP/persist/soak-summary" "$TMP/run/ring.csv" "$TMP/run/schema"
