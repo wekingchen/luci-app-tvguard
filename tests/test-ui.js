@@ -207,8 +207,8 @@ const updates = [
     });
     page.updateOverviewUI(state);
     assert.match(page._overviewNodes.shadowValue.textContent, /自适应活跃/);
-    assert.match(page._overviewNodes.shadowNote.textContent, /高流量暂停候选/);
-    assert.match(page._overviewNodes.shadowNote.textContent, /仍按当前 active\/ambiguous 计时/);
+    assert.match(page._overviewNodes.shadowNote.textContent, /高 B\/P 重叠候选/);
+    assert.match(page._overviewNodes.shadowNote.textContent, /不代表暂停概率/);
     Object.assign(state, {
         adaptive_state: 'unready',
         adaptive_pause_hint: 'none',
