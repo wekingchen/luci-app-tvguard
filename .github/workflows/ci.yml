@@ -102,7 +102,9 @@ jobs:
           grep -q 'proxy isolation audit is not ok' root/usr/libexec/tvguardctl
           grep -q 'isolation)' root/usr/libexec/tvguard-status
           grep -q 'tvguard-isolation-audit' scripts/build-ipk.sh
-          grep -q 'tvguard-compat-check' scripts/build-ipk.sh\n          grep -q 'BILLING_STATE=idle_verified' root/usr/libexec/tvguardctl\n          grep -q 'system_home system 100' root/usr/libexec/tvguard-shadow
+          grep -q 'tvguard-compat-check' scripts/build-ipk.sh
+          grep -q 'BILLING_STATE=idle_verified' root/usr/libexec/tvguardctl
+          grep -q 'system_home system 100' root/usr/libexec/tvguard-shadow
 
   package:
     runs-on: ubuntu-latest
