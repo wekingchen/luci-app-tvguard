@@ -422,6 +422,32 @@ after_transition2="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[
 check 'assert s["billing_state"] == "idle_verified" and s["idle_reason"] == "system_home", s'
 check 'assert s["idle_streak_seconds"] >= 50, s'
 
+# After verified idle, one or two low-traffic unknown windows are held for
+# at most 20 seconds and must not consume child time. A third window expires
+# the hold and resumes charging.
+export TVGUARD_TEST_SHADOW=unknown
+for grace_step in 1 2; do
+    python3 - "$TMP/run/runtime" <<'PY'
+from pathlib import Path
+import sys,time
+p=Path(sys.argv[1])
+lines=p.read_text().splitlines()
+now=int(time.time())
+p.write_text('\n'.join(
+    'LAST_EPOCH='+str(now-10) if line.startswith('LAST_EPOCH=') else line
+    for line in lines
+)+'\n')
+PY
+    set -- $(cat "$TMP/sample")
+    echo "$(($1 + 160)) $(($2 + 30000)) $(($3 + 20)) $(($4 + 2000)) $(($5 + 140)) $(($6 + 28000))" > "$TMP/sample"
+    before_grace="$(sh "$CTL" status | python3 -c 'import json,sys; print(json.load(sys.stdin)["used_seconds"])')"
+    sh "$CTL" tick
+    status
+    after_grace="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["used_seconds"])' "$TMP/status.json")"
+    [ "$after_grace" = "$before_grace" ]
+    check 'assert s["billing_state"] == "idle_grace" and 1 <= s["idle_grace_seconds"] <= 20, s'
+done
+
 # Unknown evidence must resume charging immediately and clear the idle streak.
 export TVGUARD_TEST_SHADOW=unknown
 python3 - "$TMP/run/runtime" <<'PY'
@@ -436,7 +462,8 @@ p.write_text('\n'.join(
 )+'\n')
 PY
 set -- $(cat "$TMP/sample")
-echo "$(($1 + 120)) $(($2 + 12000)) $(($3 + 30)) $(($4 + 3000)) $(($5 + 80)) $(($6 + 8000))" > "$TMP/sample"
+# High-activity unknown must resume billing immediately.
+echo "$(($1 + 1500)) $(($2 + 120000)) $(($3 + 300)) $(($4 + 30000)) $(($5 + 1100)) $(($6 + 90000))" > "$TMP/sample"
 before_unknown="$after_idle"
 sh "$CTL" tick
 status
