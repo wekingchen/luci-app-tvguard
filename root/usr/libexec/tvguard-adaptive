@@ -143,8 +143,8 @@ END {
     for (sid in pc) {
         n=pc[sid]
         if (n<6) continue
-        delete rr
-        delete pv
+        for (z in rr) delete rr[z]
+        for (z in pv) delete pv[z]
         for (i=1;i<=n;i++) {
             rr[i]=pr[sid SUBSEP i]
             pv[i]=pp[sid SUBSEP i]
@@ -217,7 +217,8 @@ END {
     h=int(n/2)
     trend=0
     if (h>=2) {
-        delete first; delete last
+        for (z in first) delete first[z]
+        for (z in last) delete last[z]
         for (i=1;i<=h;i++) first[i]=p[i]
         j=0
         for (i=n-h+1;i<=n;i++) last[++j]=p[i]
