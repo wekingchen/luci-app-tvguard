@@ -2,6 +2,31 @@
 
 > 状态：v0.1.12 已在用户 N1 完成核心功能与可靠性真机闭环：操作日志、移动端界面、代理兼容、手动正式锁定/恢复、儿童额度与奖励自动控制、TV Guard service reload、全局 fw3/firewall reload，以及 N1 整机重启后的持久模式/额度/gate 恢复均已通过。实验性回程观测仍保持默认关闭，不作为稳定核心功能的前置条件。当前可作为首个稳定候选进入合并前收尾。
 
+## v0.1.13-r2 计费状态与页面标签解耦 · 2026-11-09
+
+用户继续在同一个视频 App 首页停留，观察到：
+- 10 PPS / TCP 2 / UDP 7 / 3643 B/s → 被显示为 `system_home`
+- 12 PPS / TCP 1 / UDP 11 / 3237 B/s → `system_home`，30 秒后暂停计时
+- 16 PPS / TCP 0 / UDP 15 / 3154 B/s → 短暂掉为 `unknown`，计时恢复并多扣 10 秒
+- 随后 11 PPS、7 PPS 又回到 `system_home` 并重新等待 30 秒确认
+
+这证明仅靠当前出站网络特征，App 首页与系统首页并不能稳定区分；继续强行输出具体页面会产生虚假精度，同时单帧 unknown 会把识别抖动放大成实际计费误差。
+
+r2 架构调整：
+- 日常计费层不再依赖具体 `system_home / app_home` 名称；已有两类闲置证据时，匹配可信低活跃包络统一输出中性 `idle`。
+- `system_home / app_home / paused / idle` 在计费层统一为可信闲置族。
+- 已达到 `idle_verified` 后，若下一帧只是 `low_traffic + unknown`，进入最多 20 秒的 `idle_grace`；保持暂停计时并等待闲置证据恢复。
+- `playing` 或中/高活跃 `unknown` 立即恢复 charge；低活跃 unknown 连续超过 20 秒也恢复 charge。
+- r2 不把“低 PPS”直接当作免费时间：20 秒保持只在**之前已经确认 idle**之后生效。
+- `brief` 增加明确构建标识和 `保持 x/20s`，避免同版本号不同测试包混淆。
+- opkg 包提升为 `0.1.13-2`，运行时构建标识为 `v0.1.13-r2-adaptive-idle`。
+
+CI #42577640545：static + package 全部通过。
+Artifact：`tvguard-v0.1.13-r2-adaptive-idle-ipk`。
+SHA256：`c1cbb5fab072a0c0e896b0ef3d2b3834136c807f65ad6b57709fa509bf279cd4`。
+
+该候选待 N1 真机验证：在同一 App 首页持续停留 2～3 分钟，允许 scene 显示 idle/unknown，但计费不应因单次低活跃 unknown 反复重启 30 秒确认。
+
 ## v0.1.13 播放显示识别分层 · 2026-11-09
 
 用户在正常播放中观察到：
