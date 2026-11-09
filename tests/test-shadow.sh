@@ -187,4 +187,39 @@ test "$(sh "$DST" 11 7 3 45852)" = 'system_home system 100'
 # Playback-level PPS can never use the launcher exception.
 test "$(sh "$DST" 98 1 96 99364)" != 'system_home system 100'
 
+# N1 playback display regression: ambiguous playback/pause overlap stays
+# unknown, while a burst clearly above all pause/home ceilings may be labelled
+# playing. Both states remain billable either way.
+python3 - "$CSV" <<'PY'
+from pathlib import Path
+import sys
+p=Path(sys.argv[1])
+rows=[]
+sid=600
+# One labelled playback session: 91-309 PPS.
+for i in range(11):
+    pps=91+i*21
+    rows.append(f"{1730800000+sid*120+i*10},{sid}-1,playing,tencent,{pps},{1+i%4},{max(1,pps-3)},{35000+i*2500}")
+sid += 1
+# One pause reference session overlapping the lower playback range: 65-157.
+for i in range(12):
+    pps=65+i*8
+    rows.append(f"{1730900000+sid*120+i*10},{sid}-1,paused,tencent,{pps},{1+i%3},{max(1,pps-4)},{26000+i*900}")
+sid += 1
+# One App-home session, 14-71.
+for i in range(12):
+    pps=14+i*5
+    rows.append(f"{1731000000+sid*120+i*10},{sid}-1,app_home,tencent,{pps},{i%2},{max(1,pps-2)},{8000+i*600}")
+# Repeated system-home evidence.
+for session in range(3):
+    sid += 1
+    for i in range(8):
+        rows.append(f"{1731100000+sid*120+i*10},{sid}-1,system_home,system,{7+i%6},{i%2},{6+i%5},{3000+i*100}")
+p.write_text("\n".join(rows)+"\n")
+PY
+# 144 PPS still overlaps the labelled pause range: do not pretend certainty.
+test "$(sh "$DST" 144 2 141 35441)" = 'unknown none 0'
+# 405 PPS is clearly beyond all local idle/pause references.
+test "$(sh "$DST" 405 79 326 48857)" = 'playing general 95'
+
 echo 'PASS: system-home idle, cross-app generic idle, overlap rejection, unknown sleep'
