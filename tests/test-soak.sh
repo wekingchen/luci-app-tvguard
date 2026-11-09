@@ -135,6 +135,30 @@ grep -qx 'TEMPORAL_LAST_DURATION=0' "$TMP/run/state"
 grep -qx 'TOTAL_SAMPLES=78' "$TMP/run/state"
 grep -qx 'HIGH_RATIO_ENTERS=3' "$TMP/run/state"
 
+# Pure or mostly silent windows are already handled by idle_silent and must
+# not pollute stable_low_plateau statistics.
+rm -f "$TMP/run/state" "$TMP/persist/soak-summary" "$TMP/run/ring.csv" "$TMP/run/schema"
+i=0
+while [ "$i" -lt 12 ]; do
+    i=$((i+1))
+    run "$((1950+i*10))" parent idle 95 idle_overlap 60 0 0 0 0 0 0 0 0 0 0 unknown >/dev/null
+done
+grep -qx 'TEMPORAL_HINT=none' "$TMP/run/state"
+grep -qx 'TEMPORAL_P50=0' "$TMP/run/state"
+grep -qx 'TEMPORAL_ENTERS=0' "$TMP/run/state"
+
+# One stray non-zero window inside an otherwise silent history is still not
+# positive idle evidence; the median must be non-zero before a plateau exists.
+rm -f "$TMP/run/state" "$TMP/persist/soak-summary" "$TMP/run/ring.csv" "$TMP/run/schema"
+i=0
+for pps in 0 0 0 0 0 0 0 0 0 0 0 5; do
+    i=$((i+1))
+    run "$((2100+i*10))" parent idle 95 idle_overlap 60 "$pps" 0 "$pps" "$((pps*300))" 0 5 0 0 0 0 unknown >/dev/null
+done
+grep -qx 'TEMPORAL_HINT=none' "$TMP/run/state"
+grep -qx 'TEMPORAL_P50=0' "$TMP/run/state"
+grep -qx 'TEMPORAL_ENTERS=0' "$TMP/run/state"
+
 # P1-C temporal regression: a genuinely stable low plateau may be observed as
 # a Shadow-only candidate after ~2 minutes. It still has no billing authority.
 rm -f "$TMP/run/state" "$TMP/persist/soak-summary" "$TMP/run/ring.csv" "$TMP/run/schema"
