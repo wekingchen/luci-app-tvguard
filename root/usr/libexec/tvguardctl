@@ -8,6 +8,7 @@ PATH=/usr/sbin:/usr/bin:/sbin:/bin
 export PATH
 FW=/usr/libexec/tvguard-fw
 AUDIT=/usr/libexec/tvguard-isolation-audit
+SHADOW=/usr/libexec/tvguard-shadow
 RUN=/var/run/tvguard.state
 DIR=/etc/tvguard
 STATE="$DIR/state"
@@ -69,6 +70,11 @@ defaults() {
     SHADOW_LABEL=unknown
     SHADOW_APP=none
     SHADOW_SCORE=0
+    # Billing is conservative: unknown/playing traffic charges immediately.
+    # Only a sustained high-confidence idle hint may pause child billing.
+    BILLING_STATE=charge
+    IDLE_REASON=none
+    IDLE_STREAK_S=0
     CAL_LABEL=none
     CAL_APP=none
     CAL_SESSION=none
@@ -96,6 +102,9 @@ load_state() {
         STATE_PRESENT=1
     fi
     case "$MODE" in child|parent|locked) :;; *) MODE=locked;; esac
+    case "$BILLING_STATE" in charge|idle_verified|idle_silent) :;; *) BILLING_STATE=charge;; esac
+    case "$IDLE_REASON" in none|system_home|idle|paused|app_home|silent) :;; *) IDLE_REASON=none;; esac
+    case "$IDLE_STREAK_S" in ''|*[!0-9]*) IDLE_STREAK_S=0;; esac
     # An enforced installation must not turn corruption/lost state into a
     # fresh, unspent child allowance after power failure.
     if [ "$ENFORCE" = 1 ] && [ "$STATE_PRESENT" = 0 ]; then
@@ -140,6 +149,9 @@ TRAFFIC_CLASS=$TRAFFIC_CLASS
 SHADOW_LABEL=$SHADOW_LABEL
 SHADOW_APP=$SHADOW_APP
 SHADOW_SCORE=$SHADOW_SCORE
+BILLING_STATE=$BILLING_STATE
+IDLE_REASON=$IDLE_REASON
+IDLE_STREAK_S=$IDLE_STREAK_S
 CAL_LABEL=$CAL_LABEL
 CAL_APP=$CAL_APP
 CAL_SESSION=$CAL_SESSION
@@ -293,6 +305,9 @@ rollover() {
         SHADOW_LABEL=unknown
         SHADOW_APP=none
         SHADOW_SCORE=0
+        BILLING_STATE=charge
+        IDLE_REASON=none
+        IDLE_STREAK_S=0
         if [ "$CAL_LABEL" != none ]; then
             finish_calibration interrupted
         fi
@@ -441,16 +456,15 @@ tick() {
     SHADOW_LABEL=unknown
     SHADOW_APP=none
     SHADOW_SCORE=0
-    if [ "$dt" -gt 0 ] && [ -x /usr/libexec/tvguard-shadow ]; then
-        guess="$(/usr/libexec/tvguard-shadow "$PPS" "$TCP_PPS" "$UDP_PPS" "$BYTES_PER_S" 2>/dev/null || echo 'unknown none 0')"
+    if [ "$dt" -gt 0 ] && [ -x "$SHADOW" ]; then
+        guess="$("$SHADOW" "$PPS" "$TCP_PPS" "$UDP_PPS" "$BYTES_PER_S" 2>/dev/null || echo 'unknown none 0')"
         set -- $guess
         if [ "$#" -eq 3 ]; then
-            case "$1" in playing|paused|app_home|system_home|sleep|unknown) SHADOW_LABEL="$1";; esac
+            case "$1" in playing|idle|paused|app_home|system_home|sleep|unknown) SHADOW_LABEL="$1";; esac
             case "$2" in general|tencent|iqiyi|mango|other|system|none) SHADOW_APP="$2";; esac
             case "$3" in ''|*[!0-9]*) :;; *) SHADOW_SCORE="$3";; esac
         fi
     fi
-    # Shadow suggestion never influences USED_S or BLOCKED.
     LAST_COUNT="$count"
     LAST_BYTE_COUNT="$bytes"
     LAST_TCP_COUNT="$tcp_count"
@@ -460,6 +474,39 @@ tick() {
         ACTIVITY=active
     else
         ACTIVITY=silent
+    fi
+
+    # v0.1.13 smart billing: do not confuse one low-traffic sample with
+    # verified idle. Unknown/playing becomes charge immediately. A high-
+    # confidence system-home or generic-idle hint must persist for 30 seconds
+    # before child billing pauses. We intentionally do not refund that
+    # confirmation window: conservative errors cost a few seconds, but a
+    # transient low-traffic playback window cannot grant free viewing.
+    if [ "$ACTIVITY" = silent ]; then
+        BILLING_STATE=idle_silent
+        IDLE_REASON=silent
+        IDLE_STREAK_S=0
+    elif [ "$dt" -gt 0 ]; then
+        case "$SHADOW_LABEL" in
+            system_home|idle|paused|app_home)
+                if [ "$IDLE_REASON" = "$SHADOW_LABEL" ]; then
+                    IDLE_STREAK_S=$((IDLE_STREAK_S + dt))
+                else
+                    IDLE_REASON="$SHADOW_LABEL"
+                    IDLE_STREAK_S="$dt"
+                fi
+                if [ "$IDLE_STREAK_S" -ge 30 ]; then
+                    BILLING_STATE=idle_verified
+                else
+                    BILLING_STATE=charge
+                fi
+                ;;
+            *)
+                BILLING_STATE=charge
+                IDLE_REASON=none
+                IDLE_STREAK_S=0
+                ;;
+        esac
     fi
 
     if [ "$CAL_LABEL" != none ]; then
@@ -504,9 +551,11 @@ tick() {
         CAL_UNTIL=0
     fi
 
-    # Count children's network-use session, not claimed screen time.
-    # Both manual lock and quota exhaustion exclude blocked packets from billing.
-    if [ "$MODE" = child ] && [ "$ACTIVITY" = active ] && [ "$dt" -gt 0 ]; then
+    # Count conservatively in child mode. Network silence pauses as before;
+    # sustained verified idle also pauses. Unknown, playing and an idle
+    # candidate still inside its 30-second confirmation window all charge.
+    if [ "$MODE" = child ] && [ "$ACTIVITY" = active ] && [ "$dt" -gt 0 ] &&
+       [ "$BILLING_STATE" != idle_verified ]; then
         if [ "$ENFORCE" != 1 ] || [ "$BLOCKED" != 1 ]; then
             USED_S=$((USED_S + dt))
         fi
@@ -573,13 +622,13 @@ status() {
         cal_phase="$CAL_LAST_RESULT"
     fi
 
-    printf '{"date":"%s","mode":"%s","activity":"%s","enforce":%s,"armed":%s,"would_block":%s,"blocked":%s,"firewall_state":"%s","used_seconds":%s,"quota_seconds":%s,"bonus_seconds":%s,"bonus_undo_available":%s,"bonus_limit_seconds":%s,"policy_reason":"%s","remaining_seconds":%s,"parent_until":%s,"last_packet_epoch":%s,"packet_counter":%s,"pps":%s,"tcp_pps":%s,"udp_pps":%s,"bytes_per_second":%s,"reply_observer":"%s","reply_sample_status":"%s","reply_prerouting_pps":%s,"reply_prerouting_bps":%s,"reply_local_pps":%s,"reply_local_bps":%s,"reply_coverage":"unverified","traffic_class":"%s","shadow_label":"%s","shadow_app":"%s","shadow_score":%s,"server_epoch":%s,"calibration_label":"%s","calibration_app":"%s","calibration_session":"%s","calibration_until":%s,"calibration_started":%s,"calibration_samples":%s,"calibration_phase":"%s","calibration_active":%s,"calibration_elapsed_seconds":%s,"calibration_remaining_seconds":%s,"calibration_percent":%s,"calibration_last_label":"%s","calibration_last_app":"%s","calibration_last_session":"%s","calibration_last_samples":%s,"calibration_last_finished":%s,"calibration_last_result":"%s"}\n' \
+    printf '{"date":"%s","mode":"%s","activity":"%s","enforce":%s,"armed":%s,"would_block":%s,"blocked":%s,"firewall_state":"%s","used_seconds":%s,"quota_seconds":%s,"bonus_seconds":%s,"bonus_undo_available":%s,"bonus_limit_seconds":%s,"policy_reason":"%s","remaining_seconds":%s,"parent_until":%s,"last_packet_epoch":%s,"packet_counter":%s,"pps":%s,"tcp_pps":%s,"udp_pps":%s,"bytes_per_second":%s,"reply_observer":"%s","reply_sample_status":"%s","reply_prerouting_pps":%s,"reply_prerouting_bps":%s,"reply_local_pps":%s,"reply_local_bps":%s,"reply_coverage":"unverified","traffic_class":"%s","shadow_label":"%s","shadow_app":"%s","shadow_score":%s,"billing_state":"%s","idle_reason":"%s","idle_streak_seconds":%s,"server_epoch":%s,"calibration_label":"%s","calibration_app":"%s","calibration_session":"%s","calibration_until":%s,"calibration_started":%s,"calibration_samples":%s,"calibration_phase":"%s","calibration_active":%s,"calibration_elapsed_seconds":%s,"calibration_remaining_seconds":%s,"calibration_percent":%s,"calibration_last_label":"%s","calibration_last_app":"%s","calibration_last_session":"%s","calibration_last_samples":%s,"calibration_last_finished":%s,"calibration_last_result":"%s"}\n' \
         "$TODAY" "$MODE" "$ACTIVITY" "$ENFORCE" "$ARMED" "$BLOCKED" "$actual" "$firewall_state" \
         "$USED_S" "$LIMIT_S" "$BONUS_S" "$bonus_undo_available" "$bonus_limit_seconds" "$policy_reason" "$left" "$PARENT_UNTIL" \
         "$LAST_PACKET_EPOCH" "$LAST_COUNT" "$PPS" "$TCP_PPS" "$UDP_PPS" \
         "$BYTES_PER_S" "$RX_STATE" "$RX_SAMPLE_STATUS" "$RX_LAN_PPS" "$RX_LAN_BPS" \
         "$RX_LOCAL_PPS" "$RX_LOCAL_BPS" "$TRAFFIC_CLASS" "$SHADOW_LABEL" "$SHADOW_APP" "$SHADOW_SCORE" \
-        "$NOW" "$CAL_LABEL" "$cal_app" "$cal_session" "$CAL_UNTIL" "$CAL_STARTED" \
+        "$BILLING_STATE" "$IDLE_REASON" "$IDLE_STREAK_S" "$NOW" "$CAL_LABEL" "$cal_app" "$cal_session" "$CAL_UNTIL" "$CAL_STARTED" \
         "$CAL_SAMPLES" "$cal_phase" "$cal_active" "$cal_elapsed" "$cal_remaining" "$cal_percent" \
         "$CAL_LAST_LABEL" "$CAL_LAST_APP" "$CAL_LAST_SESSION" "$CAL_LAST_SAMPLES" "$CAL_LAST_FINISHED" "$CAL_LAST_RESULT"
 }
