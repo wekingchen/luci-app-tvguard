@@ -134,32 +134,7 @@ grep -qx 'TEMPORAL_SPREAD=8' "$TMP/run/state"
 # State must persist across ticks instead of being reset to zero.
 run 2630 parent idle 95 idle_overlap 60 6 1 5 1800 6 13 250 350 0 0 idle >/dev/null
 grep -qx 'TEMPORAL_ENTERS=1' "$TMP/run/state"
-grep -Eq '^TEMPORAL_CANDIDATE_SAMPLES=[2-9][0-9]*
-# Real N1 regression: confirmed continuous Mango 576p playback entered a
-# low-traffic UDP-heavy regime for ~251 seconds. Its burst cadence must NOT
-# trigger stable_low_plateau even though many individual windows are <=20 PPS.
-rm -f "$TMP/run/state" "$TMP/persist/soak-summary" "$TMP/run/ring.csv" "$TMP/run/schema"
-i=0
-for pps in 26 3 23 4 24 2 18 10 16 15 11 35 3 25 2 41 2 41 2 39 3 32 22 39 17; do
-    i=$((i+1))
-    run "$((3000+i*10))" parent idle 95 idle_overlap 60 "$pps" 1 "$((pps>1 ? pps-1 : 0))" 3000 17 39 200 500 0 0 unknown >/dev/null
-done
-grep -qx 'TEMPORAL_HINT=none' "$TMP/run/state"
-grep -qx 'TEMPORAL_ENTERS=0' "$TMP/run/state"
-
-# A TCP-heavy confirmed 576p regime also stays outside the candidate.
-rm -f "$TMP/run/state" "$TMP/persist/soak-summary" "$TMP/run/ring.csv" "$TMP/run/schema"
-i=0
-for pps in 69 163 116 59 76 87 75 84 70 148 48 77 104 167 105 120 114 75 64 67 40 73 46 41 72 52 69 88 134 55; do
-    i=$((i+1))
-    run "$((4000+i*10))" parent ambiguous 50 none 0 "$pps" "$((pps>8 ? pps-8 : 0))" 8 8000 75 134 100 200 0 0 unknown >/dev/null
-done
-grep -qx 'TEMPORAL_HINT=none' "$TMP/run/state"
-grep -qx 'TEMPORAL_ENTERS=0' "$TMP/run/state"
-
-
-echo 'PASS: Shadow Soak keeps bounded telemetry and rejects real 576p temporal false positives'
- "$TMP/run/state"
+grep -qx 'TEMPORAL_CANDIDATE_SAMPLES=2' "$TMP/run/state"
 
 # Real N1 regression: confirmed continuous Mango 576p playback entered a
 # low-traffic UDP-heavy regime for ~251 seconds. Its burst cadence must NOT
