@@ -1,0 +1,74 @@
+#!/bin/sh
+# Read-only Shadow Soak report.
+set -eu
+PATH=/usr/sbin:/usr/bin:/sbin:/bin
+export PATH
+
+DATA=/usr/libexec/tvguard-data
+PERSIST="$("$DATA" persistent-root)/soak-summary"
+STATE=/var/run/tvguard-soak.state
+RING=/var/run/tvguard-soak-window.csv
+
+src="$STATE"
+[ -r "$src" ] || src="$PERSIST"
+
+if [ ! -r "$src" ]; then
+    echo "Shadow Soak"
+    echo "状态: 尚无数据"
+    echo "说明: 安装 Soak 版本后会自动开始旁路观察；不会改变计时或防火墙。"
+    exit 0
+fi
+
+LAST_HINT=none
+CANDIDATE_START=0
+CANDIDATE_SAMPLES=0
+CANDIDATE_ACTIVE_SAMPLES=0
+CANDIDATE_AMBIGUOUS_SAMPLES=0
+TOTAL_SAMPLES=0
+HIGH_RATIO_SAMPLES=0
+HIGH_RATIO_ENTERS=0
+HIGH_RATIO_EXITS=0
+HIGH_RATIO_SECONDS=0
+MAX_HIGH_RATIO_SECONDS=0
+CHECKPOINT_EPOCH=0
+LAST_EPOCH=0
+LAST_ADAPTIVE_STATE=unready
+LAST_PAUSE_HINT=none
+LAST_PAUSE_SCORE=0
+LAST_PPS=0
+LAST_P50=0
+LAST_P90=0
+LAST_BP50=0
+LAST_BP90=0
+LAST_ACTIVE_HITS=0
+LAST_TREND=0
+
+. "$src"
+
+ring_lines="$(wc -l < "$RING" 2>/dev/null || echo 0)"
+ring_bytes="$(wc -c < "$RING" 2>/dev/null || echo 0)"
+summary_bytes="$(wc -c < "$PERSIST" 2>/dev/null || echo 0)"
+case "$ring_lines" in ''|*[!0-9]*) ring_lines=0;; esac
+case "$ring_bytes" in ''|*[!0-9]*) ring_bytes=0;; esac
+case "$summary_bytes" in ''|*[!0-9]*) summary_bytes=0;; esac
+
+candidate_age=0
+if [ "$LAST_HINT" = high_ratio_pause ] && [ "$CANDIDATE_START" -gt 0 ] && [ "$LAST_EPOCH" -ge "$CANDIDATE_START" ]; then
+    candidate_age=$((LAST_EPOCH - CANDIDATE_START))
+fi
+
+echo "Shadow Soak"
+echo "状态: 运行中（仅旁路观察）"
+echo "总样本: $TOTAL_SAMPLES"
+echo "高流量暂停候选样本: $HIGH_RATIO_SAMPLES"
+echo "候选进入/退出: $HIGH_RATIO_ENTERS / $HIGH_RATIO_EXITS"
+echo "已结束候选累计时长: $HIGH_RATIO_SECONDS 秒"
+echo "最长已结束候选: $MAX_HIGH_RATIO_SECONDS 秒"
+echo "当前候选: $LAST_HINT · 持续约 $candidate_age 秒 · $CANDIDATE_SAMPLES 窗"
+echo "当前候选内 Adaptive active/ambiguous 窗: $CANDIDATE_ACTIVE_SAMPLES / $CANDIDATE_AMBIGUOUS_SAMPLES"
+echo "最后状态: adaptive=$LAST_ADAPTIVE_STATE pause=$LAST_PAUSE_HINT score=$LAST_PAUSE_SCORE"
+echo "最后窗口: PPS $LAST_PPS · P50/P90 $LAST_P50/$LAST_P90 · B/P $LAST_BP50/$LAST_BP90 · active_hits $LAST_ACTIVE_HITS · trend $LAST_TREND%"
+echo "RAM 原始环: $ring_lines/约2200 行 · $ring_bytes bytes"
+echo "持久摘要: $summary_bytes bytes"
+echo "最近持久 checkpoint: $CHECKPOINT_EPOCH"
+echo "说明: 原始窗口只在 /var/run，重启即清空；持久层只保存小型摘要。Shadow Soak 不参与 USED_S、billing_state 或 firewall gate。"
