@@ -1,6 +1,19 @@
 # TV Guard v0.1 · N1 联调计划
 
-> 状态：v0.1.12 已在用户 N1 完成操作日志、移动端界面、代理兼容、手动正式锁定/恢复，以及儿童额度自动阻断、奖励恢复、撤销奖励重新阻断的完整真机验证。当前剩余重点为 firewall reload / 服务或设备重启后的策略恢复，以及可选回程观测；当前仍为开发构建，不是稳定 Release。
+> 状态：v0.1.12 已在用户 N1 完成操作日志、移动端界面、代理兼容、手动正式锁定/恢复、儿童额度与奖励自动控制，以及 TV Guard 自身 service reload 的策略保持真机验证。当前剩余重点为全局 firewall reload、设备重启后的策略恢复，以及可选回程观测；当前仍为开发构建，不是稳定 Release。
+
+## v0.1.12 TV Guard service reload 策略保持真机通过 · 2026-11-09
+
+用户在 N1 正式控制开启状态下验证 `/etc/init.d/tvguard reload`：
+
+- reload 前处于 `mode=locked`、`enforce=1`、`armed=1`，状态为 `blocked=1`、`firewall_state=blocked`。
+- reload 前后 `tvguardd` PID 均为 `27433`，证明 reload 没有重启 daemon。
+- reload 后仍保持 `mode=locked`、`blocked=1`，`TVG_GATE` 仍为 `DROP`，现场计数 6 packets / 1972 bytes。
+- 保持正式控制开启，切换 `mode parent` 后再次执行 service reload，状态仍为 `blocked=0`、`firewall_state=allowed`，`TVG_GATE` 保持 `RETURN`。
+- 退出正式控制并恢复儿童模式后，最终 `tvguard-compat-check` 再次返回 `result=PASS`、`proxy_rules_unchanged=1`、`isolation_audit=ok`、`gate=allowed`。
+- 整轮测试中自动回滚保护正常可终止，未观察到代理或其他设备受影响。
+
+该结果确认 TV Guard 自身 service reload **不会重启 daemon，也不会丢失当前正式控制策略**。
 
 ## v0.1.12 儿童额度 / 奖励自动控制真机通过 · 2026-11-09
 
