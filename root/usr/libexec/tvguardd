@@ -1,6 +1,8 @@
 #!/bin/sh
 # Keep time accounting independent of the LuCI page lifecycle.
 trap 'exit 0' TERM INT
+/usr/libexec/tvguard-retention trim >/dev/null 2>&1 || \
+    logger -t tvguard "storage retention check failed; continuing with existing bounded writers"
 while :; do
     /usr/libexec/tvguardctl tick ||
         logger -t tvguard "sample/update failed; keeping existing firewall gate"
