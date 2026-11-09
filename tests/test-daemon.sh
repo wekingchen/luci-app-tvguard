@@ -14,6 +14,18 @@ printf 'ctl:%s\n' "$*" >> "$TVG_DAEMON_LOG"
 exit "${TVG_TICK_EXIT:-0}"
 SH
 
+cat > "$TMP/data" <<'SH'
+#!/bin/sh
+printf 'data:%s\n' "$*" >> "$TVG_DAEMON_LOG"
+exit 0
+SH
+
+cat > "$TMP/retention" <<'SH'
+#!/bin/sh
+printf 'retention:%s\n' "$*" >> "$TVG_DAEMON_LOG"
+exit 0
+SH
+
 cat > "$TMP/logger" <<'SH'
 #!/bin/sh
 printf 'logger:%s\n' "$*" >> "$TVG_DAEMON_LOG"
@@ -25,7 +37,7 @@ cat > "$TMP/sleep" <<'SH'
 printf 'sleep:%s\n' "$*" >> "$TVG_DAEMON_LOG"
 exit 0
 SH
-chmod +x "$TMP/ctl" "$TMP/logger" "$TMP/sleep"
+chmod +x "$TMP/ctl" "$TMP/data" "$TMP/retention" "$TMP/logger" "$TMP/sleep"
 export TVG_DAEMON_LOG="$LOG"
 
 DAEMON="$TMP/daemon"
@@ -35,6 +47,8 @@ import sys
 src,dst,tmp=sys.argv[1:]
 text=Path(src).read_text()
 text=text.replace('/usr/libexec/tvguardctl', tmp+'/ctl')
+text=text.replace('/usr/libexec/tvguard-data', tmp+'/data')
+text=text.replace('/usr/libexec/tvguard-retention', tmp+'/retention')
 text=text.replace('logger -t tvguard', tmp+'/logger -t tvguard')
 text=text.replace('sleep 10', tmp+'/sleep 10')
 # Execute exactly one production loop body.
@@ -47,8 +61,54 @@ chmod +x "$DAEMON"
 export TVG_TICK_EXIT=0
 : > "$LOG"
 sh "$DAEMON"
+grep -q '^data:prepare
+
+# Failed tick: log only; daemon loop still reaches the normal sleep.
+export TVG_TICK_EXIT=7
+: > "$LOG"
+sh "$DAEMON"
 grep -q '^ctl:tick$' "$LOG"
+grep -q '^logger:-t tvguard sample/update failed; keeping existing firewall gate$' "$LOG"
 grep -q '^sleep:10$' "$LOG"
+
+echo "PASS: daemon tick failure is logged without gate mutation and preserves 10-second cadence"
+ "$LOG"
+grep -q '^retention:trim
+
+# Failed tick: log only; daemon loop still reaches the normal sleep.
+export TVG_TICK_EXIT=7
+: > "$LOG"
+sh "$DAEMON"
+grep -q '^ctl:tick$' "$LOG"
+grep -q '^logger:-t tvguard sample/update failed; keeping existing firewall gate$' "$LOG"
+grep -q '^sleep:10$' "$LOG"
+
+echo "PASS: daemon tick failure is logged without gate mutation and preserves 10-second cadence"
+ "$LOG"
+grep -q '^ctl:tick
+
+# Failed tick: log only; daemon loop still reaches the normal sleep.
+export TVG_TICK_EXIT=7
+: > "$LOG"
+sh "$DAEMON"
+grep -q '^ctl:tick$' "$LOG"
+grep -q '^logger:-t tvguard sample/update failed; keeping existing firewall gate$' "$LOG"
+grep -q '^sleep:10$' "$LOG"
+
+echo "PASS: daemon tick failure is logged without gate mutation and preserves 10-second cadence"
+ "$LOG"
+grep -q '^sleep:10
+
+# Failed tick: log only; daemon loop still reaches the normal sleep.
+export TVG_TICK_EXIT=7
+: > "$LOG"
+sh "$DAEMON"
+grep -q '^ctl:tick$' "$LOG"
+grep -q '^logger:-t tvguard sample/update failed; keeping existing firewall gate$' "$LOG"
+grep -q '^sleep:10$' "$LOG"
+
+echo "PASS: daemon tick failure is logged without gate mutation and preserves 10-second cadence"
+ "$LOG"
 ! grep -q '^logger:' "$LOG"
 
 # Failed tick: log only; daemon loop still reaches the normal sleep.
