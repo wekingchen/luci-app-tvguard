@@ -197,3 +197,17 @@ r12 的 P0 验收硬门槛：真实正常播放（含免费 576p/720p）不得�
 - 两段均由现场确认画面持续播放，且均无 10 秒级零包窗口。因此“同为 576p”并不能唯一决定网络画像；CDN/传输协议/连接策略切换会让 PPS 与 TCP/UDP 结构发生数量级差异。
 - 这进一步否定了“降低一个 PPS 阈值即可解决低码率播放”的方案，也说明不能把 UDP-heavy/TCP-heavy 任一协议形态硬编码为播放或空闲。
 - r12 的安全策略应保持：Adaptive/Shadow 仍可输出 `idle/ambiguous/active` 供研究，但 TX-only `idle/stable_low` 不再获得儿童免计时授权。当前真实流媒体样本尚未出现 60 秒完全静默，因此 r12 P0 真机验证前暂不增加 recent-playback hold，避免提前引入新的关机/首页多计时副作用。
+
+### r12 P0 第一阶段真机验收（2026-11-09）
+
+真机安装 Actions run 42636829888（#446）产物，构建标识 `v0.1.13-r12-low-bitrate-p0`、包版本 `0.1.13-12`；`TX_IDLE_BILLING_AUTHORITY=0`、`tvguard-isolation-audit=ok`，`enforce=0`。
+
+芒果 576p 正常连续播放，儿童模式下：
+
+- 测试前 22:44:36：`used_seconds=6662`，Adaptive `idle/stable_low`，P50/P90=20/26，`billing_state=charge`。
+- 约 2 分钟 22:47:29：`used_seconds=6829`（+167 秒），Adaptive 仍为 `idle/stable_low`，P50/P90=23/62，`billing_state=charge`。
+- 约 5 分钟 22:50:30：`used_seconds=7018`（相对测试前 +356 秒），Adaptive 仍为 `idle/stable_low`，P50/P90=14/37，`billing_state=charge`。
+- 以 status 的 `server_epoch` 计，测试前至末次检查约 354 秒，而 `used_seconds` 增加 356 秒，误差仅为轮询/采样边界量级；未出现因 Adaptive `idle` 而停止儿童扣时。
+- Shadow Soak 继续旁路运行，暂停线索/idle_overlap 没有获得 `USED_S` 或 firewall gate 权限。
+
+结论：**r12 P0 第一阶段真机通过。** 已实证切断 `TX-only idle/stable_low → idle_verified/free time` 的危险链。下一阶段仍需在不破坏此安全底线的前提下恢复“高可信首页/真正暂停免计时”的体验能力，并继续旁路验证 Redirect、IPv6、长静默等观测完整性风险。
