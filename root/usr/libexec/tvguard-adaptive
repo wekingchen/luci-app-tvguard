@@ -60,10 +60,12 @@ $6=="completed" && $18=="high" {
     }
 }
 END {
+    af=active_p10_min
+    if (af<0) af=0
     if (idle_n>=2 && active_n>=2)
-        printf "ready %d %d %d %d %d\n", idle_n,active_n,pause_n,idle_p50_max,active_p10_min>0?active_p10_min:0
+        printf "ready %d %d %d %d %d\n", idle_n,active_n,pause_n,idle_p50_max,af
     else
-        printf "unready %d %d %d %d %d\n", idle_n,active_n,pause_n,idle_p50_max,active_p10_min>0?active_p10_min:0
+        printf "unready %d %d %d %d %d\n", idle_n,active_n,pause_n,idle_p50_max,af
 }' "$MODEL")"
 
 set -- $model
