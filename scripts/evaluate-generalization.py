@@ -81,10 +81,19 @@ def evaluate(rows, script_path):
         csv_path = directory / "calibration-v3.csv"
         shadow = directory / "tvguard-shadow"
         source = script_path.read_text(encoding="utf-8")
-        anchor = "CSV=/etc/tvguard/calibration-v3.csv"
-        if source.count(anchor) != 1:
-            raise ValueError("shadow script no longer exposes expected CSV path")
-        shadow.write_text(source.replace(anchor, "CSV=" + str(csv_path)), encoding="utf-8")
+        durable_anchor = (
+            'DATA=/usr/libexec/tvguard-data\n'
+            'DIR="$("$DATA" root)"\n'
+            'CSV="$DIR/calibration-v3.csv"'
+        )
+        legacy_anchor = "CSV=/etc/tvguard/calibration-v3.csv"
+        if source.count(durable_anchor) == 1:
+            source = source.replace(durable_anchor, "CSV=" + str(csv_path), 1)
+        elif source.count(legacy_anchor) == 1:
+            source = source.replace(legacy_anchor, "CSV=" + str(csv_path), 1)
+        else:
+            raise ValueError("shadow script no longer exposes an injectable calibration path")
+        shadow.write_text(source, encoding="utf-8")
 
         for holdout in apps:
             train = [row for row in rows if row[3] != holdout]
