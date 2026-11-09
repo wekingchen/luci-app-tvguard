@@ -1,3 +1,17 @@
+## v0.1.13-r4 Adaptive Phase 1 · N1 真机通过 · 2026-11-09
+
+N1 已完成 r4 真机验证，`idle ↔ active` 状态切换稳定：
+
+- 首页/低活跃状态可稳定进入 Adaptive idle；
+- 旧 shadow_label 偶发漂移不再导致计时状态反复清零；
+- 正常播放可稳定进入 Adaptive active；
+- idle → active 恢复计时稳定；
+- active → idle 可重新收敛为闲置；
+- 本轮验证未发现 Phase 1 滚动窗口破坏 firewall/gate 行为。
+
+因此将 `v0.1.13-r4-adaptive-phase1` 标记为当前 Adaptive Engine Phase 1 真机通过基线。
+暂停仍不在 Phase 1 的免计时范围内；paused-like 流量继续按 `ambiguous → charge` 处理，待 Phase 2 增强证据后再评估。
+
 ## v0.1.13-r4 Adaptive Engine Phase 1 · 2026-11-09
 
 N1 已完成四状态人工学习，机器可读高质量会话显示：
