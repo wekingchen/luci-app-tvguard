@@ -41,18 +41,18 @@ Path(path).write_text("\n".join(rows)+"\n")
 PY
 
 # No App is provided at prediction time: the output is universal.
-test "$(sh "$DST" 180 30 150 65000)" = 'playing general 0'
-test "$(sh "$DST" 85 5 80 30000)" = 'paused general 0'
-test "$(sh "$DST" 30 1 28 16000)" = 'app_home general 0'
-test "$(sh "$DST" 8 1 7 2800)" = 'system_home system 0'
+test "$(sh "$DST" 180 30 150 65000)" = 'playing general 100'
+test "$(sh "$DST" 85 5 80 30000)" = 'idle general 100'
+test "$(sh "$DST" 30 1 28 16000)" = 'idle general 100'
+test "$(sh "$DST" 8 1 7 2800)" = 'system_home system 100'
 test "$(sh "$DST" 5000 10 4990 9000000)" = 'unknown none 0'
 test "$(sh "$DST" 0 0 0 0)" = 'unknown none 0'
 
-# With fewer than 2 different video applications, no generic inference.
+# With fewer than 2 different video applications, generic app-idle inference stays off;\n# repeated device-level system-home evidence may still be recognized safely.
 grep -v ',iqiyi,' "$CSV" > "$TMP/oneapp.csv"
 mv "$TMP/oneapp.csv" "$CSV"
 test "$(sh "$DST" 180 30 150 65000)" = 'unknown none 0'
-test "$(sh "$DST" 8 1 7 2800)" = 'unknown none 0'
+test "$(sh "$DST" 8 1 7 2800)" = 'system_home system 100'
 
 # A second app restored, but one whole pause class missing: abstain.
 python3 - "$CSV" <<'PY'
@@ -94,6 +94,6 @@ for app in ("tencent","iqiyi"):
 p.write_text("\n".join(rows)+"\n")
 PY
 test "$(sh "$DST" 100 2 97 50000)" = 'unknown none 0'
-test "$(sh "$DST" 25 1 23 12000)" = 'app_home general 0'
+test "$(sh "$DST" 25 1 23 12000)" = 'idle general 100'
 
-echo 'PASS: universal shadow hints, multiple-app evidence, overlap rejection, unknown sleep'
+echo 'PASS: system-home idle, cross-app generic idle, overlap rejection, unknown sleep'
