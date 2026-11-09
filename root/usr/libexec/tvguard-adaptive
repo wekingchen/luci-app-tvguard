@@ -1,0 +1,168 @@
+#!/bin/sh
+# TV Guard Adaptive Engine Phase 1.
+# Learns conservative idle/active boundaries from completed high-quality
+# human-labelled sessions, then classifies a rolling window. It never touches
+# firewall state and does not mutate the learned session database.
+set -eu
+PATH=/usr/sbin:/usr/bin:/sbin:/bin
+export PATH
+
+DIR=/etc/tvguard
+MODEL="$DIR/learning-sessions.csv"
+WINDOW=/var/run/tvguard-adaptive-window.csv
+
+[ "$#" -eq 5 ] || {
+    echo "usage: tvguard-adaptive EPOCH PPS TCP_PPS UDP_PPS BPS" >&2
+    exit 2
+}
+now="$1"; pps="$2"; tcp="$3"; udp="$4"; bps="$5"
+for n in "$now" "$pps" "$tcp" "$udp" "$bps"; do
+    case "$n" in ''|*[!0-9]*) echo "non-numeric adaptive sample" >&2; exit 2;; esac
+done
+
+mkdir -p /var/run
+tmp="${WINDOW}.$$"
+: > "$tmp"
+if [ -s "$WINDOW" ]; then
+    last_epoch="$(tail -n 1 "$WINDOW" 2>/dev/null | cut -d, -f1)"
+    case "$last_epoch" in
+        ''|*[!0-9]*) last_epoch=0 ;;
+    esac
+    gap=$((now - last_epoch))
+    if [ "$gap" -ge 0 ] && [ "$gap" -le 30 ]; then
+        tail -n 11 "$WINDOW" >> "$tmp" 2>/dev/null || :
+    fi
+fi
+printf '%s,%s,%s,%s,%s\n' "$now" "$pps" "$tcp" "$udp" "$bps" >> "$tmp"
+chmod 600 "$tmp"
+mv -f "$tmp" "$WINDOW"
+
+# Output fields:
+# state score windows reason idle_ceiling active_floor window_p50 window_p90
+if [ ! -s "$MODEL" ]; then
+    windows="$(wc -l < "$WINDOW" | tr -d ' ')"
+    echo "unready 0 $windows no_model 0 0 0 0"
+    exit 0
+fi
+
+model="$(awk -F, '
+$6=="completed" && $18=="high" {
+    label=$3
+    if (label=="system_home" || label=="app_home") {
+        idle_n++
+        if (idle_n==1 || $11+0>idle_p50_max) idle_p50_max=$11+0
+        if (idle_n==1 || $12+0>idle_p90_max) idle_p90_max=$12+0
+    } else if (label=="playing") {
+        active_n++
+        if (active_n==1 || $10+0<active_p10_min) active_p10_min=$10+0
+    } else if (label=="paused") {
+        pause_n++
+    }
+}
+END {
+    if (idle_n>=2 && active_n>=2)
+        printf "ready %d %d %d %d %d\n", idle_n,active_n,pause_n,idle_p50_max,active_p10_min>0?active_p10_min:0
+    else
+        printf "unready %d %d %d %d %d\n", idle_n,active_n,pause_n,idle_p50_max,active_p10_min>0?active_p10_min:0
+}' "$MODEL")"
+
+set -- $model
+model_state="$1"; idle_sessions="$2"; active_sessions="$3"; pause_sessions="$4"
+idle_p50_max="$5"; active_floor="$6"
+windows="$(wc -l < "$WINDOW" | tr -d ' ')"
+
+if [ "$model_state" != ready ]; then
+    echo "unready 0 $windows need_sessions 0 $active_floor 0 0"
+    exit 0
+fi
+
+# Derive the conservative idle ceiling from the highest P90 among completed
+# high-quality home sessions. The margin is learned from the gap to the
+# lowest high-quality playing P10, capped so a wide gap cannot become lax.
+idle_p90_max="$(awk -F, '
+$6=="completed" && $18=="high" && ($3=="system_home" || $3=="app_home") {
+    if (!seen || $12+0>m) m=$12+0
+    seen=1
+}
+END { print seen?m:0 }' "$MODEL")"
+gap=$((active_floor - idle_p90_max))
+[ "$gap" -gt 0 ] || {
+    echo "unready 0 $windows overlap_model 0 $active_floor 0 0"
+    exit 0
+}
+margin=$((gap / 8))
+[ "$margin" -ge 5 ] || margin=5
+[ "$margin" -le 15 ] || margin=15
+idle_ceiling=$((idle_p90_max + margin))
+[ "$idle_ceiling" -lt "$active_floor" ] || idle_ceiling=$((active_floor - 1))
+midpoint=$(((idle_ceiling + active_floor) / 2))
+idle_median_ceiling=$((idle_p50_max + 10))
+[ "$idle_median_ceiling" -le "$idle_ceiling" ] || idle_median_ceiling="$idle_ceiling"
+
+recent="${WINDOW}.recent.$$"
+tail -n 6 "$WINDOW" > "$recent"
+trap 'rm -f "$recent"' EXIT HUP INT TERM
+
+calc="$(awk -F, -v idle="$idle_ceiling" -v active="$active_floor" '
+function sortv(a,n, i,j,x) {
+    for (i=2;i<=n;i++) {
+        x=a[i]; j=i-1
+        while (j>=1 && a[j]>x) { a[j+1]=a[j]; j-- }
+        a[j+1]=x
+    }
+}
+{
+    n++
+    p[n]=$2+0
+    if ($2+0<=idle) idle_n++
+    if ($2+0>=active) active_n++
+}
+END {
+    if (n<1) { print "0 0 0 0"; exit }
+    sortv(p,n)
+    p50=p[int((n+1)/2)]
+    idx=int((n*9+9)/10); if (idx<1) idx=1; if (idx>n) idx=n
+    p90=p[idx]
+    printf "%d %d %d %d\n", n,p50,p90,active_n
+}' "$recent")"
+set -- $calc
+n="$1"; p50="$2"; p90="$3"; active_hits="$4"
+
+if [ "$n" -lt 4 ]; then
+    echo "warming 0 $n need_window $idle_ceiling $active_floor $p50 $p90"
+    exit 0
+fi
+
+# Clear current playback evidence always wins immediately.
+if [ "$pps" -ge "$active_floor" ]; then
+    echo "active 100 $n clear_current $idle_ceiling $active_floor $p50 $p90"
+    exit 0
+fi
+
+# Two clear active windows inside the last minute are enough to avoid a low
+# median masking real playback bursts.
+if [ "$active_hits" -ge 2 ]; then
+    echo "active 95 $n active_votes $idle_ceiling $active_floor $p50 $p90"
+    exit 0
+fi
+
+# A sustained median above the learned safety gap is active. This catches
+# playback such as ~115 PPS even if the current frame is below active P10.
+if [ "$p50" -ge "$midpoint" ]; then
+    echo "active 85 $n active_median $idle_ceiling $active_floor $p50 $p90"
+    exit 0
+fi
+
+# Idle requires a low median AND a low P90. This is deliberately stricter
+# than just "most frames are small", so the learned bursty pause profile does
+# not automatically become free time in Phase 1.
+if [ "$p50" -le "$idle_median_ceiling" ] && [ "$p90" -le "$idle_ceiling" ]; then
+    score=90
+    [ "$n" -ge 6 ] && score=95
+    echo "idle $score $n stable_low $idle_ceiling $active_floor $p50 $p90"
+    exit 0
+fi
+
+# Pause-like and other overlap regions remain billable until later phases
+# have enough evidence to distinguish them safely.
+echo "ambiguous 50 $n overlap $idle_ceiling $active_floor $p50 $p90"
