@@ -70,13 +70,23 @@ case "${1:-}" in
 esac
 SH
 
+cat > "$TMP/data" <<'SH'
+#!/bin/sh
+case "${1:-root}" in
+    root|persistent-root) printf '%s\n' "$TVG_TEST_DATA" ;;
+    status) printf 'persistent|%s|mounted\n' "$TVG_TEST_DATA" ;;
+    prepare) : ;;
+    *) exit 2 ;;
+esac
+SH
+
 cat > "$TMP/audit" <<'SH'
 #!/bin/sh
 printf '%s\n' "${TVG_AUDIT_STATE:-ok}"
 [ "${TVG_AUDIT_STATE:-ok}" = ok ]
 SH
 
-chmod +x "$TMP/bin/uci" "$TMP/fw" "$TMP/audit"
+chmod +x "$TMP/bin/uci" "$TMP/fw" "$TMP/data" "$TMP/audit"
 echo 0 > "$TMP/gate"
 : > "$TMP/gate.log"
 
@@ -84,6 +94,7 @@ export TVG_UCI_ENFORCE="$TMP/uci.enforce"
 export TVG_UCI_ARMED="$TMP/uci.armed"
 export TVG_UCI_LOG="$TMP/uci.log"
 export TVG_GATE_FILE="$TMP/gate"
+export TVG_TEST_DATA="$TMP/state"
 export TVG_GATE_LOG="$TMP/gate.log"
 export TVG_AUDIT_STATE=ok
 
@@ -97,8 +108,8 @@ mapping={
     'PATH=/usr/sbin:/usr/bin:/sbin:/bin':'PATH='+tmp+'/bin:/usr/bin:/bin',
     'FW=/usr/libexec/tvguard-fw':'FW='+tmp+'/fw',
     'AUDIT=/usr/libexec/tvguard-isolation-audit':'AUDIT='+tmp+'/audit',
+    'DATA=/usr/libexec/tvguard-data':'DATA='+tmp+'/data',
     'RUN=/var/run/tvguard.state':'RUN='+tmp+'/run/runtime',
-    'DIR=/etc/tvguard':'DIR='+tmp+'/state',
     'LOCK=/var/run/tvguard.lock':'LOCK='+tmp+'/run/lock',
 }
 for before,after in mapping.items():
