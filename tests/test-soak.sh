@@ -37,6 +37,32 @@ chmod +x "$DST"
 
 run() { sh "$DST" "$@"; }
 
+# r10 -> r11 migration: old summaries have no SOAK_SCHEMA/protocol sums. v2
+# must start a clean evidence epoch instead of dividing new protocol sums by
+# old candidate/sample counters.
+cat > "$TMP/persist/soak-summary" <<'EOF'
+TOTAL_SAMPLES=132
+HIGH_RATIO_SAMPLES=31
+HIGH_RATIO_ENTERS=8
+HIGH_RATIO_EXITS=7
+HIGH_RATIO_SECONDS=239
+MAX_HIGH_RATIO_SECONDS=83
+LAST_HINT=high_ratio_pause
+CANDIDATE_START=900
+CANDIDATE_SAMPLES=8
+CHECKPOINT_EPOCH=900
+EOF
+rm -f "$TMP/run/state"
+out="$(run 1000 parent active 100 none 0 170 20 140 80000 160 230 300 500 4 0 playing)"
+echo "$out" | grep -q '^none '
+grep -qx 'SOAK_SCHEMA=v2' "$TMP/run/state"
+grep -qx 'TOTAL_SAMPLES=1' "$TMP/run/state"
+grep -qx 'HIGH_RATIO_SAMPLES=0' "$TMP/run/state"
+grep -qx 'HIGH_RATIO_ENTERS=0' "$TMP/run/state"
+
+# Reset the synthetic migration fixture before the main transition scenario.
+rm -f "$TMP/run/state" "$TMP/persist/soak-summary" "$TMP/run/ring.csv" "$TMP/run/schema"
+
 # Normal playback: no overlap transition.
 out="$(run 1000 parent active 100 none 0 170 20 140 80000 160 230 300 500 4 0 playing)"
 echo "$out" | grep -q '^none '
