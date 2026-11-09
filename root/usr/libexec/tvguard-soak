@@ -232,7 +232,7 @@ TEMPORAL_SPREAD=$((TEMPORAL_P90 - TEMPORAL_P10))
 [ "$TEMPORAL_SPREAD" -ge 0 ] || TEMPORAL_SPREAD=0
 if [ "$TEMPORAL_WINDOWS" -ge 12 ] &&
    [ "$TEMPORAL_P90" -le 20 ] &&
-   [ "$TEMPORAL_SPREAD" -le 5 ] &&
+   [ "$TEMPORAL_SPREAD" -le 10 ] &&
    [ "$TEMPORAL_MAX" -le 25 ]; then
     TEMPORAL_HINT=stable_low_plateau
     TEMPORAL_SCORE=70
