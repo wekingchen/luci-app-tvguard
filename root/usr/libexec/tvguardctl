@@ -125,10 +125,20 @@ load_state() {
     case "$BILLING_STATE" in charge|idle_verified|idle_grace|idle_silent) :;; *) BILLING_STATE=charge;; esac
     case "$IDLE_REASON" in none|system_home|idle|paused|app_home|adaptive|silent) :;; *) IDLE_REASON=none;; esac
     case "$ADAPTIVE_STATE" in unready|warming|idle|active|ambiguous) :;; *) ADAPTIVE_STATE=unready;; esac
-    for n in ADAPTIVE_SCORE ADAPTIVE_WINDOWS ADAPTIVE_IDLE_CEILING ADAPTIVE_ACTIVE_FLOOR ADAPTIVE_P50 ADAPTIVE_P90 ADAPTIVE_PAUSE_SCORE ADAPTIVE_BP50 ADAPTIVE_BP90 ADAPTIVE_ACTIVE_HITS ADAPTIVE_TREND_PCT; do
-        eval "v=\${$n}"
-        case "$v" in ''|*[!0-9-]*) eval "$n=0";; esac
-    done
+    case "$ADAPTIVE_SCORE" in ''|*[!0-9]*) ADAPTIVE_SCORE=0;; esac
+    case "$ADAPTIVE_WINDOWS" in ''|*[!0-9]*) ADAPTIVE_WINDOWS=0;; esac
+    case "$ADAPTIVE_IDLE_CEILING" in ''|*[!0-9]*) ADAPTIVE_IDLE_CEILING=0;; esac
+    case "$ADAPTIVE_ACTIVE_FLOOR" in ''|*[!0-9]*) ADAPTIVE_ACTIVE_FLOOR=0;; esac
+    case "$ADAPTIVE_P50" in ''|*[!0-9]*) ADAPTIVE_P50=0;; esac
+    case "$ADAPTIVE_P90" in ''|*[!0-9]*) ADAPTIVE_P90=0;; esac
+    case "$ADAPTIVE_PAUSE_SCORE" in ''|*[!0-9]*) ADAPTIVE_PAUSE_SCORE=0;; esac
+    case "$ADAPTIVE_BP50" in ''|*[!0-9]*) ADAPTIVE_BP50=0;; esac
+    case "$ADAPTIVE_BP90" in ''|*[!0-9]*) ADAPTIVE_BP90=0;; esac
+    case "$ADAPTIVE_ACTIVE_HITS" in ''|*[!0-9]*) ADAPTIVE_ACTIVE_HITS=0;; esac
+    case "$ADAPTIVE_TREND_PCT" in
+        -[0-9]*|[0-9]*) :;;
+        *) ADAPTIVE_TREND_PCT=0;;
+    esac
     case "$ADAPTIVE_PAUSE_HINT" in none|idle_overlap|bursty_pause|high_ratio_pause) :;; *) ADAPTIVE_PAUSE_HINT=none;; esac
     case "$ADAPTIVE_REASON" in
         none|no_model|need_sessions|overlap_model|need_window|clear_current|active_votes|active_median|stable_low|overlap) :;;
