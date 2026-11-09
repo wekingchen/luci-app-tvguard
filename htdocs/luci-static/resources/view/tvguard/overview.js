@@ -181,7 +181,8 @@ function trafficName(value) {
 function shadowName(value) {
     return {
         playing: '疑似播放',
-        idle: '已确认闲置',\n        paused: '疑似暂停',
+        idle: '已确认闲置',
+        paused: '疑似暂停',
         app_home: '疑似应用首页',
         system_home: '疑似系统首页',
         sleep: '疑似待机',
