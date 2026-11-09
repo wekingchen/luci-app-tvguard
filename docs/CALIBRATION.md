@@ -127,3 +127,14 @@ python3 scripts/evaluate-generalization.py calibration-v3.csv
 
 最近一次人类可读结果写入 `/etc/tvguard/learning-last.txt`；机器可读会话摘要追加到 `/etc/tvguard/learning-sessions.csv`。这些会话摘要是后续 Adaptive Engine Phase 1 建立滚动窗口画像的输入，不是新的固定阈值表。
 
+## Phase 2 方向：暂停画像与双向特征
+
+Phase 1 真机确认 idle/active 稳定后，Phase 2 聚焦最难的 `paused`：
+
+- 继续保留 `paused` 为独立人工 ground-truth 标签；
+- 暂停画像不直接合并进 idle；
+- 优先增加滚动窗口中的波动特征（burst rate、P50/P90 gap、TCP/UDP 比例、bytes-per-packet）；
+- `observe_reply=0` 仍保持默认，双向流量只在显式启用的实验采集里写入 `calibration-v4.csv`；
+- 在证明 RX 特征能稳定提高 paused 与 playing 的分离度之前，reply observer 不参与正式计费；
+- 只有完成多会话真机验证后，才考虑让高置信 paused 进入免计时集合。
+
