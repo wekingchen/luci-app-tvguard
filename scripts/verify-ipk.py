@@ -48,7 +48,7 @@ for field in (
 ):
     if field not in metadata.splitlines():
         raise SystemExit(f"FAIL: missing opkg metadata {field}")
-for name in ("postinst", "prerm"):
+for name in ("preinst", "postinst", "prerm"):
     assert control[name][0].mode & 0o111, f"{name} is not executable"
 for name in (
     "etc/config/tvguard",
@@ -63,6 +63,7 @@ for name in (
     "usr/libexec/tvguard-adaptive",
     "usr/libexec/tvguard-retention",
     "usr/libexec/tvguard-data",
+    "usr/share/tvguard/default-config",
     "www/luci-static/resources/view/tvguard/overview.js",
 ):
     if name not in data:
