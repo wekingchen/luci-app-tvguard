@@ -2,6 +2,18 @@
 
 > 状态：v0.1.11 已由用户于 2026-11-09 确认真机完成操作日志、移动端界面和代理兼容检查验收，并完成第一轮正式网络阻断实测：`mode=locked`、`enforce=1`、`armed=1` 时实际 gate 为 `DROP`，电视无法播放网络内容，而手机、电脑保持正常联网。恢复放行、儿童额度自动阻断、firewall reload/重启恢复及可选回程观测仍待专项验收。当前仍为开发构建，不是稳定 Release。
 
+## v0.1.12 正式控制完整手动链路真机通过 · 2026-11-09
+
+用户在 N1 上完成 v0.1.12 的完整手动控制链路验证：
+
+- `mode=locked`、`enforce=1`、`armed=1` 时，状态为 `blocked=1`、`firewall_state=blocked`，`TVG_GATE` 为 `DROP`；现场计数 63 packets / 26866 bytes，电视实际断网。
+- **没有关闭 enforce**，直接执行 `mode parent` 后，状态变为 `would_block=0`、`blocked=0`、`firewall_state=allowed`，`TVG_GATE` 原位切回 `RETURN`；现场计数 2147 packets / 578531 bytes，电视实际恢复联网。
+- 随后退出正式控制并恢复儿童模式，最终为 `enforce=0`、`armed=0`、`gate=allowed`。
+- 最终再次运行 `tvguard-compat-check`：`result=PASS`、`proxy_rules_unchanged=1`、`isolation_audit=ok`、`observe_reply=0`。
+- 用户同时确认断网与恢复网络的实际体验均正常。
+
+该结果正式确认 **“家长放行 → 手动锁定断网 → 家长模式即时恢复 → 安全退出正式控制”** 的完整核心链路已在 N1 / iptables-legacy 真机通过。
+
 ## v0.1.12 N1 升级验证 · 2026-11-09
 
 用户已在 N1 从 `0.1.11-1` 升级到 `0.1.12-1`，现场确认：
