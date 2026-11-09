@@ -13,6 +13,8 @@ case "$2" in
     tvguard.main.enforce) echo "${TVG_COMPAT_ENFORCE:-0}" ;;
     tvguard.main.allow_enforcement) echo "${TVG_COMPAT_ARMED:-0}" ;;
     tvguard.main.observe_reply) echo "${TVG_COMPAT_OBSERVE:-0}" ;;
+    firewall.@defaults[0].flow_offloading) echo "${TVG_COMPAT_FLOW_SW:-0}" ;;
+    firewall.@defaults[0].flow_offloading_hw) echo "${TVG_COMPAT_FLOW_HW:-0}" ;;
     firewall.tvguard) echo "${TVG_COMPAT_INCLUDE_TYPE:-include}" ;;
     firewall.tvguard.type) echo "${TVG_COMPAT_INCLUDE_MODE:-script}" ;;
     firewall.tvguard.path) echo "${TVG_COMPAT_INCLUDE_PATH:-/usr/libexec/tvguard-firewall-include}" ;;
@@ -104,6 +106,8 @@ export TVG_COMPAT_TABLE_DIR="$TMP/tables"
 export TVG_COMPAT_ENFORCE=0
 export TVG_COMPAT_ARMED=0
 export TVG_COMPAT_OBSERVE=0
+export TVG_COMPAT_FLOW_SW=0
+export TVG_COMPAT_FLOW_HW=0
 export TVG_COMPAT_AUDIT=ok
 export TVG_COMPAT_GATE=allowed
 export TVG_COMPAT_FAIL_TABLE=none
@@ -116,8 +120,732 @@ export TVG_COMPAT_MUTATE=tvg_only
 sh "$CHECK" > "$TMP/pass"
 grep -q '^result=PASS$' "$TMP/pass"
 grep -q '^proxy_rules_unchanged=1$' "$TMP/pass"
-grep -q '^isolation_audit=ok$' "$TMP/pass"
+grep -q '^isolation_audit=ok
+cat > "$TMP/tables/raw" <<'EOF'
+-A PREROUTING -p tcp -j EXISTING_PROXY_RAW
+-N TVG_RAW
+-A PREROUTING -i br-lan -s 192.168.101.76/32 -j TVG_RAW
+EOF
+export TVG_COMPAT_MUTATE=foreign
+if sh "$CHECK" > "$TMP/fail" 2>&1; then
+    echo "FAIL: compatibility check accepted a changed proxy rule set" >&2
+    exit 1
+fi
+grep -q '^reason=non_tvg_rules_changed$' "$TMP/fail"
+
+# Unsafe operating switches must fail before the TVG sync path runs.
+cat > "$TMP/tables/raw" <<'EOF'
+-A PREROUTING -p tcp -j EXISTING_PROXY_RAW
+-N TVG_RAW
+-A PREROUTING -i br-lan -s 192.168.101.76/32 -j TVG_RAW
+EOF
+export TVG_COMPAT_MUTATE=none
+export TVG_COMPAT_ENFORCE=1
+if sh "$CHECK" > "$TMP/fail-mode" 2>&1; then
+    echo "FAIL: compatibility check ran while enforcement was enabled" >&2
+    exit 1
+fi
+grep -q '^reason=enforce_must_be_0$' "$TMP/fail-mode"
+export TVG_COMPAT_ENFORCE=0
+
+export TVG_COMPAT_ARMED=1
+if sh "$CHECK" > "$TMP/fail-armed" 2>&1; then exit 1; fi
+grep -q '^reason=allow_enforcement_must_be_0$' "$TMP/fail-armed"
+export TVG_COMPAT_ARMED=0
+
+export TVG_COMPAT_OBSERVE=1
+if sh "$CHECK" > "$TMP/fail-observe" 2>&1; then exit 1; fi
+grep -q '^reason=observe_reply_must_be_0$' "$TMP/fail-observe"
+export TVG_COMPAT_OBSERVE=0
+
+export TVG_COMPAT_AUDIT='unsafe:test'
+if sh "$CHECK" > "$TMP/fail-audit" 2>&1; then exit 1; fi
+grep -q '^reason=isolation_before_unsafe:test$' "$TMP/fail-audit"
+export TVG_COMPAT_AUDIT=ok
+
+export TVG_COMPAT_GATE=blocked
+if sh "$CHECK" > "$TMP/fail-gate" 2>&1; then exit 1; fi
+grep -q '^reason=gate_before_blocked$' "$TMP/fail-gate"
+export TVG_COMPAT_GATE=allowed
+
+export TVG_COMPAT_FAIL_TABLE=mangle
+if sh "$CHECK" > "$TMP/fail-table" 2>&1; then exit 1; fi
+grep -q '^reason=snapshot_before_unavailable$' "$TMP/fail-table"
+export TVG_COMPAT_FAIL_TABLE=none
+
+export TVG_COMPAT_MUTATE=fail
+if sh "$CHECK" > "$TMP/fail-sync" 2>&1; then exit 1; fi
+grep -q '^reason=tvguard_sync_failed$' "$TMP/fail-sync"
+export TVG_COMPAT_MUTATE=none
+
+export TVG_COMPAT_INCLUDE_PATH=/usr/libexec/foreign-firewall-include
+if sh "$CHECK" > "$TMP/fail-include" 2>&1; then exit 1; fi
+grep -q '^reason=firewall_include_path_unexpected$' "$TMP/fail-include"
+export TVG_COMPAT_INCLUDE_PATH=/usr/libexec/tvguard-firewall-include
+
+echo "PASS: compatibility checker validates safe switches, audit/gate, snapshots, sync and firewall include ownership"
+ "$TMP/pass"
+grep -q '^flow_offloading_uci=0
+cat > "$TMP/tables/raw" <<'EOF'
+-A PREROUTING -p tcp -j EXISTING_PROXY_RAW
+-N TVG_RAW
+-A PREROUTING -i br-lan -s 192.168.101.76/32 -j TVG_RAW
+EOF
+export TVG_COMPAT_MUTATE=foreign
+if sh "$CHECK" > "$TMP/fail" 2>&1; then
+    echo "FAIL: compatibility check accepted a changed proxy rule set" >&2
+    exit 1
+fi
+grep -q '^reason=non_tvg_rules_changed$' "$TMP/fail"
+
+# Unsafe operating switches must fail before the TVG sync path runs.
+cat > "$TMP/tables/raw" <<'EOF'
+-A PREROUTING -p tcp -j EXISTING_PROXY_RAW
+-N TVG_RAW
+-A PREROUTING -i br-lan -s 192.168.101.76/32 -j TVG_RAW
+EOF
+export TVG_COMPAT_MUTATE=none
+export TVG_COMPAT_ENFORCE=1
+if sh "$CHECK" > "$TMP/fail-mode" 2>&1; then
+    echo "FAIL: compatibility check ran while enforcement was enabled" >&2
+    exit 1
+fi
+grep -q '^reason=enforce_must_be_0$' "$TMP/fail-mode"
+export TVG_COMPAT_ENFORCE=0
+
+export TVG_COMPAT_ARMED=1
+if sh "$CHECK" > "$TMP/fail-armed" 2>&1; then exit 1; fi
+grep -q '^reason=allow_enforcement_must_be_0$' "$TMP/fail-armed"
+export TVG_COMPAT_ARMED=0
+
+export TVG_COMPAT_OBSERVE=1
+if sh "$CHECK" > "$TMP/fail-observe" 2>&1; then exit 1; fi
+grep -q '^reason=observe_reply_must_be_0$' "$TMP/fail-observe"
+export TVG_COMPAT_OBSERVE=0
+
+export TVG_COMPAT_AUDIT='unsafe:test'
+if sh "$CHECK" > "$TMP/fail-audit" 2>&1; then exit 1; fi
+grep -q '^reason=isolation_before_unsafe:test$' "$TMP/fail-audit"
+export TVG_COMPAT_AUDIT=ok
+
+export TVG_COMPAT_GATE=blocked
+if sh "$CHECK" > "$TMP/fail-gate" 2>&1; then exit 1; fi
+grep -q '^reason=gate_before_blocked$' "$TMP/fail-gate"
+export TVG_COMPAT_GATE=allowed
+
+export TVG_COMPAT_FAIL_TABLE=mangle
+if sh "$CHECK" > "$TMP/fail-table" 2>&1; then exit 1; fi
+grep -q '^reason=snapshot_before_unavailable$' "$TMP/fail-table"
+export TVG_COMPAT_FAIL_TABLE=none
+
+export TVG_COMPAT_MUTATE=fail
+if sh "$CHECK" > "$TMP/fail-sync" 2>&1; then exit 1; fi
+grep -q '^reason=tvguard_sync_failed$' "$TMP/fail-sync"
+export TVG_COMPAT_MUTATE=none
+
+export TVG_COMPAT_INCLUDE_PATH=/usr/libexec/foreign-firewall-include
+if sh "$CHECK" > "$TMP/fail-include" 2>&1; then exit 1; fi
+grep -q '^reason=firewall_include_path_unexpected$' "$TMP/fail-include"
+export TVG_COMPAT_INCLUDE_PATH=/usr/libexec/tvguard-firewall-include
+
+echo "PASS: compatibility checker validates safe switches, audit/gate, snapshots, sync and firewall include ownership"
+ "$TMP/pass"
+grep -q '^flow_offloading_hw_uci=0
+cat > "$TMP/tables/raw" <<'EOF'
+-A PREROUTING -p tcp -j EXISTING_PROXY_RAW
+-N TVG_RAW
+-A PREROUTING -i br-lan -s 192.168.101.76/32 -j TVG_RAW
+EOF
+export TVG_COMPAT_MUTATE=foreign
+if sh "$CHECK" > "$TMP/fail" 2>&1; then
+    echo "FAIL: compatibility check accepted a changed proxy rule set" >&2
+    exit 1
+fi
+grep -q '^reason=non_tvg_rules_changed$' "$TMP/fail"
+
+# Unsafe operating switches must fail before the TVG sync path runs.
+cat > "$TMP/tables/raw" <<'EOF'
+-A PREROUTING -p tcp -j EXISTING_PROXY_RAW
+-N TVG_RAW
+-A PREROUTING -i br-lan -s 192.168.101.76/32 -j TVG_RAW
+EOF
+export TVG_COMPAT_MUTATE=none
+export TVG_COMPAT_ENFORCE=1
+if sh "$CHECK" > "$TMP/fail-mode" 2>&1; then
+    echo "FAIL: compatibility check ran while enforcement was enabled" >&2
+    exit 1
+fi
+grep -q '^reason=enforce_must_be_0$' "$TMP/fail-mode"
+export TVG_COMPAT_ENFORCE=0
+
+export TVG_COMPAT_ARMED=1
+if sh "$CHECK" > "$TMP/fail-armed" 2>&1; then exit 1; fi
+grep -q '^reason=allow_enforcement_must_be_0$' "$TMP/fail-armed"
+export TVG_COMPAT_ARMED=0
+
+export TVG_COMPAT_OBSERVE=1
+if sh "$CHECK" > "$TMP/fail-observe" 2>&1; then exit 1; fi
+grep -q '^reason=observe_reply_must_be_0$' "$TMP/fail-observe"
+export TVG_COMPAT_OBSERVE=0
+
+export TVG_COMPAT_AUDIT='unsafe:test'
+if sh "$CHECK" > "$TMP/fail-audit" 2>&1; then exit 1; fi
+grep -q '^reason=isolation_before_unsafe:test$' "$TMP/fail-audit"
+export TVG_COMPAT_AUDIT=ok
+
+export TVG_COMPAT_GATE=blocked
+if sh "$CHECK" > "$TMP/fail-gate" 2>&1; then exit 1; fi
+grep -q '^reason=gate_before_blocked$' "$TMP/fail-gate"
+export TVG_COMPAT_GATE=allowed
+
+export TVG_COMPAT_FAIL_TABLE=mangle
+if sh "$CHECK" > "$TMP/fail-table" 2>&1; then exit 1; fi
+grep -q '^reason=snapshot_before_unavailable$' "$TMP/fail-table"
+export TVG_COMPAT_FAIL_TABLE=none
+
+export TVG_COMPAT_MUTATE=fail
+if sh "$CHECK" > "$TMP/fail-sync" 2>&1; then exit 1; fi
+grep -q '^reason=tvguard_sync_failed$' "$TMP/fail-sync"
+export TVG_COMPAT_MUTATE=none
+
+export TVG_COMPAT_INCLUDE_PATH=/usr/libexec/foreign-firewall-include
+if sh "$CHECK" > "$TMP/fail-include" 2>&1; then exit 1; fi
+grep -q '^reason=firewall_include_path_unexpected$' "$TMP/fail-include"
+export TVG_COMPAT_INCLUDE_PATH=/usr/libexec/tvguard-firewall-include
+
+echo "PASS: compatibility checker validates safe switches, audit/gate, snapshots, sync and firewall include ownership"
+ "$TMP/pass"
+grep -q '^flowoffload_rule_present=0
+cat > "$TMP/tables/raw" <<'EOF'
+-A PREROUTING -p tcp -j EXISTING_PROXY_RAW
+-N TVG_RAW
+-A PREROUTING -i br-lan -s 192.168.101.76/32 -j TVG_RAW
+EOF
+export TVG_COMPAT_MUTATE=foreign
+if sh "$CHECK" > "$TMP/fail" 2>&1; then
+    echo "FAIL: compatibility check accepted a changed proxy rule set" >&2
+    exit 1
+fi
+grep -q '^reason=non_tvg_rules_changed$' "$TMP/fail"
+
+# Unsafe operating switches must fail before the TVG sync path runs.
+cat > "$TMP/tables/raw" <<'EOF'
+-A PREROUTING -p tcp -j EXISTING_PROXY_RAW
+-N TVG_RAW
+-A PREROUTING -i br-lan -s 192.168.101.76/32 -j TVG_RAW
+EOF
+export TVG_COMPAT_MUTATE=none
+export TVG_COMPAT_ENFORCE=1
+if sh "$CHECK" > "$TMP/fail-mode" 2>&1; then
+    echo "FAIL: compatibility check ran while enforcement was enabled" >&2
+    exit 1
+fi
+grep -q '^reason=enforce_must_be_0$' "$TMP/fail-mode"
+export TVG_COMPAT_ENFORCE=0
+
+export TVG_COMPAT_ARMED=1
+if sh "$CHECK" > "$TMP/fail-armed" 2>&1; then exit 1; fi
+grep -q '^reason=allow_enforcement_must_be_0$' "$TMP/fail-armed"
+export TVG_COMPAT_ARMED=0
+
+export TVG_COMPAT_OBSERVE=1
+if sh "$CHECK" > "$TMP/fail-observe" 2>&1; then exit 1; fi
+grep -q '^reason=observe_reply_must_be_0$' "$TMP/fail-observe"
+export TVG_COMPAT_OBSERVE=0
+
+export TVG_COMPAT_AUDIT='unsafe:test'
+if sh "$CHECK" > "$TMP/fail-audit" 2>&1; then exit 1; fi
+grep -q '^reason=isolation_before_unsafe:test$' "$TMP/fail-audit"
+export TVG_COMPAT_AUDIT=ok
+
+export TVG_COMPAT_GATE=blocked
+if sh "$CHECK" > "$TMP/fail-gate" 2>&1; then exit 1; fi
+grep -q '^reason=gate_before_blocked$' "$TMP/fail-gate"
+export TVG_COMPAT_GATE=allowed
+
+export TVG_COMPAT_FAIL_TABLE=mangle
+if sh "$CHECK" > "$TMP/fail-table" 2>&1; then exit 1; fi
+grep -q '^reason=snapshot_before_unavailable$' "$TMP/fail-table"
+export TVG_COMPAT_FAIL_TABLE=none
+
+export TVG_COMPAT_MUTATE=fail
+if sh "$CHECK" > "$TMP/fail-sync" 2>&1; then exit 1; fi
+grep -q '^reason=tvguard_sync_failed$' "$TMP/fail-sync"
+export TVG_COMPAT_MUTATE=none
+
+export TVG_COMPAT_INCLUDE_PATH=/usr/libexec/foreign-firewall-include
+if sh "$CHECK" > "$TMP/fail-include" 2>&1; then exit 1; fi
+grep -q '^reason=firewall_include_path_unexpected$' "$TMP/fail-include"
+export TVG_COMPAT_INCLUDE_PATH=/usr/libexec/tvguard-firewall-include
+
+echo "PASS: compatibility checker validates safe switches, audit/gate, snapshots, sync and firewall include ownership"
+ "$TMP/pass"
+grep -q '^flow_offload_observation_risk=0
+cat > "$TMP/tables/raw" <<'EOF'
+-A PREROUTING -p tcp -j EXISTING_PROXY_RAW
+-N TVG_RAW
+-A PREROUTING -i br-lan -s 192.168.101.76/32 -j TVG_RAW
+EOF
+export TVG_COMPAT_MUTATE=foreign
+if sh "$CHECK" > "$TMP/fail" 2>&1; then
+    echo "FAIL: compatibility check accepted a changed proxy rule set" >&2
+    exit 1
+fi
+grep -q '^reason=non_tvg_rules_changed$' "$TMP/fail"
+
+# Unsafe operating switches must fail before the TVG sync path runs.
+cat > "$TMP/tables/raw" <<'EOF'
+-A PREROUTING -p tcp -j EXISTING_PROXY_RAW
+-N TVG_RAW
+-A PREROUTING -i br-lan -s 192.168.101.76/32 -j TVG_RAW
+EOF
+export TVG_COMPAT_MUTATE=none
+export TVG_COMPAT_ENFORCE=1
+if sh "$CHECK" > "$TMP/fail-mode" 2>&1; then
+    echo "FAIL: compatibility check ran while enforcement was enabled" >&2
+    exit 1
+fi
+grep -q '^reason=enforce_must_be_0$' "$TMP/fail-mode"
+export TVG_COMPAT_ENFORCE=0
+
+export TVG_COMPAT_ARMED=1
+if sh "$CHECK" > "$TMP/fail-armed" 2>&1; then exit 1; fi
+grep -q '^reason=allow_enforcement_must_be_0$' "$TMP/fail-armed"
+export TVG_COMPAT_ARMED=0
+
+export TVG_COMPAT_OBSERVE=1
+if sh "$CHECK" > "$TMP/fail-observe" 2>&1; then exit 1; fi
+grep -q '^reason=observe_reply_must_be_0$' "$TMP/fail-observe"
+export TVG_COMPAT_OBSERVE=0
+
+export TVG_COMPAT_AUDIT='unsafe:test'
+if sh "$CHECK" > "$TMP/fail-audit" 2>&1; then exit 1; fi
+grep -q '^reason=isolation_before_unsafe:test$' "$TMP/fail-audit"
+export TVG_COMPAT_AUDIT=ok
+
+export TVG_COMPAT_GATE=blocked
+if sh "$CHECK" > "$TMP/fail-gate" 2>&1; then exit 1; fi
+grep -q '^reason=gate_before_blocked$' "$TMP/fail-gate"
+export TVG_COMPAT_GATE=allowed
+
+export TVG_COMPAT_FAIL_TABLE=mangle
+if sh "$CHECK" > "$TMP/fail-table" 2>&1; then exit 1; fi
+grep -q '^reason=snapshot_before_unavailable$' "$TMP/fail-table"
+export TVG_COMPAT_FAIL_TABLE=none
+
+export TVG_COMPAT_MUTATE=fail
+if sh "$CHECK" > "$TMP/fail-sync" 2>&1; then exit 1; fi
+grep -q '^reason=tvguard_sync_failed$' "$TMP/fail-sync"
+export TVG_COMPAT_MUTATE=none
+
+export TVG_COMPAT_INCLUDE_PATH=/usr/libexec/foreign-firewall-include
+if sh "$CHECK" > "$TMP/fail-include" 2>&1; then exit 1; fi
+grep -q '^reason=firewall_include_path_unexpected$' "$TMP/fail-include"
+export TVG_COMPAT_INCLUDE_PATH=/usr/libexec/tvguard-firewall-include
+
+echo "PASS: compatibility checker validates safe switches, audit/gate, snapshots, sync and firewall include ownership"
+ "$TMP/pass"
 grep -q 'iptables v1.8.7 (legacy)' "$TMP/pass"
+
+# Flow offload is diagnostic risk only: do not fail or mutate it.
+export TVG_COMPAT_FLOW_SW=1
+sh "$CHECK" > "$TMP/pass-flow"
+grep -q '^result=PASS
+cat > "$TMP/tables/raw" <<'EOF'
+-A PREROUTING -p tcp -j EXISTING_PROXY_RAW
+-N TVG_RAW
+-A PREROUTING -i br-lan -s 192.168.101.76/32 -j TVG_RAW
+EOF
+export TVG_COMPAT_MUTATE=foreign
+if sh "$CHECK" > "$TMP/fail" 2>&1; then
+    echo "FAIL: compatibility check accepted a changed proxy rule set" >&2
+    exit 1
+fi
+grep -q '^reason=non_tvg_rules_changed$' "$TMP/fail"
+
+# Unsafe operating switches must fail before the TVG sync path runs.
+cat > "$TMP/tables/raw" <<'EOF'
+-A PREROUTING -p tcp -j EXISTING_PROXY_RAW
+-N TVG_RAW
+-A PREROUTING -i br-lan -s 192.168.101.76/32 -j TVG_RAW
+EOF
+export TVG_COMPAT_MUTATE=none
+export TVG_COMPAT_ENFORCE=1
+if sh "$CHECK" > "$TMP/fail-mode" 2>&1; then
+    echo "FAIL: compatibility check ran while enforcement was enabled" >&2
+    exit 1
+fi
+grep -q '^reason=enforce_must_be_0$' "$TMP/fail-mode"
+export TVG_COMPAT_ENFORCE=0
+
+export TVG_COMPAT_ARMED=1
+if sh "$CHECK" > "$TMP/fail-armed" 2>&1; then exit 1; fi
+grep -q '^reason=allow_enforcement_must_be_0$' "$TMP/fail-armed"
+export TVG_COMPAT_ARMED=0
+
+export TVG_COMPAT_OBSERVE=1
+if sh "$CHECK" > "$TMP/fail-observe" 2>&1; then exit 1; fi
+grep -q '^reason=observe_reply_must_be_0$' "$TMP/fail-observe"
+export TVG_COMPAT_OBSERVE=0
+
+export TVG_COMPAT_AUDIT='unsafe:test'
+if sh "$CHECK" > "$TMP/fail-audit" 2>&1; then exit 1; fi
+grep -q '^reason=isolation_before_unsafe:test$' "$TMP/fail-audit"
+export TVG_COMPAT_AUDIT=ok
+
+export TVG_COMPAT_GATE=blocked
+if sh "$CHECK" > "$TMP/fail-gate" 2>&1; then exit 1; fi
+grep -q '^reason=gate_before_blocked$' "$TMP/fail-gate"
+export TVG_COMPAT_GATE=allowed
+
+export TVG_COMPAT_FAIL_TABLE=mangle
+if sh "$CHECK" > "$TMP/fail-table" 2>&1; then exit 1; fi
+grep -q '^reason=snapshot_before_unavailable$' "$TMP/fail-table"
+export TVG_COMPAT_FAIL_TABLE=none
+
+export TVG_COMPAT_MUTATE=fail
+if sh "$CHECK" > "$TMP/fail-sync" 2>&1; then exit 1; fi
+grep -q '^reason=tvguard_sync_failed$' "$TMP/fail-sync"
+export TVG_COMPAT_MUTATE=none
+
+export TVG_COMPAT_INCLUDE_PATH=/usr/libexec/foreign-firewall-include
+if sh "$CHECK" > "$TMP/fail-include" 2>&1; then exit 1; fi
+grep -q '^reason=firewall_include_path_unexpected$' "$TMP/fail-include"
+export TVG_COMPAT_INCLUDE_PATH=/usr/libexec/tvguard-firewall-include
+
+echo "PASS: compatibility checker validates safe switches, audit/gate, snapshots, sync and firewall include ownership"
+ "$TMP/pass-flow"
+grep -q '^flow_offloading_uci=1
+cat > "$TMP/tables/raw" <<'EOF'
+-A PREROUTING -p tcp -j EXISTING_PROXY_RAW
+-N TVG_RAW
+-A PREROUTING -i br-lan -s 192.168.101.76/32 -j TVG_RAW
+EOF
+export TVG_COMPAT_MUTATE=foreign
+if sh "$CHECK" > "$TMP/fail" 2>&1; then
+    echo "FAIL: compatibility check accepted a changed proxy rule set" >&2
+    exit 1
+fi
+grep -q '^reason=non_tvg_rules_changed$' "$TMP/fail"
+
+# Unsafe operating switches must fail before the TVG sync path runs.
+cat > "$TMP/tables/raw" <<'EOF'
+-A PREROUTING -p tcp -j EXISTING_PROXY_RAW
+-N TVG_RAW
+-A PREROUTING -i br-lan -s 192.168.101.76/32 -j TVG_RAW
+EOF
+export TVG_COMPAT_MUTATE=none
+export TVG_COMPAT_ENFORCE=1
+if sh "$CHECK" > "$TMP/fail-mode" 2>&1; then
+    echo "FAIL: compatibility check ran while enforcement was enabled" >&2
+    exit 1
+fi
+grep -q '^reason=enforce_must_be_0$' "$TMP/fail-mode"
+export TVG_COMPAT_ENFORCE=0
+
+export TVG_COMPAT_ARMED=1
+if sh "$CHECK" > "$TMP/fail-armed" 2>&1; then exit 1; fi
+grep -q '^reason=allow_enforcement_must_be_0$' "$TMP/fail-armed"
+export TVG_COMPAT_ARMED=0
+
+export TVG_COMPAT_OBSERVE=1
+if sh "$CHECK" > "$TMP/fail-observe" 2>&1; then exit 1; fi
+grep -q '^reason=observe_reply_must_be_0$' "$TMP/fail-observe"
+export TVG_COMPAT_OBSERVE=0
+
+export TVG_COMPAT_AUDIT='unsafe:test'
+if sh "$CHECK" > "$TMP/fail-audit" 2>&1; then exit 1; fi
+grep -q '^reason=isolation_before_unsafe:test$' "$TMP/fail-audit"
+export TVG_COMPAT_AUDIT=ok
+
+export TVG_COMPAT_GATE=blocked
+if sh "$CHECK" > "$TMP/fail-gate" 2>&1; then exit 1; fi
+grep -q '^reason=gate_before_blocked$' "$TMP/fail-gate"
+export TVG_COMPAT_GATE=allowed
+
+export TVG_COMPAT_FAIL_TABLE=mangle
+if sh "$CHECK" > "$TMP/fail-table" 2>&1; then exit 1; fi
+grep -q '^reason=snapshot_before_unavailable$' "$TMP/fail-table"
+export TVG_COMPAT_FAIL_TABLE=none
+
+export TVG_COMPAT_MUTATE=fail
+if sh "$CHECK" > "$TMP/fail-sync" 2>&1; then exit 1; fi
+grep -q '^reason=tvguard_sync_failed$' "$TMP/fail-sync"
+export TVG_COMPAT_MUTATE=none
+
+export TVG_COMPAT_INCLUDE_PATH=/usr/libexec/foreign-firewall-include
+if sh "$CHECK" > "$TMP/fail-include" 2>&1; then exit 1; fi
+grep -q '^reason=firewall_include_path_unexpected$' "$TMP/fail-include"
+export TVG_COMPAT_INCLUDE_PATH=/usr/libexec/tvguard-firewall-include
+
+echo "PASS: compatibility checker validates safe switches, audit/gate, snapshots, sync and firewall include ownership"
+ "$TMP/pass-flow"
+grep -q '^flow_offload_observation_risk=1
+cat > "$TMP/tables/raw" <<'EOF'
+-A PREROUTING -p tcp -j EXISTING_PROXY_RAW
+-N TVG_RAW
+-A PREROUTING -i br-lan -s 192.168.101.76/32 -j TVG_RAW
+EOF
+export TVG_COMPAT_MUTATE=foreign
+if sh "$CHECK" > "$TMP/fail" 2>&1; then
+    echo "FAIL: compatibility check accepted a changed proxy rule set" >&2
+    exit 1
+fi
+grep -q '^reason=non_tvg_rules_changed$' "$TMP/fail"
+
+# Unsafe operating switches must fail before the TVG sync path runs.
+cat > "$TMP/tables/raw" <<'EOF'
+-A PREROUTING -p tcp -j EXISTING_PROXY_RAW
+-N TVG_RAW
+-A PREROUTING -i br-lan -s 192.168.101.76/32 -j TVG_RAW
+EOF
+export TVG_COMPAT_MUTATE=none
+export TVG_COMPAT_ENFORCE=1
+if sh "$CHECK" > "$TMP/fail-mode" 2>&1; then
+    echo "FAIL: compatibility check ran while enforcement was enabled" >&2
+    exit 1
+fi
+grep -q '^reason=enforce_must_be_0$' "$TMP/fail-mode"
+export TVG_COMPAT_ENFORCE=0
+
+export TVG_COMPAT_ARMED=1
+if sh "$CHECK" > "$TMP/fail-armed" 2>&1; then exit 1; fi
+grep -q '^reason=allow_enforcement_must_be_0$' "$TMP/fail-armed"
+export TVG_COMPAT_ARMED=0
+
+export TVG_COMPAT_OBSERVE=1
+if sh "$CHECK" > "$TMP/fail-observe" 2>&1; then exit 1; fi
+grep -q '^reason=observe_reply_must_be_0$' "$TMP/fail-observe"
+export TVG_COMPAT_OBSERVE=0
+
+export TVG_COMPAT_AUDIT='unsafe:test'
+if sh "$CHECK" > "$TMP/fail-audit" 2>&1; then exit 1; fi
+grep -q '^reason=isolation_before_unsafe:test$' "$TMP/fail-audit"
+export TVG_COMPAT_AUDIT=ok
+
+export TVG_COMPAT_GATE=blocked
+if sh "$CHECK" > "$TMP/fail-gate" 2>&1; then exit 1; fi
+grep -q '^reason=gate_before_blocked$' "$TMP/fail-gate"
+export TVG_COMPAT_GATE=allowed
+
+export TVG_COMPAT_FAIL_TABLE=mangle
+if sh "$CHECK" > "$TMP/fail-table" 2>&1; then exit 1; fi
+grep -q '^reason=snapshot_before_unavailable$' "$TMP/fail-table"
+export TVG_COMPAT_FAIL_TABLE=none
+
+export TVG_COMPAT_MUTATE=fail
+if sh "$CHECK" > "$TMP/fail-sync" 2>&1; then exit 1; fi
+grep -q '^reason=tvguard_sync_failed$' "$TMP/fail-sync"
+export TVG_COMPAT_MUTATE=none
+
+export TVG_COMPAT_INCLUDE_PATH=/usr/libexec/foreign-firewall-include
+if sh "$CHECK" > "$TMP/fail-include" 2>&1; then exit 1; fi
+grep -q '^reason=firewall_include_path_unexpected$' "$TMP/fail-include"
+export TVG_COMPAT_INCLUDE_PATH=/usr/libexec/tvguard-firewall-include
+
+echo "PASS: compatibility checker validates safe switches, audit/gate, snapshots, sync and firewall include ownership"
+ "$TMP/pass-flow"
+export TVG_COMPAT_FLOW_SW=0
+
+# Detect an actual FLOWOFFLOAD rule even if UCI metadata says disabled.
+printf '%s\n' '-A FORWARD -m conntrack --ctstate RELATED,ESTABLISHED -j FLOWOFFLOAD' >> "$TMP/tables/filter"
+sh "$CHECK" > "$TMP/pass-flow-rule"
+grep -q '^result=PASS
+cat > "$TMP/tables/raw" <<'EOF'
+-A PREROUTING -p tcp -j EXISTING_PROXY_RAW
+-N TVG_RAW
+-A PREROUTING -i br-lan -s 192.168.101.76/32 -j TVG_RAW
+EOF
+export TVG_COMPAT_MUTATE=foreign
+if sh "$CHECK" > "$TMP/fail" 2>&1; then
+    echo "FAIL: compatibility check accepted a changed proxy rule set" >&2
+    exit 1
+fi
+grep -q '^reason=non_tvg_rules_changed$' "$TMP/fail"
+
+# Unsafe operating switches must fail before the TVG sync path runs.
+cat > "$TMP/tables/raw" <<'EOF'
+-A PREROUTING -p tcp -j EXISTING_PROXY_RAW
+-N TVG_RAW
+-A PREROUTING -i br-lan -s 192.168.101.76/32 -j TVG_RAW
+EOF
+export TVG_COMPAT_MUTATE=none
+export TVG_COMPAT_ENFORCE=1
+if sh "$CHECK" > "$TMP/fail-mode" 2>&1; then
+    echo "FAIL: compatibility check ran while enforcement was enabled" >&2
+    exit 1
+fi
+grep -q '^reason=enforce_must_be_0$' "$TMP/fail-mode"
+export TVG_COMPAT_ENFORCE=0
+
+export TVG_COMPAT_ARMED=1
+if sh "$CHECK" > "$TMP/fail-armed" 2>&1; then exit 1; fi
+grep -q '^reason=allow_enforcement_must_be_0$' "$TMP/fail-armed"
+export TVG_COMPAT_ARMED=0
+
+export TVG_COMPAT_OBSERVE=1
+if sh "$CHECK" > "$TMP/fail-observe" 2>&1; then exit 1; fi
+grep -q '^reason=observe_reply_must_be_0$' "$TMP/fail-observe"
+export TVG_COMPAT_OBSERVE=0
+
+export TVG_COMPAT_AUDIT='unsafe:test'
+if sh "$CHECK" > "$TMP/fail-audit" 2>&1; then exit 1; fi
+grep -q '^reason=isolation_before_unsafe:test$' "$TMP/fail-audit"
+export TVG_COMPAT_AUDIT=ok
+
+export TVG_COMPAT_GATE=blocked
+if sh "$CHECK" > "$TMP/fail-gate" 2>&1; then exit 1; fi
+grep -q '^reason=gate_before_blocked$' "$TMP/fail-gate"
+export TVG_COMPAT_GATE=allowed
+
+export TVG_COMPAT_FAIL_TABLE=mangle
+if sh "$CHECK" > "$TMP/fail-table" 2>&1; then exit 1; fi
+grep -q '^reason=snapshot_before_unavailable$' "$TMP/fail-table"
+export TVG_COMPAT_FAIL_TABLE=none
+
+export TVG_COMPAT_MUTATE=fail
+if sh "$CHECK" > "$TMP/fail-sync" 2>&1; then exit 1; fi
+grep -q '^reason=tvguard_sync_failed$' "$TMP/fail-sync"
+export TVG_COMPAT_MUTATE=none
+
+export TVG_COMPAT_INCLUDE_PATH=/usr/libexec/foreign-firewall-include
+if sh "$CHECK" > "$TMP/fail-include" 2>&1; then exit 1; fi
+grep -q '^reason=firewall_include_path_unexpected$' "$TMP/fail-include"
+export TVG_COMPAT_INCLUDE_PATH=/usr/libexec/tvguard-firewall-include
+
+echo "PASS: compatibility checker validates safe switches, audit/gate, snapshots, sync and firewall include ownership"
+ "$TMP/pass-flow-rule"
+grep -q '^flowoffload_rule_present=1
+cat > "$TMP/tables/raw" <<'EOF'
+-A PREROUTING -p tcp -j EXISTING_PROXY_RAW
+-N TVG_RAW
+-A PREROUTING -i br-lan -s 192.168.101.76/32 -j TVG_RAW
+EOF
+export TVG_COMPAT_MUTATE=foreign
+if sh "$CHECK" > "$TMP/fail" 2>&1; then
+    echo "FAIL: compatibility check accepted a changed proxy rule set" >&2
+    exit 1
+fi
+grep -q '^reason=non_tvg_rules_changed$' "$TMP/fail"
+
+# Unsafe operating switches must fail before the TVG sync path runs.
+cat > "$TMP/tables/raw" <<'EOF'
+-A PREROUTING -p tcp -j EXISTING_PROXY_RAW
+-N TVG_RAW
+-A PREROUTING -i br-lan -s 192.168.101.76/32 -j TVG_RAW
+EOF
+export TVG_COMPAT_MUTATE=none
+export TVG_COMPAT_ENFORCE=1
+if sh "$CHECK" > "$TMP/fail-mode" 2>&1; then
+    echo "FAIL: compatibility check ran while enforcement was enabled" >&2
+    exit 1
+fi
+grep -q '^reason=enforce_must_be_0$' "$TMP/fail-mode"
+export TVG_COMPAT_ENFORCE=0
+
+export TVG_COMPAT_ARMED=1
+if sh "$CHECK" > "$TMP/fail-armed" 2>&1; then exit 1; fi
+grep -q '^reason=allow_enforcement_must_be_0$' "$TMP/fail-armed"
+export TVG_COMPAT_ARMED=0
+
+export TVG_COMPAT_OBSERVE=1
+if sh "$CHECK" > "$TMP/fail-observe" 2>&1; then exit 1; fi
+grep -q '^reason=observe_reply_must_be_0$' "$TMP/fail-observe"
+export TVG_COMPAT_OBSERVE=0
+
+export TVG_COMPAT_AUDIT='unsafe:test'
+if sh "$CHECK" > "$TMP/fail-audit" 2>&1; then exit 1; fi
+grep -q '^reason=isolation_before_unsafe:test$' "$TMP/fail-audit"
+export TVG_COMPAT_AUDIT=ok
+
+export TVG_COMPAT_GATE=blocked
+if sh "$CHECK" > "$TMP/fail-gate" 2>&1; then exit 1; fi
+grep -q '^reason=gate_before_blocked$' "$TMP/fail-gate"
+export TVG_COMPAT_GATE=allowed
+
+export TVG_COMPAT_FAIL_TABLE=mangle
+if sh "$CHECK" > "$TMP/fail-table" 2>&1; then exit 1; fi
+grep -q '^reason=snapshot_before_unavailable$' "$TMP/fail-table"
+export TVG_COMPAT_FAIL_TABLE=none
+
+export TVG_COMPAT_MUTATE=fail
+if sh "$CHECK" > "$TMP/fail-sync" 2>&1; then exit 1; fi
+grep -q '^reason=tvguard_sync_failed$' "$TMP/fail-sync"
+export TVG_COMPAT_MUTATE=none
+
+export TVG_COMPAT_INCLUDE_PATH=/usr/libexec/foreign-firewall-include
+if sh "$CHECK" > "$TMP/fail-include" 2>&1; then exit 1; fi
+grep -q '^reason=firewall_include_path_unexpected$' "$TMP/fail-include"
+export TVG_COMPAT_INCLUDE_PATH=/usr/libexec/tvguard-firewall-include
+
+echo "PASS: compatibility checker validates safe switches, audit/gate, snapshots, sync and firewall include ownership"
+ "$TMP/pass-flow-rule"
+grep -q '^flow_offload_observation_risk=1
+cat > "$TMP/tables/raw" <<'EOF'
+-A PREROUTING -p tcp -j EXISTING_PROXY_RAW
+-N TVG_RAW
+-A PREROUTING -i br-lan -s 192.168.101.76/32 -j TVG_RAW
+EOF
+export TVG_COMPAT_MUTATE=foreign
+if sh "$CHECK" > "$TMP/fail" 2>&1; then
+    echo "FAIL: compatibility check accepted a changed proxy rule set" >&2
+    exit 1
+fi
+grep -q '^reason=non_tvg_rules_changed$' "$TMP/fail"
+
+# Unsafe operating switches must fail before the TVG sync path runs.
+cat > "$TMP/tables/raw" <<'EOF'
+-A PREROUTING -p tcp -j EXISTING_PROXY_RAW
+-N TVG_RAW
+-A PREROUTING -i br-lan -s 192.168.101.76/32 -j TVG_RAW
+EOF
+export TVG_COMPAT_MUTATE=none
+export TVG_COMPAT_ENFORCE=1
+if sh "$CHECK" > "$TMP/fail-mode" 2>&1; then
+    echo "FAIL: compatibility check ran while enforcement was enabled" >&2
+    exit 1
+fi
+grep -q '^reason=enforce_must_be_0$' "$TMP/fail-mode"
+export TVG_COMPAT_ENFORCE=0
+
+export TVG_COMPAT_ARMED=1
+if sh "$CHECK" > "$TMP/fail-armed" 2>&1; then exit 1; fi
+grep -q '^reason=allow_enforcement_must_be_0$' "$TMP/fail-armed"
+export TVG_COMPAT_ARMED=0
+
+export TVG_COMPAT_OBSERVE=1
+if sh "$CHECK" > "$TMP/fail-observe" 2>&1; then exit 1; fi
+grep -q '^reason=observe_reply_must_be_0$' "$TMP/fail-observe"
+export TVG_COMPAT_OBSERVE=0
+
+export TVG_COMPAT_AUDIT='unsafe:test'
+if sh "$CHECK" > "$TMP/fail-audit" 2>&1; then exit 1; fi
+grep -q '^reason=isolation_before_unsafe:test$' "$TMP/fail-audit"
+export TVG_COMPAT_AUDIT=ok
+
+export TVG_COMPAT_GATE=blocked
+if sh "$CHECK" > "$TMP/fail-gate" 2>&1; then exit 1; fi
+grep -q '^reason=gate_before_blocked$' "$TMP/fail-gate"
+export TVG_COMPAT_GATE=allowed
+
+export TVG_COMPAT_FAIL_TABLE=mangle
+if sh "$CHECK" > "$TMP/fail-table" 2>&1; then exit 1; fi
+grep -q '^reason=snapshot_before_unavailable$' "$TMP/fail-table"
+export TVG_COMPAT_FAIL_TABLE=none
+
+export TVG_COMPAT_MUTATE=fail
+if sh "$CHECK" > "$TMP/fail-sync" 2>&1; then exit 1; fi
+grep -q '^reason=tvguard_sync_failed$' "$TMP/fail-sync"
+export TVG_COMPAT_MUTATE=none
+
+export TVG_COMPAT_INCLUDE_PATH=/usr/libexec/foreign-firewall-include
+if sh "$CHECK" > "$TMP/fail-include" 2>&1; then exit 1; fi
+grep -q '^reason=firewall_include_path_unexpected$' "$TMP/fail-include"
+export TVG_COMPAT_INCLUDE_PATH=/usr/libexec/tvguard-firewall-include
+
+echo "PASS: compatibility checker validates safe switches, audit/gate, snapshots, sync and firewall include ownership"
+ "$TMP/pass-flow-rule"
+sed -i '/FLOWOFFLOAD/d' "$TMP/tables/filter"
 
 # Reset raw table and simulate an accidental non-TVG rule change.
 cat > "$TMP/tables/raw" <<'EOF'
