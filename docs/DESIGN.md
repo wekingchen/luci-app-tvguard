@@ -174,3 +174,16 @@ r12 的 P0 验收硬门槛：真实正常播放（含免费 576p/720p）不得�
 - N1 未安装 `tcpdump`，但有 BusyBox/系统 `timeout`。
 
 工程含义：在继续调整 576p/720p Adaptive 阈值前，必须先确认 ICMP Redirect 是否导致电视部分流媒体连接绕过 N1。若存在，任何仅基于 N1 IPv4 TX 计数的低流量分类都可能把“路径绕过”误读成“空闲/暂停”。在证据明确前，不修改 `send_redirects`、不安装抓包工具、不改变现有代理/防火墙路径。
+
+### 576p Redirect 关联采样（2026-11-09）
+
+在不修改 N1 配置的条件下，对芒果首页约 120 秒和芒果 576p 正常播放约 301 秒分别每 10 秒读取 `TVG_RAW/TVG_COUNT` 与 `/proc/net/snmp OutRedirects`：
+
+- 首页：`TVG_RAW` 增量 1085 包 / 474369 字节 / 120 秒，约 9.0 PPS、3.95 KB/s；`OutRedirects` +15，约 0.125/s。
+- 576p 播放：`TVG_RAW` 增量 26178 包 / 2642481 字节 / 301 秒，约 87.0 PPS、8.78 KB/s；`OutRedirects` +73，约 0.243/s。
+- 576p 的 10 秒窗口 PPS 约 P10=46、P50=74、P90=134，最低约 32、最高约 198；BPS 约 P10=5.7 KB/s、P50=7.7 KB/s、P90=13.3 KB/s。
+- 播放期间 Redirect 速率确实高于首页，但 TVG 可见流量同时显著增高；逐窗口 Redirect 速率与 TVG PPS/BPS 没有明显负相关。因此本轮数据**不支持**“Redirect 导致 576p 播放流量被持续绕走”作为主要解释。
+- 由于 `OutRedirects` 是全局计数，本轮仍不能证明这些 Redirect 全部发给电视。`send_redirects=1` 仍属于单臂旁路由的路径完整性风险，后续可以用电视目标地址的无动作计数或短时抓包做归属验证，但不能据此直接调整 Adaptive 阈值。
+- 本轮 5 分钟流媒体播放没有出现 10 秒级零包窗口，暂未观察到 `silence_seconds=60` 的风险条件；这只降低风险，不等于跨 App/片源已经证明不存在。
+
+结论：r12 的 `TX_IDLE_BILLING_AUTHORITY=0` 方向成立。现阶段优先把 TX-only `idle/stable_low` 降级为诊断信号，而不是试图通过单一 PPS 阈值解决 576p 泛化；Redirect 与 60 秒 silence 分别作为路径/长缓冲风险继续旁路验证。
