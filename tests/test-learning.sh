@@ -10,7 +10,10 @@ python3 - "$SRC" "$DST" "$TMP/state" <<'PY'
 from pathlib import Path
 import sys
 src,dst,state=sys.argv[1:]
-s=Path(src).read_text().replace('DIR=/etc/tvguard','DIR='+state,1)
+s=Path(src).read_text()
+anchor='DATA=/usr/libexec/tvguard-data\nDIR="$("$DATA" root)"'
+assert anchor in s
+s=s.replace(anchor,'DIR='+state,1)
 Path(dst).write_text(s)
 PY
 chmod +x "$DST"
