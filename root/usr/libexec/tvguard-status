@@ -7,6 +7,7 @@ case "${1:-status}" in
     log) exec /usr/libexec/tvguardctl log ;;
     calibration) exec /usr/libexec/tvguardctl calibration ;;
     calibration-v4) exec /usr/libexec/tvguardctl calibration-v4 ;;
+    learning) exec /usr/libexec/tvguardctl learning ;;
     isolation) exec /usr/libexec/tvguard-isolation-audit ;;
     *) exit 2 ;;
 esac
