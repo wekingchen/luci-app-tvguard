@@ -54,6 +54,13 @@ seed_volatile_from_legacy() {
     [ -d "$LEGACY_DIR" ] && [ ! -L "$LEGACY_DIR" ] || return 0
     for name in state events.log calibration-v3.csv calibration-v4.csv learning-sessions.csv learning-last.txt; do
         copy_verified_if_absent "$LEGACY_DIR/$name" "$VOLATILE_DIR/$name"
+        case "$name" in
+            events.log|calibration-v3.csv|calibration-v4.csv|learning-sessions.csv)
+                if [ -f "$VOLATILE_DIR/$name" ]; then
+                    wc -l < "$VOLATILE_DIR/$name" | tr -d ' ' > "$VOLATILE_DIR/.seed-lines-$name"
+                fi
+                ;;
+        esac
     done
 }
 
@@ -93,8 +100,16 @@ merge_volatile() {
     # mount was unavailable, so they can be appended once and then removed.
     for name in events.log calibration-v3.csv calibration-v4.csv learning-sessions.csv; do
         if [ -s "$VOLATILE_DIR/$name" ]; then
-            cat "$VOLATILE_DIR/$name" >> "$PERSIST_DIR/$name"
-            rm -f "$VOLATILE_DIR/$name"
+            seed=0
+            if [ -r "$VOLATILE_DIR/.seed-lines-$name" ]; then
+                seed="$(cat "$VOLATILE_DIR/.seed-lines-$name" 2>/dev/null || echo 0)"
+                case "$seed" in ''|*[!0-9]*) seed=0;; esac
+            fi
+            # Skip the legacy prefix that was copied into RAM only so the
+            # classifier could keep reading while the persistent mount was
+            # absent. Append only records created during the outage.
+            awk -v n="$seed" 'NR>n {print}' "$VOLATILE_DIR/$name" >> "$PERSIST_DIR/$name"
+            rm -f "$VOLATILE_DIR/$name" "$VOLATILE_DIR/.seed-lines-$name"
         fi
     done
 
