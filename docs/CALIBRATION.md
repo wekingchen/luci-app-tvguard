@@ -49,7 +49,7 @@ TV Guard 管理的是 **小米电视这台设备**，而不是腾讯、爱奇艺
 
 ## 如何验证真正的通用性
 
-已标注样本保存在 `/etc/tvguard/calibration-v3.csv`，格式：
+r8 起已标注样本正式保存在 `/mnt/mmcblk2p4/tvguard/calibration-v3.csv`（`/etc/tvguard` 仅可能是兼容软链接），格式：
 
 ```text
 timestamp,session_id,scene,app,pps,tcp_pps,udp_pps,outbound_bytes_per_second
@@ -59,7 +59,7 @@ timestamp,session_id,scene,app,pps,tcp_pps,udp_pps,outbound_bytes_per_second
 
 ### 可选的方向性 v4 数据
 
-当前开发候选还预留了 `/etc/tvguard/calibration-v4.csv`。它**不会因为升级自动出现**，只有同时满足以下条件才写入：
+当前开发候选还预留了 `/mnt/mmcblk2p4/tvguard/calibration-v4.csv`。它**不会因为升级自动出现**，只有同时满足以下条件才写入：
 
 - 家长正在进行明确状态的 120 秒手工标注；
 - `observe_reply=1` 已由管理员在真实 N1 上单独启用；
@@ -125,7 +125,7 @@ python3 scripts/evaluate-generalization.py calibration-v3.csv
 - PPS 相对跨度与波动等级；
 - 会话质量（high / medium / low）。
 
-最近一次人类可读结果写入 `/etc/tvguard/learning-last.txt`；机器可读会话摘要追加到 `/etc/tvguard/learning-sessions.csv`。这些会话摘要是后续 Adaptive Engine Phase 1 建立滚动窗口画像的输入，不是新的固定阈值表。
+最近一次人类可读结果写入 `/mnt/mmcblk2p4/tvguard/learning-last.txt`；机器可读会话摘要追加到 `/mnt/mmcblk2p4/tvguard/learning-sessions.csv`。这些会话摘要是 Adaptive Engine 建立滚动窗口画像的输入，不是新的固定阈值表。持久分区临时不可用时只使用 `/var/run/tvguard-data` RAM 兜底，不向 overlay `/etc` 建立第二套数据库。
 
 ## Phase 2 方向：暂停画像与双向特征
 
@@ -188,3 +188,12 @@ r6 进一步证明：正常播放也可能出现极高 rolling B/P（例如 P50/
 
 Adaptive Engine 的实时 rolling window 位于 `/var/run`，不是持久学习库。未来 Shadow Soak 也必须遵循“高频原始窗口放 volatile ring、持久层只留有界摘要”的原则。磁盘容量不能作为提高模型精度的代价。
 
+
+
+## r8 持久数据位置
+
+正式学习/状态数据根固定为 `/mnt/mmcblk2p4/tvguard`。升级 r8 时会从旧 `/etc/tvguard` 一次性迁移已知文件；迁移经过目标存在和字节数校验后才清理旧文件。
+
+如果 `/mnt/mmcblk2p4` 暂时未挂载，采集与运行态只写 `/var/run/tvguard-data`。挂载恢复后仅合并中断期间新增的数据，旧库种入 RAM 的前缀不会重复写回，因此不会因为挂载抖动人为放大学习样本权重。
+
+原始长期 Shadow Soak 仍禁止无界持久写入；高频窗口必须优先使用 volatile ring，持久摘要继续受 1 MiB 总设计预算约束。
