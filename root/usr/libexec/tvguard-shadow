@@ -24,10 +24,16 @@ function ready_cross_app(label) {
     return ready_sessions(label) && app_n[label]>=2
 }
 function playback_reference_ready() {
-    # For system-home safety, playback is only a negative overlap reference.
-    # One real labelled playback session with >=6 windows is enough to reject
-    # obvious overlap; the exempted class itself still needs 3 sessions/18 samples.
+    # For device-local idle safety, playback is only a negative overlap
+    # reference. One real labelled playback session with >=6 windows is enough
+    # to reject obvious overlap; the exempted class still needs its own evidence.
     return samples["playing"]>=6 && sess_n["playing"]>=1
+}
+function local_app_home_ready() {
+    # A manually labelled App-home session is useful on this TV even before
+    # cross-App generalization is proven. Require enough windows to avoid a
+    # one-off transition sample; unknown Apps that do not match remain charged.
+    return samples["app_home"]>=10 && sess_n["app_home"]>=1
 }
 function inside(label) {
     return p>=pmin[label]-5 && p<=pmax[label]+5 &&
@@ -86,6 +92,17 @@ END {
     if (ready_sessions("system_home") && playback_reference_ready() &&
         inside("system_home") && separated_from("playing")) {
         print "system_home system 100"
+        exit
+    }
+
+    # Before cross-App generalization is ready, reuse a sufficiently long
+    # manually labelled App-home session as a device-local idle fingerprint.
+    # It must match the App-home envelope across all metrics AND be clearly
+    # outside the observed playback envelope. This never turns arbitrary low
+    # PPS into free time; non-matching/unknown states continue to charge.
+    if (local_app_home_ready() && playback_reference_ready() &&
+        inside("app_home") && separated_from("playing")) {
+        print "app_home general 90"
         exit
     }
 
