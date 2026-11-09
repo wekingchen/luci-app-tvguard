@@ -6,10 +6,11 @@ import sys
 import tarfile
 from pathlib import Path
 
-if len(sys.argv) != 3:
-    raise SystemExit("usage: verify-ipk.py PATH VERSION")
+if len(sys.argv) not in (3, 4):
+    raise SystemExit("usage: verify-ipk.py PATH VERSION [RELEASE]")
 path = Path(sys.argv[1])
 version = sys.argv[2]
+release = sys.argv[3] if len(sys.argv) == 4 else "1"
 raw = path.read_bytes()
 if raw[:2] != b"\x1f\x8b":
     raise SystemExit("FAIL: outer archive must be gzip-tar, not GNU ar/Debian .deb")
@@ -41,7 +42,7 @@ data = check_tar(outer["data.tar.gz"][1], "data")
 metadata = control["control"][1].decode("utf-8")
 for field in (
     "Package: luci-app-tvguard",
-    f"Version: {version}-1",
+    f"Version: {version}-{release}",
     "Architecture: all",
     "Depends: luci-base, rpcd",
 ):
