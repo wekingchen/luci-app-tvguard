@@ -13,6 +13,11 @@ ADAPTIVE=/usr/libexec/tvguard-adaptive
 LEARN=/usr/libexec/tvguard-learn
 SOAK=/usr/libexec/tvguard-soak
 BUILD_ID_FILE=/usr/share/tvguard/build-id
+# P0 safety gate: TX-only idle classifiers remain diagnostic until low-bitrate
+# playback has passed dedicated cross-bitrate/cross-app false-idle validation.
+# This is deliberately not UCI-tunable: re-enabling billing authority requires
+# a reviewed code change after validation.
+TX_IDLE_BILLING_AUTHORITY=0
 RUN=/var/run/tvguard.state
 DATA=/usr/libexec/tvguard-data
 DIR="$("$DATA" root)"
@@ -639,16 +644,23 @@ tick() {
         ACTIVITY=silent
     fi
 
-    # Adaptive Engine Phase 1 uses a learned 60-second rolling window when
-    # enough high-quality human sessions exist. It deliberately collapses the
-    # exact UI scene into idle/active/ambiguous. If the model is not ready,
-    # preserve the previous conservative shadow fallback.
+    # Adaptive/Shadow still classify traffic for diagnostics and Shadow Soak.
+    # P0 low-bitrate safety: TX-only "idle" is not proof that playback stopped.
+    # While billing authority is disabled, every non-silent child network
+    # window remains chargeable regardless of Adaptive/Shadow label.
     if [ "$ACTIVITY" = silent ]; then
         BILLING_STATE=idle_silent
         IDLE_REASON=silent
         IDLE_STREAK_S=0
         IDLE_GRACE_S=0
+    elif [ "$dt" -gt 0 ] && [ "$TX_IDLE_BILLING_AUTHORITY" != 1 ]; then
+        BILLING_STATE=charge
+        IDLE_REASON=none
+        IDLE_STREAK_S=0
+        IDLE_GRACE_S=0
     elif [ "$dt" -gt 0 ]; then
+        # Dormant legacy smart-idle path retained behind the code-review gate
+        # so it can be replay-tested while r12 gathers stronger evidence.
         case "$ADAPTIVE_STATE" in
             idle)
                 if [ "$IDLE_REASON" = adaptive ] &&
