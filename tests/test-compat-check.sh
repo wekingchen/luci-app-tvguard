@@ -13,8 +13,8 @@ case "$2" in
     tvguard.main.enforce) echo "${TVG_COMPAT_ENFORCE:-0}" ;;
     tvguard.main.allow_enforcement) echo "${TVG_COMPAT_ARMED:-0}" ;;
     tvguard.main.observe_reply) echo "${TVG_COMPAT_OBSERVE:-0}" ;;
-    firewall.@defaults[0].flow_offloading) echo "${TVG_COMPAT_FLOW_SW:-0}" ;;
-    firewall.@defaults[0].flow_offloading_hw) echo "${TVG_COMPAT_FLOW_HW:-0}" ;;
+    firewall.@defaults\[0\].flow_offloading) echo "${TVG_COMPAT_FLOW_SW:-0}" ;;
+    firewall.@defaults\[0\].flow_offloading_hw) echo "${TVG_COMPAT_FLOW_HW:-0}" ;;
     firewall.tvguard) echo "${TVG_COMPAT_INCLUDE_TYPE:-include}" ;;
     firewall.tvguard.type) echo "${TVG_COMPAT_INCLUDE_MODE:-script}" ;;
     firewall.tvguard.path) echo "${TVG_COMPAT_INCLUDE_PATH:-/usr/libexec/tvguard-firewall-include}" ;;
