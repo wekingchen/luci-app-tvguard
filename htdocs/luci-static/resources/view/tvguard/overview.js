@@ -321,6 +321,8 @@ function childPolicyNote(state) {
         return state.enforce ? '当前不在允许使用时段，正式控制会阻断联网' : '当前不在允许使用时段；观察模式下仍不会断网';
     if (state.billing_state === 'idle_verified')
         return '已连续确认闲置，儿童计时已暂停；一旦无法确认会立即恢复计时';
+    if (state.billing_state === 'idle_grace')
+        return '已确认闲置后出现短暂低活跃模糊帧，最多保持 20 秒不扣时；明确播放会立即恢复计时';
     if (state.billing_state === 'idle_silent')
         return '当前网络静默，儿童计时已暂停';
     return '当前未确认闲置，按儿童使用时间继续计时';
@@ -333,6 +335,8 @@ function childPolicySummary(state) {
         return '当前不在允许时段';
     if (state.billing_state === 'idle_verified')
         return state.idle_reason === 'system_home' ? '系统首页 · 已暂停计时' : '已确认闲置 · 暂停计时';
+    if (state.billing_state === 'idle_grace')
+        return '短暂无法判断 · 保持暂停计时';
     if (state.billing_state === 'idle_silent')
         return '网络静默 · 暂停计时';
     return '按儿童额度和时段管理';
@@ -435,6 +439,9 @@ return view.extend({
         if (state.billing_state === 'idle_verified')
             n.shadowNote.textContent = '已连续确认约 ' + String(state.idle_streak_seconds || 0) +
                 ' 秒；当前暂停儿童计时。';
+        else if (state.billing_state === 'idle_grace')
+            n.shadowNote.textContent = '当前一帧无法确定，但仍处于已确认闲置后的 ' +
+                String(state.idle_grace_seconds || 0) + '/20 秒保持窗口。';
         else if (state.shadow_label === 'system_home' || state.shadow_label === 'idle')
             n.shadowNote.textContent = '正在确认闲置；连续达到 30 秒后才暂停计时。';
         else if (state.shadow_label === 'unknown')
