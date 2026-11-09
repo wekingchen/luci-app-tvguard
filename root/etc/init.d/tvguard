@@ -4,6 +4,7 @@ STOP=10
 USE_PROCD=1
 
 start_service() {
+    /usr/libexec/tvguard-data prepare || return 1
     /usr/libexec/tvguardctl sync || return 1
     procd_open_instance
     procd_set_param command /usr/libexec/tvguardd
