@@ -23,6 +23,12 @@ function ready_sessions(label) {
 function ready_cross_app(label) {
     return ready_sessions(label) && app_n[label]>=2
 }
+function playback_reference_ready() {
+    # For system-home safety, playback is only a negative overlap reference.
+    # One real labelled playback session with >=6 windows is enough to reject
+    # obvious overlap; the exempted class itself still needs 3 sessions/18 samples.
+    return samples["playing"]>=6 && sess_n["playing"]>=1
+}
 function inside(label) {
     return p>=pmin[label]-5 && p<=pmax[label]+5 &&
            t>=tmin[label]-3 && t<=tmax[label]+3 &&
@@ -77,7 +83,7 @@ END {
     # but it is exempted only when it is clearly outside an observed playback
     # envelope. This fixes the "sitting on TV home still consumes quota" case
     # without making a generic low-PPS exemption.
-    if (ready_sessions("system_home") && ready_sessions("playing") &&
+    if (ready_sessions("system_home") && playback_reference_ready() &&
         inside("system_home") && separated_from("playing")) {
         print "system_home system 100"
         exit
