@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Test whether TV Guard shadow hints generalize to unseen video apps.
+"""Test whether TV Guard billing hints generalize safely to unseen video apps.
 
 Hold out ALL samples of one complete app, train the actual shell classifier on
 the OTHER apps, and evaluate the never-seen app. This diagnostic NEVER changes
@@ -58,12 +58,18 @@ def complete_app(app, rows):
 def evaluate(rows, script_path):
     apps = [app for app in KNOWN_VIDEO_APPS if complete_app(app, rows)]
     result = {
-        "schema": "tvguard-cross-app-shadow-v1",
-        "automatic_exemption_enabled": False,
+        "schema": "tvguard-cross-app-billing-v2",
+        "billing_policy": "verified_idle_after_30s_hysteresis",
+        "generic_idle_validation_ready": len(apps) >= 3,
         "video_apps_with_complete_sessions": apps,
         "verdict": "insufficient_cross_app_validation",
         "folds": [],
-        "overall": {"correct": 0, "wrong": 0, "unknown": 0, "dangerous_idle_false_hints": 0},
+        "overall": {
+            "idle_hint_correct": 0,
+            "charge_correct": 0,
+            "conservative_idle_miss": 0,
+            "dangerous_idle_false_hints": 0
+        },
     }
     # Need at least two DIFFERENT apps to train, and one entirely unseen app to
     # validate. No statistical generalization claim from one labelled app.
@@ -96,14 +102,20 @@ def evaluate(rows, script_path):
                 ).stdout.strip().split()
                 prediction = observed[0] if len(observed) == 3 else "unknown"
                 actual = row[2]
-                if prediction == "unknown":
-                    counts["unknown"] += 1
-                elif prediction == actual:
-                    counts["correct"] += 1
-                else:
-                    counts["wrong"] += 1
-                    if actual == "playing" and prediction in ("paused", "app_home", "system_home"):
+                idle_prediction = prediction in ("idle", "paused", "app_home", "system_home")
+                if actual == "playing":
+                    if idle_prediction:
                         counts["dangerous_idle_false_hints"] += 1
+                    else:
+                        # playing or unknown both remain billable, hence safe.
+                        counts["charge_correct"] += 1
+                else:
+                    # paused/app_home are equivalent for billing. Missing an
+                    # idle hint is conservative over-charging, not a bypass.
+                    if idle_prediction:
+                        counts["idle_hint_correct"] += 1
+                    else:
+                        counts["conservative_idle_miss"] += 1
             fold = {"held_out_app": holdout, **{
                 key: counts[key] for key in result["overall"]}}
             result["folds"].append(fold)
@@ -113,16 +125,16 @@ def evaluate(rows, script_path):
     # Even a good holdout test only shows performance on these representative
     # apps and known conditions. Never equate this to proof of TV foreground.
     result["verdict"] = (
-        "observed_zero_wrong_hints_shadow_only"
-        if result["overall"]["wrong"] == 0
-        else "misclassification_observed_shadow_only"
+        "observed_zero_dangerous_idle_false_hints"
+        if result["overall"]["dangerous_idle_false_hints"] == 0
+        else "dangerous_idle_false_hints_observed"
     )
     return result
 
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Leave-one-video-app-out shadow test; no auto exemptions")
+        description="Leave-one-video-app-out billing safety test"
     parser.add_argument("csv", help="export of N1 calibration-v3.csv")
     args = parser.parse_args()
     root = Path(__file__).resolve().parents[1]
