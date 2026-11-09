@@ -119,7 +119,7 @@ const updates = [
     assert.equal(page._calibrationNodes.stop.props.type, 'button');
     assert.equal(page._calibrationNodes.duration.props['aria-label'], '学习采集时长');
     assert.equal(page._calibrationNodes.sceneButtons.length, 4);
-    assert.equal(page._calibrationNodes.selectedScene.textContent, '电视系统首页');
+    assert.equal(page._calibrationNodes.selectedScene.children[0], '电视系统首页');
     assert.match(page._calibrationNodes.report.textContent, /学习分析/);
     assert.equal(page._overviewNodes.childButton.props.type, 'button');
     assert.equal(page._overviewNodes.parentButton.props.type, 'button');
