@@ -139,4 +139,20 @@ PY
 test "$(sh "$DST" 30 1 28 24000)" = 'app_home general 90'
 test "$(sh "$DST" 180 5 174 55000)" != 'app_home general 90'
 
+# If a point sits in both verified idle envelopes, do not lie about the exact
+# foreground screen. Neutral idle is still safe for billing.
+python3 - "$CSV" <<'PY'
+from pathlib import Path
+import sys
+p=Path(sys.argv[1])
+rows=p.read_text().splitlines()
+sid=400
+for session in range(3):
+    sid += 1
+    for i in range(8):
+        rows.append(f"{1730500000+sid*120+i*10},{sid}-1,system_home,system,{10+i%2},1,{9+i%2},{7000+i*20}")
+p.write_text("\n".join(rows)+"\n")
+PY
+test "$(sh "$DST" 13 1 13 10000)" = 'idle general 95'
+
 echo 'PASS: system-home idle, cross-app generic idle, overlap rejection, unknown sleep'
