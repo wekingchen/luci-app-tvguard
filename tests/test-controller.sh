@@ -1,6 +1,6 @@
 #!/bin/sh
 # Host-only functional test, never invokes actual router iptables.
-set -eu
+set -eux
 ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT HUP INT TERM
