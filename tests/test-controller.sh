@@ -60,11 +60,12 @@ chmod +x "$TMP/shadow"
 cat > "$TMP/adaptive" <<'EOADAPT'
 #!/bin/sh
 case "${TVGUARD_TEST_ADAPTIVE:-unready}" in
-    idle) echo 'idle 95 6 stable_low 70 138 14 34' ;;
-    active) echo 'active 100 6 clear_current 70 138 160 233' ;;
-    ambiguous) echo 'ambiguous 50 6 overlap 70 138 18 101' ;;
-    warming) echo 'warming 0 3 need_window 70 138 16 20' ;;
-    *) echo 'unready 0 0 no_model 0 0 0 0' ;;
+    idle) echo 'idle 95 6 stable_low 70 138 14 34 idle_overlap 60 180 260 0 0' ;;
+    active) echo 'active 100 6 clear_current 70 138 160 233 none 0 220 340 4 0' ;;
+    pause_high) echo 'active 95 6 active_votes 70 138 115 184 high_ratio_pause 95 1450 2400 3 24' ;;
+    ambiguous) echo 'ambiguous 50 6 overlap 70 138 18 101 bursty_pause 75 260 410 0 0' ;;
+    warming) echo 'warming 0 3 need_window 70 138 16 20 none 0 220 300 0 0' ;;
+    *) echo 'unready 0 0 no_model 0 0 0 0 none 0 0 0 0 0' ;;
 esac
 EOADAPT
 chmod +x "$TMP/adaptive"
@@ -557,6 +558,28 @@ status
 after_active="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["used_seconds"])' "$TMP/status.json")"
 [ $((after_active-before_active)) -ge 9 ] && [ $((after_active-before_active)) -le 11 ]
 check 'assert s["adaptive_state"]=="active" and s["billing_state"]=="charge", s'
+# Phase 2A pause hints are diagnostic only. A high-ratio pause candidate
+# must remain billable because its Phase 1 state is still active.
+export TVGUARD_TEST_ADAPTIVE=pause_high
+python3 - "$TMP/run/runtime" <<'PY'
+from pathlib import Path
+import sys,time
+p=Path(sys.argv[1])
+lines=p.read_text().splitlines()
+now=int(time.time())
+p.write_text('\n'.join('LAST_EPOCH='+str(now-10) if x.startswith('LAST_EPOCH=') else x for x in lines)+'\n')
+PY
+set -- $(cat "$TMP/sample")
+echo "$(($1 + 1200)) $(($2 + 1600000)) $(($3 + 20)) $(($4 + 20000)) $(($5 + 1180)) $(($6 + 1580000))" > "$TMP/sample"
+before_pause_hint="$(sh "$CTL" status | python3 -c 'import json,sys; print(json.load(sys.stdin)["used_seconds"])')"
+sh "$CTL" tick
+status
+after_pause_hint="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["used_seconds"])' "$TMP/status.json")"
+[ $((after_pause_hint-before_pause_hint)) -ge 9 ] && [ $((after_pause_hint-before_pause_hint)) -le 11 ]
+check 'assert s["adaptive_state"]=="active" and s["adaptive_pause_hint"]=="high_ratio_pause" and s["adaptive_pause_score"]==95 and s["billing_state"]=="charge", s'
+check 'assert s["adaptive_bp_p50"]==1450 and s["adaptive_bp_p90"]==2400 and s["adaptive_trend_percent"]==24, s'
+export TVGUARD_TEST_ADAPTIVE=unready
+
 export TVGUARD_TEST_ADAPTIVE=unready
 
 # Missing reply counters after FW3 reload must request an OBSERVER-ONLY repair
