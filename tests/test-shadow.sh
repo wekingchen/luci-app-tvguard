@@ -76,7 +76,9 @@ mv "$TMP/oneapp.csv" "$CSV"
 test "$(sh "$DST" 180 30 150 65000)" = 'unknown none 0'
 test "$(sh "$DST" 8 1 7 2800)" = 'system_home system 100'
 
-# A second app restored, but one whole pause class missing: abstain.
+# A second app restored but pause evidence is still missing. Generic idle
+# remains unavailable, while the explicitly labelled App-home envelope may
+# use the device-local fallback.
 python3 - "$CSV" <<'PY'
 from pathlib import Path
 import sys
@@ -92,7 +94,7 @@ rows += [
 ]
 p.write_text("\n".join(rows)+"\n")
 PY
-test "$(sh "$DST" 30 1 28 16000)" = 'unknown none 0'
+test "$(sh "$DST" 30 1 28 16000)" = 'app_home general 90'
 
 # Complete cross-app evidence, but overlapping pause/play windows must not
 # become a seemingly confident playback or pause hint.
