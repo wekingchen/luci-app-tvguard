@@ -126,7 +126,7 @@ load_state() {
     case "$IDLE_REASON" in none|system_home|idle|paused|app_home|adaptive|silent) :;; *) IDLE_REASON=none;; esac
     case "$ADAPTIVE_STATE" in unready|warming|idle|active|ambiguous) :;; *) ADAPTIVE_STATE=unready;; esac
     for n in ADAPTIVE_SCORE ADAPTIVE_WINDOWS ADAPTIVE_IDLE_CEILING ADAPTIVE_ACTIVE_FLOOR ADAPTIVE_P50 ADAPTIVE_P90 ADAPTIVE_PAUSE_SCORE ADAPTIVE_BP50 ADAPTIVE_BP90 ADAPTIVE_ACTIVE_HITS ADAPTIVE_TREND_PCT; do
-        eval "v=\$n"
+        eval "v=\${$n}"
         case "$v" in ''|*[!0-9-]*) eval "$n=0";; esac
     done
     case "$ADAPTIVE_PAUSE_HINT" in none|idle_overlap|bursty_pause|high_ratio_pause) :;; *) ADAPTIVE_PAUSE_HINT=none;; esac
