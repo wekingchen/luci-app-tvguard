@@ -171,6 +171,15 @@ END {
         exit
     }
 
+    # Preserve the higher-confidence cross-App playing hint when that
+    # stronger evidence exists. This remains informational and billable.
+    if (ready_cross_app("playing") && inside("playing") &&
+        (!ready_cross_app("paused") || separated_from("paused")) &&
+        (!ready_cross_app("app_home") || separated_from("app_home"))) {
+        print "playing general 100"
+        exit
+    }
+
     # A playing hint is informational only; unknown also charges. Use local
     # labelled playback as soon as it is clearly separated from pause/home,
     # while keeping ambiguous overlap as unknown.
