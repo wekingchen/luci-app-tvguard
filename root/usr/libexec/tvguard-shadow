@@ -84,7 +84,8 @@ function clear_local_playing() {
     if (local_pause_reference_ready() &&
         p>pmax["paused"]+20 &&
         (!local_app_home_ready() || p>pmax["app_home"]+20) &&
-        (!ready_sessions("system_home") || p>pmax["system_home"]+20))
+        (!ready_sessions("system_home") || p>pmax["system_home"]+20) &&
+        p<=pmax["playing"] + high(100, pmax["playing"]-pmin["playing"]))
         return 1
 
     return 0
