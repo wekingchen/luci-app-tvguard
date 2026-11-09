@@ -2,6 +2,21 @@
 
 > 状态：v0.1.11 已由用户于 2026-11-09 确认真机完成操作日志、移动端界面和代理兼容检查验收，并完成第一轮正式网络阻断实测：`mode=locked`、`enforce=1`、`armed=1` 时实际 gate 为 `DROP`，电视无法播放网络内容，而手机、电脑保持正常联网。恢复放行、儿童额度自动阻断、firewall reload/重启恢复及可选回程观测仍待专项验收。当前仍为开发构建，不是稳定 Release。
 
+## v0.1.12 N1 BusyBox 锁等待兼容修复 · 2026-11-09
+
+在继续验证“锁定 → 家长模式即时恢复”时，N1 现场出现：
+
+```text
+sleep: invalid number '0.1'
+```
+
+根因是 `tvguardctl` 在互斥锁竞争时使用 `sleep 0.1`；该 LEDE/N1 的 BusyBox `sleep` 仅接受整数秒。命令在争锁路径直接失败，因此当次 `enforce on` 并未真正启用，后续 `mode locked` 仍保持 `allowed`。这不是防火墙 gate 逻辑失败。
+
+v0.1.12 修复：
+- 锁等待改为整数秒 `sleep 1`，最多约 5 秒后报 `tvguard lock busy`，不再依赖小数 sleep。
+- 新增回归测试：模拟 BusyBox 拒绝小数 sleep，并制造一次 stale lock，要求控制器可以恢复后继续执行。
+- 默认安全开关保持 `enforce=0`、`allow_enforcement=0`、`observe_reply=0`。
+
 ## v0.1.11 正式锁定真机验证 · 2026-11-09
 
 用户在 N1 上按双开关与隔离审计流程开启正式控制后执行手动锁定，现场结果：
