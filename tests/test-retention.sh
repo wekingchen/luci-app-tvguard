@@ -18,12 +18,14 @@ export TVG_RETENTION_STATE="$TMP/state"
 
 SRC="$ROOT/root/usr/libexec/tvguard-retention"
 DST="$TMP/retention"
-python3 - "$SRC" "$DST" "$TMP/state" "$TMP/data" <<'PY'
+python3 - "$SRC" "$DST" "$TMP/data" <<'PY'
 from pathlib import Path
 import sys
-src,dst,state,data=sys.argv[1:]
+src,dst,data=sys.argv[1:]
 s=Path(src).read_text()
-s=s.replace('DATA=/usr/libexec/tvguard-data','DATA='+data,1)
+anchor='DATA=/usr/libexec/tvguard-data'
+assert anchor in s
+s=s.replace(anchor,'DATA='+data,1)
 Path(dst).write_text(s)
 PY
 chmod +x "$DST"
@@ -62,12 +64,10 @@ grep -q '^006000,' "$TMP/state/calibration-v4.csv"
 grep -q '^003000,' "$TMP/state/learning-sessions.csv"
 
 report="$(sh "$DST" report)"
-printf '%s\n' "$report" | grep -q '^数据模式: persistent
-printf '%s\n' "$report" | grep -q 'Adaptive 滚动窗口: /var/run/tvguard-adaptive-window.csv'
-
-echo 'PASS: persistent append-only TV Guard data is hard-bounded to a 1 MiB design budget'
-
+printf '%s\n' "$report" | grep -q '^数据模式: persistent$'
 printf '%s\n' "$report" | grep -q "^当前数据目录: $TMP/state$"
+printf '%s\n' "$report" | grep -q "^持久目录: $TMP/state$"
+printf '%s\n' "$report" | grep -q '^状态: mounted$'
 printf '%s\n' "$report" | grep -q '持久追加预算: 1048576 bytes (1 MiB)'
 printf '%s\n' "$report" | grep -q 'Adaptive 滚动窗口: /var/run/tvguard-adaptive-window.csv'
 
