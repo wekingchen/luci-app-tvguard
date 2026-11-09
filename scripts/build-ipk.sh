@@ -6,6 +6,7 @@ set -eu
 
 ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
 VERSION="${1:-0.1.13}"
+RELEASE="${2:-2}"
 OUT="$ROOT/dist"
 PACKAGE="luci-app-tvguard"
 ARCH="all"
@@ -41,7 +42,7 @@ INSTALLED_SIZE="$(gzip -cd "$WORK/data.tar.gz" | wc -c | tr -d ' ')"
 
 cat > "$WORK/control/control" <<EOF
 Package: $PACKAGE
-Version: $VERSION-1
+Version: $VERSION-$RELEASE
 Architecture: $ARCH
 Maintainer: TV Guard contributors
 Section: luci
@@ -61,7 +62,7 @@ chmod 755 "$WORK/control/postinst" "$WORK/control/prerm"
 )
 printf '2.0\n' > "$WORK/debian-binary"
 
-OUTPUT="$OUT/${PACKAGE}_${VERSION}-1_${ARCH}.ipk"
+OUTPUT="$OUT/${PACKAGE}_${VERSION}-${RELEASE}_${ARCH}.ipk"
 rm -f "$OUTPUT"
 (
     cd "$WORK"
