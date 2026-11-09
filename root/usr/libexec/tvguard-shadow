@@ -35,6 +35,12 @@ function local_app_home_ready() {
     # one-off transition sample; unknown Apps that do not match remain charged.
     return samples["app_home"]>=10 && sess_n["app_home"]>=1
 }
+function local_pause_reference_ready() {
+    # Pause is never granted a local exemption from one session because it
+    # overlaps playback, but even one labelled pause session is useful as a
+    # negative reference for deciding whether a sample is clearly playback.
+    return samples["paused"]>=6 && sess_n["paused"]>=1
+}
 function inside(label) {
     return p>=pmin[label]-5 && p<=pmax[label]+5 &&
            t>=tmin[label]-3 && t<=tmax[label]+3 &&
@@ -58,6 +64,30 @@ function separated_from(label) {
            t<tmin[label]-5 || t>tmax[label]+5 ||
            u<umin[label]-10 || u>umax[label]+10 ||
            b<bmin[label]-10240 || b>bmax[label]+10240
+}
+function clear_local_playing() {
+    # "playing" is informational and never grants free time. Therefore it can
+    # use a lower evidence threshold than idle, but it still must be clearly
+    # outside every available idle/pause reference. Ambiguous overlap remains
+    # unknown and continues billing.
+    if (!playback_reference_ready()) return 0
+    if (local_app_home_ready() && !separated_from("app_home")) return 0
+    if (ready_sessions("system_home") && !separated_from("system_home")) return 0
+    if (local_pause_reference_ready() && !separated_from("paused")) return 0
+
+    # A point inside the labelled playback envelope is enough once all
+    # conflicting references have been excluded.
+    if (inside("playing")) return 1
+
+    # Playback can burst above the small labelled sample. Accept that only
+    # when activity is clearly beyond every local pause/home ceiling.
+    if (local_pause_reference_ready() &&
+        p>pmax["paused"]+20 &&
+        (!local_app_home_ready() || p>pmax["app_home"]+20) &&
+        (!ready_sessions("system_home") || p>pmax["system_home"]+20))
+        return 1
+
+    return 0
 }
 $2 ~ /^[0-9]+-[0-9]+$/ &&
 $3 ~ /^(playing|paused|app_home|system_home|sleep)$/ &&
@@ -141,12 +171,11 @@ END {
         exit
     }
 
-    # A playing hint is informational only; unknown also charges, so an
-    # uncertain sample can never become a billing exemption.
-    if (ready_cross_app("playing") && inside("playing") &&
-        (!ready_cross_app("paused") || separated_from("paused")) &&
-        (!ready_cross_app("app_home") || separated_from("app_home"))) {
-        print "playing general 100"
+    # A playing hint is informational only; unknown also charges. Use local
+    # labelled playback as soon as it is clearly separated from pause/home,
+    # while keeping ambiguous overlap as unknown.
+    if (clear_local_playing()) {
+        print "playing general 95"
         exit
     }
 
