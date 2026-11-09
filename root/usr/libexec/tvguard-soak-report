@@ -1,5 +1,5 @@
 #!/bin/sh
-# Read-only Shadow Soak report.
+# Read-only Shadow Soak report v2.
 set -eu
 PATH=/usr/sbin:/usr/bin:/sbin:/bin
 export PATH
@@ -19,23 +19,40 @@ if [ ! -r "$src" ]; then
     exit 0
 fi
 
+SOAK_SCHEMA=v1
 LAST_HINT=none
 CANDIDATE_START=0
 CANDIDATE_SAMPLES=0
 CANDIDATE_ACTIVE_SAMPLES=0
 CANDIDATE_AMBIGUOUS_SAMPLES=0
+CANDIDATE_TCP_SUM=0
+CANDIDATE_UDP_SUM=0
+CANDIDATE_BPS_SUM=0
 TOTAL_SAMPLES=0
 HIGH_RATIO_SAMPLES=0
 HIGH_RATIO_ENTERS=0
 HIGH_RATIO_EXITS=0
 HIGH_RATIO_SECONDS=0
 MAX_HIGH_RATIO_SECONDS=0
+HIGH_RATIO_TCP_SUM=0
+HIGH_RATIO_UDP_SUM=0
+HIGH_RATIO_BPS_SUM=0
+LAST_SESSION_DURATION=0
+LAST_SESSION_SAMPLES=0
+LAST_SESSION_ACTIVE_SAMPLES=0
+LAST_SESSION_AMBIGUOUS_SAMPLES=0
+LAST_SESSION_TCP_SUM=0
+LAST_SESSION_UDP_SUM=0
+LAST_SESSION_BPS_SUM=0
 CHECKPOINT_EPOCH=0
 LAST_EPOCH=0
 LAST_ADAPTIVE_STATE=unready
 LAST_PAUSE_HINT=none
 LAST_PAUSE_SCORE=0
 LAST_PPS=0
+LAST_TCP_PPS=0
+LAST_UDP_PPS=0
+LAST_BPS=0
 LAST_P50=0
 LAST_P90=0
 LAST_BP50=0
@@ -57,18 +74,43 @@ if [ "$LAST_HINT" = high_ratio_pause ] && [ "$CANDIDATE_START" -gt 0 ] && [ "$LA
     candidate_age=$((LAST_EPOCH - CANDIDATE_START))
 fi
 
+percent() { if [ "$2" -gt 0 ]; then echo $(($1 * 100 / $2)); else echo 0; fi; }
+avg() { if [ "$2" -gt 0 ]; then echo $(($1 / $2)); else echo 0; fi; }
+
+cand_total=$((CANDIDATE_TCP_SUM + CANDIDATE_UDP_SUM))
+cand_udp_share="$(percent "$CANDIDATE_UDP_SUM" "$cand_total")"
+cand_tcp_avg="$(avg "$CANDIDATE_TCP_SUM" "$CANDIDATE_SAMPLES")"
+cand_udp_avg="$(avg "$CANDIDATE_UDP_SUM" "$CANDIDATE_SAMPLES")"
+cand_bps_avg="$(avg "$CANDIDATE_BPS_SUM" "$CANDIDATE_SAMPLES")"
+
+last_total=$((LAST_SESSION_TCP_SUM + LAST_SESSION_UDP_SUM))
+last_udp_share="$(percent "$LAST_SESSION_UDP_SUM" "$last_total")"
+last_tcp_avg="$(avg "$LAST_SESSION_TCP_SUM" "$LAST_SESSION_SAMPLES")"
+last_udp_avg="$(avg "$LAST_SESSION_UDP_SUM" "$LAST_SESSION_SAMPLES")"
+last_bps_avg="$(avg "$LAST_SESSION_BPS_SUM" "$LAST_SESSION_SAMPLES")"
+
+all_total=$((HIGH_RATIO_TCP_SUM + HIGH_RATIO_UDP_SUM))
+all_udp_share="$(percent "$HIGH_RATIO_UDP_SUM" "$all_total")"
+all_tcp_avg="$(avg "$HIGH_RATIO_TCP_SUM" "$HIGH_RATIO_SAMPLES")"
+all_udp_avg="$(avg "$HIGH_RATIO_UDP_SUM" "$HIGH_RATIO_SAMPLES")"
+all_bps_avg="$(avg "$HIGH_RATIO_BPS_SUM" "$HIGH_RATIO_SAMPLES")"
+
 echo "Shadow Soak"
-echo "状态: 运行中（仅旁路观察）"
+echo "状态: 运行中（仅旁路观察） · schema=$SOAK_SCHEMA"
 echo "总样本: $TOTAL_SAMPLES"
-echo "高流量暂停候选样本: $HIGH_RATIO_SAMPLES"
+echo "高 B/P 重叠候选样本: $HIGH_RATIO_SAMPLES"
 echo "候选进入/退出: $HIGH_RATIO_ENTERS / $HIGH_RATIO_EXITS"
 echo "已结束候选累计时长: $HIGH_RATIO_SECONDS 秒"
 echo "最长已结束候选: $MAX_HIGH_RATIO_SECONDS 秒"
 echo "当前候选: $LAST_HINT · 持续约 $candidate_age 秒 · $CANDIDATE_SAMPLES 窗"
 echo "当前候选内 Adaptive active/ambiguous 窗: $CANDIDATE_ACTIVE_SAMPLES / $CANDIDATE_AMBIGUOUS_SAMPLES"
-echo "最后状态: adaptive=$LAST_ADAPTIVE_STATE pause=$LAST_PAUSE_HINT score=$LAST_PAUSE_SCORE"
-echo "最后窗口: PPS $LAST_PPS · P50/P90 $LAST_P50/$LAST_P90 · B/P $LAST_BP50/$LAST_BP90 · active_hits $LAST_ACTIVE_HITS · trend $LAST_TREND%"
+echo "当前候选协议均值: TCP $cand_tcp_avg PPS · UDP $cand_udp_avg PPS · UDP占比 $cand_udp_share% · BPS $cand_bps_avg"
+echo "最近已结束候选: $LAST_SESSION_DURATION 秒 · $LAST_SESSION_SAMPLES 窗 · active/ambiguous $LAST_SESSION_ACTIVE_SAMPLES/$LAST_SESSION_AMBIGUOUS_SAMPLES"
+echo "最近已结束候选协议均值: TCP $last_tcp_avg PPS · UDP $last_udp_avg PPS · UDP占比 $last_udp_share% · BPS $last_bps_avg"
+echo "全部高 B/P 候选协议均值: TCP $all_tcp_avg PPS · UDP $all_udp_avg PPS · UDP占比 $all_udp_share% · BPS $all_bps_avg"
+echo "最后状态: adaptive=$LAST_ADAPTIVE_STATE overlap=$LAST_PAUSE_HINT rulescore=$LAST_PAUSE_SCORE"
+echo "最后窗口: PPS $LAST_PPS · TCP/UDP $LAST_TCP_PPS/$LAST_UDP_PPS · BPS $LAST_BPS · P50/P90 $LAST_P50/$LAST_P90 · B/P $LAST_BP50/$LAST_BP90 · active_hits $LAST_ACTIVE_HITS · trend $LAST_TREND%"
 echo "RAM 原始环: $ring_lines/约2200 行 · $ring_bytes bytes"
 echo "持久摘要: $summary_bytes bytes"
 echo "最近持久 checkpoint: $CHECKPOINT_EPOCH"
-echo "说明: 原始窗口只在 /var/run，重启即清空；持久层只保存小型摘要。Shadow Soak 不参与 USED_S、billing_state 或 firewall gate。"
+echo "说明: high_ratio_pause 目前只表示高 B/P 重叠特征，不代表暂停概率；原始窗口只在 /var/run，Shadow Soak 不参与 USED_S、billing_state 或 firewall gate。"
