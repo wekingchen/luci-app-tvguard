@@ -291,3 +291,14 @@ N1 现场：`nf_conntrack_acct=1`、`nf_conntrack_timestamp=0`，`/proc/net/nf_c
 - 即使 r13 真机长期观察没有误报，也不能仅凭这一轮样本自动开放免计时；至少还需跨 App、跨清晰度、跨 CDN/协议的真实播放反例和首页/暂停正例。
 
 r13 的目的不是“恢复暂停免计时”，而是建立一个可被真实数据证伪的窄时序候选；任何播放误触发都应优先淘汰候选，而不是调高授权概率。
+
+### r14 P1-C 真机修正：时序状态持久与暂停正例（2026-11-09）
+
+r13 真机首次三状态观察得到：
+
+- 系统首页命中 `stable_low_plateau`，12 窗约 `P10/P50/P90=7/8/8`、spread=1、max=14；说明低位稳定平台候选本身可观察。
+- 芒果 576p 正常播放约 5 分钟未命中，末窗约 `7/9/43`、spread=36、max=48；安全方向符合预期。
+- 同片暂停约 3 分钟未命中，末窗约 `5/5/13`、spread=8、max=16；r13 的 `spread<=5` 过窄，属于保守漏判。
+- 同时发现 r13 状态恢复代码 `eval` 写错，导致 `TEMPORAL_ENTERS/EXITS/CANDIDATE_SAMPLES` 每 tick 被重置，出现“当前候选已命中但进入/退出仍为 0/0”的显示错误；另有临时文件名 `$$` 少一 `$`，一并修正。
+
+r14 仍然是 Shadow-only 修正：将候选条件的 spread 上限从 5 放宽到 10，并把真实暂停 `5/5/13, spread=8, max=16` 固化为正例；两段真实 576p（UDP-heavy 与 TCP-heavy）继续作为硬反例，必须 0 次触发。`TX_IDLE_BILLING_AUTHORITY=0`、controller billing 与 firewall gate 均不改变。
