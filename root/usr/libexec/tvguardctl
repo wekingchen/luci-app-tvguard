@@ -489,12 +489,19 @@ tick() {
     elif [ "$dt" -gt 0 ]; then
         case "$SHADOW_LABEL" in
             system_home|idle|paused|app_home)
-                if [ "$IDLE_REASON" = "$SHADOW_LABEL" ]; then
-                    IDLE_STREAK_S=$((IDLE_STREAK_S + dt))
-                else
-                    IDLE_REASON="$SHADOW_LABEL"
-                    IDLE_STREAK_S="$dt"
-                fi
+                # All of these labels mean the same thing for billing: a
+                # trusted non-watching state. Do not restart the 30-second
+                # confirmation merely because the classifier moves between
+                # two overlapping idle labels while the TV remains idle.
+                case "$IDLE_REASON" in
+                    system_home|idle|paused|app_home)
+                        IDLE_STREAK_S=$((IDLE_STREAK_S + dt))
+                        ;;
+                    *)
+                        IDLE_STREAK_S="$dt"
+                        ;;
+                esac
+                IDLE_REASON="$SHADOW_LABEL"
                 if [ "$IDLE_STREAK_S" -ge 30 ]; then
                     BILLING_STATE=idle_verified
                 else
