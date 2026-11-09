@@ -1,3 +1,33 @@
+## v0.1.13-r5 Adaptive Phase 2A · 暂停多原型（Shadow）
+
+N1 在 Phase 1 真机确认 `idle ↔ active` 稳定后，又补充了两组不同视频 App 的暂停采集。高质量 paused 会话现呈现三种明显不同的网络行为：
+
+- 低活跃型：PPS P10/P50/P90 = 19/21/35，BPS median/P90 = 2991/8020；与首页 idle 高度重叠。
+- 低基线 + 突发型：12/18/101，BPS = 4501/16262；大部分时间低活跃，但偶有明显 burst。
+- 高吞吐/高 B/P 型：45/115/184，BPS = 166296/380772；PPS 已进入播放重叠区，但 BPS/PPS 明显高于可信播放窗口。
+
+可信 completed+high playing 会话仍显示：
+- playing #1：PPS 138/160/233，BPS 50891/65964；
+- playing #2：168/402/715，BPS 47375/99570。
+
+Phase 2A 不再把所有 paused 会话平均成一个 profile，而是从高质量人工会话动态识别 pause prototypes：
+
+1. `idle_overlap`：低活跃暂停候选，与首页不可可靠区分；
+2. `bursty_pause`：低中位 + 高 P90 的突发型暂停候选；
+3. `high_ratio_pause`：PPS 可像播放，但 60 秒窗口 B/P 中位显著高于 trusted playing。
+
+安全规则：
+- pause hint 是旁路诊断字段，不改变 Phase 1 的 `idle/active/ambiguous`；
+- 即使 `high_ratio_pause` 命中且 Phase 1 仍为 `active`，儿童计时继续；
+- 暂停线索不得直接修改 firewall gate；
+- 只有后续 N1 真机证明正常播放不会误命中、暂停恢复播放能快速退出 pause hint 后，才讨论高置信 paused 是否进入免计时集合。
+
+CI #42591748403：static + package success。
+Package：`luci-app-tvguard_0.1.13-5_all.ipk`
+IPK SHA256：`85e21a3a86b3c1343ef11501fb5bb5609f7f5fb24964db976f47083c50dc1d05`
+Artifact：`tvguard-v0.1.13-r5-adaptive-pause-shadow-ipk`
+Artifact digest：`sha256:2c8e1581330e817c67c856e4edd9646dbea34d696548bee58fd992e8ceedd919`
+
 ## v0.1.13-r4 Adaptive Phase 1 · N1 真机通过 · 2026-11-09
 
 N1 已完成 r4 真机验证，`idle ↔ active` 状态切换稳定：
