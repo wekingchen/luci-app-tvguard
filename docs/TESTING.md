@@ -1,3 +1,32 @@
+## v0.1.13-r7 Storage Guard · 持久存储硬上限
+
+为避免 N1 长期运行后 TV Guard 自身数据无限增长，r7 新增统一存储护栏。
+
+当前所有追加型持久数据的设计预算合计固定为 **1 MiB**：
+- `/etc/tvguard/events.log`：最多 256 KiB，超限保留最近 1500 行；
+- `/etc/tvguard/calibration-v3.csv`：最多 256 KiB，超限保留最近 1500 行；
+- `/etc/tvguard/calibration-v4.csv`：最多 384 KiB，超限保留最近 1800 行；
+- `/etc/tvguard/learning-sessions.csv`：最多 128 KiB，超限保留最近 512 个会话摘要。
+
+其中前 3 项原本已有局部裁剪；r7 补齐此前无上限的 `learning-sessions.csv`，并新增 `tvguard-retention` 统一兜底。daemon 启动时执行一次裁剪，完成学习会话后再次裁剪。
+
+不会持续增长的文件：
+- `state`：覆盖写；
+- `learning-last.txt`：覆盖写；
+- `/var/run/tvguard-adaptive-window.csv`：临时滚动窗口，最多约 12 行，重启即消失，不写入持久存储。
+
+后续 Shadow Soak 的设计约束：原始高频 soak 数据必须优先进入 `/var/run` 或 `/tmp` 的有界环形缓冲，禁止建立无限追加的 `/etc/tvguard` 原始日志；若保存持久摘要，也必须纳入 retention 上限。
+
+新增只读检查：
+`/usr/libexec/tvguard-status storage`
+
+CI #42595915294 已验证：人为制造超大 append-only 文件后，四类文件均自动裁剪回规定上限，且保留最新记录；static + package 均成功。
+
+Package：`luci-app-tvguard_0.1.13-7_all.ipk`
+IPK SHA256：`e4670c58476f21f086baa2dd812fe9e72880345f405ebc89c768c532098d1546`
+Artifact：`tvguard-v0.1.13-r7-storage-guard-ipk`
+Artifact digest：`sha256:1254942492c24d2d9dd99072863fb0e014d982b58c123dd254e6820ca24b9cd1`
+
 ## v0.1.13-r6 Phase 2A · N1 真机通过 · 2026-11-09
 
 N1 完成 r6 三阶段真机验证：
