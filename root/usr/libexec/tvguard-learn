@@ -8,6 +8,7 @@ DIR=/etc/tvguard
 CSV="$DIR/calibration-v3.csv"
 LAST="$DIR/learning-last.txt"
 SESSIONS="$DIR/learning-sessions.csv"
+RETENTION=/usr/libexec/tvguard-retention
 
 [ "$#" -eq 6 ] || {
     echo "usage: tvguard-learn SESSION LABEL DURATION APP RESULT FINISHED_EPOCH" >&2
@@ -134,3 +135,4 @@ mv -f "$tmp" "$LAST"
 
 printf '%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s\n'     "$finished" "$sid" "$label" "$app" "$duration" "$result" "$samples" "$elapsed"     "$coverage" "$p10" "$p50" "$p90" "$t50" "$u50" "$b50" "$b90" "$stability" "$quality"     >> "$SESSIONS"
 chmod 600 "$SESSIONS"
+"$RETENTION" trim >/dev/null 2>&1 || :
