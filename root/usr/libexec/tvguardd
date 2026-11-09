@@ -3,11 +3,15 @@
 trap 'exit 0' TERM INT
 /usr/libexec/tvguard-data prepare >/dev/null 2>&1 || \
     logger -t tvguard "durable data prepare failed; using volatile fallback if needed"
+/usr/libexec/tvguard-data config-sync >/dev/null 2>&1 || \
+    logger -t tvguard "UCI config persistence sync failed; keeping live config"
 /usr/libexec/tvguard-retention trim >/dev/null 2>&1 || \
     logger -t tvguard "storage retention check failed; continuing with existing bounded writers"
 while :; do
     /usr/libexec/tvguard-data prepare >/dev/null 2>&1 || \
         logger -t tvguard "durable data prepare failed; keeping current data root"
+    /usr/libexec/tvguard-data config-sync >/dev/null 2>&1 || \
+        logger -t tvguard "UCI config persistence sync failed; keeping live config"
     /usr/libexec/tvguardctl tick ||
         logger -t tvguard "sample/update failed; keeping existing firewall gate"
     sleep 10
