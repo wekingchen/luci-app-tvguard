@@ -1,3 +1,40 @@
+## v0.1.13-r6 Phase 2A · N1 真机通过 · 2026-11-09
+
+N1 完成 r6 三阶段真机验证：
+
+1. 正常播放稳定后：
+   - Adaptive: active 100%
+   - rolling PPS P50/P90 = 85/144
+   - Pause hint = none
+   - B/P P50/P90 = 3086/5246
+   - 当前 PPS 144 >= learned active floor 138
+   - 结论：即使播放阶段 B/P 极高，clear-active / rising evidence 仍能 veto pause hint。
+
+2. 腾讯暂停稳定后：
+   - Adaptive: active 95%
+   - rolling PPS P50/P90 = 140/166
+   - Pause hint = high_ratio_pause 95%
+   - B/P P50/P90 = 4600/5184
+   - 当前 PPS 137，略低于 active floor 138
+   - trend = 0%
+   - 结论：高流量暂停原型可稳定命中，同时 Phase 1 仍保持 active/charge，未放宽计时。
+
+3. 恢复播放后：
+   - Adaptive: active 100%
+   - rolling PPS P50/P90 = 140/260
+   - Pause hint = none
+   - B/P P50/P90 = 4503/5290
+   - 当前 PPS 260，明显进入 active 区
+   - 结论：恢复播放后 Pause Shadow 可退出，即便 rolling B/P 仍维持高位。
+
+因此 r6 完成 Phase 2A 的目标：
+- high-ratio pause hint 有可重复的 paused 召回；
+- 正常播放不会因为高 B/P 长期挂成 paused；
+- pause → play 转换能退出暂停候选；
+- Phase 1 billing 仍保持原有 active/idle 安全语义。
+
+r6 可标记为当前 Phase 2A 真机通过基线。pause hint 仍不直接授予免计时；要进入 paused_verified 还需额外门槛与多轮真机重复验证。
+
 ## v0.1.13-r5 Phase 2A 真机结果与 r6 修正
 
 N1 r5 三阶段真机结果：
