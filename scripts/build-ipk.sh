@@ -6,7 +6,7 @@ set -eu
 
 ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
 VERSION="${1:-0.1.13}"
-RELEASE="${2:-8}"
+RELEASE="${2:-9}"
 OUT="$ROOT/dist"
 PACKAGE="luci-app-tvguard"
 ARCH="all"
@@ -56,8 +56,8 @@ Depends: luci-base, rpcd
 Description: TV Guard LuCI and shadow time-control service for firewall3 / iptables-legacy
 EOF
 
-cp "$ROOT/ipkg/postinst" "$ROOT/ipkg/prerm" "$ROOT/ipkg/conffiles" "$WORK/control/"
-chmod 755 "$WORK/control/postinst" "$WORK/control/prerm"
+cp "$ROOT/ipkg/preinst" "$ROOT/ipkg/postinst" "$ROOT/ipkg/prerm" "$ROOT/ipkg/conffiles" "$WORK/control/"
+chmod 755 "$WORK/control/preinst" "$WORK/control/postinst" "$WORK/control/prerm"
 
 (
     cd "$WORK/control"
