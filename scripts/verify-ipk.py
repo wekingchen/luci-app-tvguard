@@ -63,6 +63,8 @@ for name in (
     "usr/libexec/tvguard-adaptive",
     "usr/libexec/tvguard-retention",
     "usr/libexec/tvguard-data",
+    "usr/libexec/tvguard-soak",
+    "usr/libexec/tvguard-soak-report",
     "usr/share/tvguard/default-config",
     "www/luci-static/resources/view/tvguard/overview.js",
 ):
