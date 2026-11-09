@@ -160,4 +160,31 @@ p.write_text("\n".join(rows)+"\n")
 PY
 test "$(sh "$DST" 13 1 13 7055)" = 'idle general 95'
 
+# N1 launcher drift regression: while still on system home, one secondary
+# dimension may spike (TCP or bytes) without turning the sample into unknown.
+# PPS must remain in the calibrated low-activity home band, and playback-like
+# PPS must still be rejected.
+python3 - "$CSV" <<'PY'
+from pathlib import Path
+import sys
+p=Path(sys.argv[1])
+rows=[]
+sid=500
+for session in range(3):
+    sid += 1
+    for i in range(8):
+        # Mirrors the observed launcher baseline around 7-12 PPS.
+        rows.append(f"{1730600000+sid*120+i*10},{sid}-1,system_home,system,{7+i%6},{4+i%5},{3+i%6},{3000+i*80}")
+sid += 1
+for i in range(11):
+    rows.append(f"{1730700000+sid*120+i*10},{sid}-1,playing,tencent,{91+i*20},{1+i%4},{80+i*20},{50000+i*2000}")
+p.write_text("\n".join(rows)+"\n")
+PY
+# TCP burst: PPS/UDP/bytes still home-like.
+test "$(sh "$DST" 16 12 4 4004)" = 'system_home system 100'
+# Byte burst: PPS/TCP/UDP still home-like.
+test "$(sh "$DST" 11 7 3 45852)" = 'system_home system 100'
+# Playback-level PPS can never use the launcher exception.
+test "$(sh "$DST" 98 1 96 99364)" != 'system_home system 100'
+
 echo 'PASS: system-home idle, cross-app generic idle, overlap rejection, unknown sleep'
