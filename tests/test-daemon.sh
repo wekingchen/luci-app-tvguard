@@ -17,7 +17,11 @@ SH
 cat > "$TMP/data" <<'SH'
 #!/bin/sh
 printf 'data:%s\n' "$*" >> "$TVG_DAEMON_LOG"
-exit "${TVG_DATA_EXIT:-0}"
+case "${1:-}" in
+    prepare) exit "${TVG_DATA_PREPARE_EXIT:-0}" ;;
+    config-sync) exit "${TVG_DATA_CONFIG_EXIT:-0}" ;;
+    *) exit 0 ;;
+esac
 SH
 
 cat > "$TMP/retention" <<'SH'
@@ -40,7 +44,8 @@ SH
 
 chmod +x "$TMP/ctl" "$TMP/data" "$TMP/retention" "$TMP/logger" "$TMP/sleep"
 export TVG_DAEMON_LOG="$LOG"
-export TVG_DATA_EXIT=0
+export TVG_DATA_PREPARE_EXIT=0
+export TVG_DATA_CONFIG_EXIT=0
 export TVG_RETENTION_EXIT=0
 
 DAEMON="$TMP/daemon"
@@ -54,269 +59,49 @@ text=text.replace('/usr/libexec/tvguard-data', tmp+'/data')
 text=text.replace('/usr/libexec/tvguard-retention', tmp+'/retention')
 text=text.replace('logger -t tvguard', tmp+'/logger -t tvguard')
 text=text.replace('sleep 10', tmp+'/sleep 10')
-# Execute exactly one production loop body.
 text=text.replace('while :; do', 'for _tvg_once in 1; do', 1)
 Path(dst).write_text(text)
 PY
 chmod +x "$DAEMON"
 
-# Successful tick: startup + loop prepare happen, retention trims once, and
-# no error logger is emitted.
+# Successful iteration: prepare/config-sync happen at startup and in-loop,
+# retention trims once, tick runs once, no errors are logged.
 export TVG_TICK_EXIT=0
 : > "$LOG"
 sh "$DAEMON"
-[ "$(grep -c '^data:prepare
-grep -q '^ctl:tick$' "$LOG"
-grep -q '^sleep:10$' "$LOG"
+[ "$(grep -c '^data:prepare$' "$LOG")" -eq 2 ]
+[ "$(grep -c '^data:config-sync$' "$LOG")" -eq 2 ]
+[ "$(grep -c '^retention:trim$' "$LOG")" -eq 1 ]
+[ "$(grep -c '^ctl:tick$' "$LOG")" -eq 1 ]
+grep -qx 'sleep:10' "$LOG"
 ! grep -q '^logger:' "$LOG"
 
-# Failed tick: log only; daemon loop still reaches the normal sleep.
+# Tick failure is logged; cadence continues.
 export TVG_TICK_EXIT=7
 : > "$LOG"
 sh "$DAEMON"
-grep -q '^ctl:tick$' "$LOG"
-grep -q '^logger:-t tvguard sample/update failed; keeping existing firewall gate$' "$LOG"
-grep -q '^sleep:10$' "$LOG"
+grep -qx 'ctl:tick' "$LOG"
+grep -qx 'logger:-t tvguard sample/update failed; keeping existing firewall gate' "$LOG"
+grep -qx 'sleep:10' "$LOG"
 
-# A transient data-prepare failure is logged but does not stop the daemon from
-# running the tick against the currently selected safe root.
+# Transient mmc prepare failure is logged but does not stop the safe current
+# root from being used for config sync/tick.
 export TVG_TICK_EXIT=0
-export TVG_DATA_EXIT=7
+export TVG_DATA_PREPARE_EXIT=7
 : > "$LOG"
 sh "$DAEMON"
 grep -q '^logger:-t tvguard durable data prepare failed;' "$LOG"
-grep -q '^data:config-sync
-grep -q '^sleep:10$' "$LOG"
+grep -q '^data:config-sync$' "$LOG"
+grep -qx 'ctl:tick' "$LOG"
+grep -qx 'sleep:10' "$LOG"
+export TVG_DATA_PREPARE_EXIT=0
 
-echo "PASS: daemon prepares durable data, logs failures and preserves 10-second cadence"
- "$LOG")" -eq 2 ]
-[ "$(grep -c '^data:config-sync
-grep -q '^ctl:tick$' "$LOG"
-grep -q '^sleep:10$' "$LOG"
-! grep -q '^logger:' "$LOG"
-
-# Failed tick: log only; daemon loop still reaches the normal sleep.
-export TVG_TICK_EXIT=7
+# Config backup failure is diagnostic only and never changes firewall cadence.
+export TVG_DATA_CONFIG_EXIT=9
 : > "$LOG"
 sh "$DAEMON"
-grep -q '^ctl:tick$' "$LOG"
-grep -q '^logger:-t tvguard sample/update failed; keeping existing firewall gate$' "$LOG"
-grep -q '^sleep:10$' "$LOG"
+grep -q '^logger:-t tvguard UCI config persistence sync failed;' "$LOG"
+grep -qx 'ctl:tick' "$LOG"
+grep -qx 'sleep:10' "$LOG"
 
-# A transient data-prepare failure is logged but does not stop the daemon from
-# running the tick against the currently selected safe root.
-export TVG_TICK_EXIT=0
-export TVG_DATA_EXIT=7
-: > "$LOG"
-sh "$DAEMON"
-grep -q '^logger:-t tvguard durable data prepare failed;' "$LOG"
-grep -q '^ctl:tick$' "$LOG"
-grep -q '^sleep:10$' "$LOG"
-
-echo "PASS: daemon prepares durable data, logs failures and preserves 10-second cadence"
- "$LOG")" -eq 2 ]
-grep -q '^retention:trim
-grep -q '^ctl:tick$' "$LOG"
-grep -q '^sleep:10$' "$LOG"
-! grep -q '^logger:' "$LOG"
-
-# Failed tick: log only; daemon loop still reaches the normal sleep.
-export TVG_TICK_EXIT=7
-: > "$LOG"
-sh "$DAEMON"
-grep -q '^ctl:tick$' "$LOG"
-grep -q '^logger:-t tvguard sample/update failed; keeping existing firewall gate$' "$LOG"
-grep -q '^sleep:10$' "$LOG"
-
-# A transient data-prepare failure is logged but does not stop the daemon from
-# running the tick against the currently selected safe root.
-export TVG_TICK_EXIT=0
-export TVG_DATA_EXIT=7
-: > "$LOG"
-sh "$DAEMON"
-grep -q '^logger:-t tvguard durable data prepare failed;' "$LOG"
-grep -q '^ctl:tick$' "$LOG"
-grep -q '^sleep:10$' "$LOG"
-
-echo "PASS: daemon prepares durable data, logs failures and preserves 10-second cadence"
- "$LOG"
-grep -q '^ctl:tick$' "$LOG"
-grep -q '^sleep:10$' "$LOG"
-! grep -q '^logger:' "$LOG"
-
-# Failed tick: log only; daemon loop still reaches the normal sleep.
-export TVG_TICK_EXIT=7
-: > "$LOG"
-sh "$DAEMON"
-grep -q '^ctl:tick$' "$LOG"
-grep -q '^logger:-t tvguard sample/update failed; keeping existing firewall gate$' "$LOG"
-grep -q '^sleep:10$' "$LOG"
-
-# A transient data-prepare failure is logged but does not stop the daemon from
-# running the tick against the currently selected safe root.
-export TVG_TICK_EXIT=0
-export TVG_DATA_EXIT=7
-: > "$LOG"
-sh "$DAEMON"
-grep -q '^logger:-t tvguard durable data prepare failed;' "$LOG"
-grep -q '^ctl:tick$' "$LOG"
-grep -q '^sleep:10$' "$LOG"
-
-echo "PASS: daemon prepares durable data, logs failures and preserves 10-second cadence"
- "$LOG"
-grep -q '^ctl:tick
-grep -q '^sleep:10$' "$LOG"
-
-echo "PASS: daemon prepares durable data, logs failures and preserves 10-second cadence"
- "$LOG")" -eq 2 ]
-[ "$(grep -c '^data:config-sync
-grep -q '^ctl:tick$' "$LOG"
-grep -q '^sleep:10$' "$LOG"
-! grep -q '^logger:' "$LOG"
-
-# Failed tick: log only; daemon loop still reaches the normal sleep.
-export TVG_TICK_EXIT=7
-: > "$LOG"
-sh "$DAEMON"
-grep -q '^ctl:tick$' "$LOG"
-grep -q '^logger:-t tvguard sample/update failed; keeping existing firewall gate$' "$LOG"
-grep -q '^sleep:10$' "$LOG"
-
-# A transient data-prepare failure is logged but does not stop the daemon from
-# running the tick against the currently selected safe root.
-export TVG_TICK_EXIT=0
-export TVG_DATA_EXIT=7
-: > "$LOG"
-sh "$DAEMON"
-grep -q '^logger:-t tvguard durable data prepare failed;' "$LOG"
-grep -q '^ctl:tick$' "$LOG"
-grep -q '^sleep:10$' "$LOG"
-
-echo "PASS: daemon prepares durable data, logs failures and preserves 10-second cadence"
- "$LOG")" -eq 2 ]
-grep -q '^retention:trim
-grep -q '^ctl:tick$' "$LOG"
-grep -q '^sleep:10$' "$LOG"
-! grep -q '^logger:' "$LOG"
-
-# Failed tick: log only; daemon loop still reaches the normal sleep.
-export TVG_TICK_EXIT=7
-: > "$LOG"
-sh "$DAEMON"
-grep -q '^ctl:tick$' "$LOG"
-grep -q '^logger:-t tvguard sample/update failed; keeping existing firewall gate$' "$LOG"
-grep -q '^sleep:10$' "$LOG"
-
-# A transient data-prepare failure is logged but does not stop the daemon from
-# running the tick against the currently selected safe root.
-export TVG_TICK_EXIT=0
-export TVG_DATA_EXIT=7
-: > "$LOG"
-sh "$DAEMON"
-grep -q '^logger:-t tvguard durable data prepare failed;' "$LOG"
-grep -q '^ctl:tick$' "$LOG"
-grep -q '^sleep:10$' "$LOG"
-
-echo "PASS: daemon prepares durable data, logs failures and preserves 10-second cadence"
- "$LOG"
-grep -q '^ctl:tick$' "$LOG"
-grep -q '^sleep:10$' "$LOG"
-! grep -q '^logger:' "$LOG"
-
-# Failed tick: log only; daemon loop still reaches the normal sleep.
-export TVG_TICK_EXIT=7
-: > "$LOG"
-sh "$DAEMON"
-grep -q '^ctl:tick$' "$LOG"
-grep -q '^logger:-t tvguard sample/update failed; keeping existing firewall gate$' "$LOG"
-grep -q '^sleep:10$' "$LOG"
-
-# A transient data-prepare failure is logged but does not stop the daemon from
-# running the tick against the currently selected safe root.
-export TVG_TICK_EXIT=0
-export TVG_DATA_EXIT=7
-: > "$LOG"
-sh "$DAEMON"
-grep -q '^logger:-t tvguard durable data prepare failed;' "$LOG"
-grep -q '^ctl:tick$' "$LOG"
-grep -q '^sleep:10$' "$LOG"
-
-echo "PASS: daemon prepares durable data, logs failures and preserves 10-second cadence"
- "$LOG"
-grep -q '^sleep:10$' "$LOG"
-
-echo "PASS: daemon prepares durable data, logs failures and preserves 10-second cadence"
- "$LOG")" -eq 2 ]
-[ "$(grep -c '^data:config-sync
-grep -q '^ctl:tick$' "$LOG"
-grep -q '^sleep:10$' "$LOG"
-! grep -q '^logger:' "$LOG"
-
-# Failed tick: log only; daemon loop still reaches the normal sleep.
-export TVG_TICK_EXIT=7
-: > "$LOG"
-sh "$DAEMON"
-grep -q '^ctl:tick$' "$LOG"
-grep -q '^logger:-t tvguard sample/update failed; keeping existing firewall gate$' "$LOG"
-grep -q '^sleep:10$' "$LOG"
-
-# A transient data-prepare failure is logged but does not stop the daemon from
-# running the tick against the currently selected safe root.
-export TVG_TICK_EXIT=0
-export TVG_DATA_EXIT=7
-: > "$LOG"
-sh "$DAEMON"
-grep -q '^logger:-t tvguard durable data prepare failed;' "$LOG"
-grep -q '^ctl:tick$' "$LOG"
-grep -q '^sleep:10$' "$LOG"
-
-echo "PASS: daemon prepares durable data, logs failures and preserves 10-second cadence"
- "$LOG")" -eq 2 ]
-grep -q '^retention:trim
-grep -q '^ctl:tick$' "$LOG"
-grep -q '^sleep:10$' "$LOG"
-! grep -q '^logger:' "$LOG"
-
-# Failed tick: log only; daemon loop still reaches the normal sleep.
-export TVG_TICK_EXIT=7
-: > "$LOG"
-sh "$DAEMON"
-grep -q '^ctl:tick$' "$LOG"
-grep -q '^logger:-t tvguard sample/update failed; keeping existing firewall gate$' "$LOG"
-grep -q '^sleep:10$' "$LOG"
-
-# A transient data-prepare failure is logged but does not stop the daemon from
-# running the tick against the currently selected safe root.
-export TVG_TICK_EXIT=0
-export TVG_DATA_EXIT=7
-: > "$LOG"
-sh "$DAEMON"
-grep -q '^logger:-t tvguard durable data prepare failed;' "$LOG"
-grep -q '^ctl:tick$' "$LOG"
-grep -q '^sleep:10$' "$LOG"
-
-echo "PASS: daemon prepares durable data, logs failures and preserves 10-second cadence"
- "$LOG"
-grep -q '^ctl:tick$' "$LOG"
-grep -q '^sleep:10$' "$LOG"
-! grep -q '^logger:' "$LOG"
-
-# Failed tick: log only; daemon loop still reaches the normal sleep.
-export TVG_TICK_EXIT=7
-: > "$LOG"
-sh "$DAEMON"
-grep -q '^ctl:tick$' "$LOG"
-grep -q '^logger:-t tvguard sample/update failed; keeping existing firewall gate$' "$LOG"
-grep -q '^sleep:10$' "$LOG"
-
-# A transient data-prepare failure is logged but does not stop the daemon from
-# running the tick against the currently selected safe root.
-export TVG_TICK_EXIT=0
-export TVG_DATA_EXIT=7
-: > "$LOG"
-sh "$DAEMON"
-grep -q '^logger:-t tvguard durable data prepare failed;' "$LOG"
-grep -q '^ctl:tick$' "$LOG"
-grep -q '^sleep:10$' "$LOG"
-
-echo "PASS: daemon prepares durable data, logs failures and preserves 10-second cadence"
+echo "PASS: daemon maintains bounded data/config persistence and 10-second cadence"
