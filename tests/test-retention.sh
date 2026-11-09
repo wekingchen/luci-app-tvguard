@@ -69,6 +69,7 @@ printf '%s\n' "$report" | grep -q "^当前数据目录: $TMP/state$"
 printf '%s\n' "$report" | grep -q "^持久目录: $TMP/state$"
 printf '%s\n' "$report" | grep -q '^状态: mounted$'
 printf '%s\n' "$report" | grep -q '持久追加预算: 1048576 bytes (1 MiB)'
+printf '%s\n' "$report" | grep -q 'Shadow Soak 持久摘要: 0 bytes'
 printf '%s\n' "$report" | grep -q 'Adaptive 滚动窗口: /var/run/tvguard-adaptive-window.csv'
 
 echo 'PASS: persistent append-only TV Guard data is hard-bounded to a 1 MiB design budget'
