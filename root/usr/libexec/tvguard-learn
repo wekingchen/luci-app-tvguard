@@ -4,7 +4,8 @@
 set -eu
 PATH=/usr/sbin:/usr/bin:/sbin:/bin
 export PATH
-DIR=/etc/tvguard
+DATA=/usr/libexec/tvguard-data
+DIR="$("$DATA" root)"
 CSV="$DIR/calibration-v3.csv"
 LAST="$DIR/learning-last.txt"
 SESSIONS="$DIR/learning-sessions.csv"
