@@ -302,3 +302,11 @@ r13 真机首次三状态观察得到：
 - 同时发现 r13 状态恢复代码 `eval` 写错，导致 `TEMPORAL_ENTERS/EXITS/CANDIDATE_SAMPLES` 每 tick 被重置，出现“当前候选已命中但进入/退出仍为 0/0”的显示错误；另有临时文件名 `$$` 少一 `$`，一并修正。
 
 r14 仍然是 Shadow-only 修正：将候选条件的 spread 上限从 5 放宽到 10，并把真实暂停 `5/5/13, spread=8, max=16` 固化为正例；两段真实 576p（UDP-heavy 与 TCP-heavy）继续作为硬反例，必须 0 次触发。`TX_IDLE_BILLING_AUTHORITY=0`、controller billing 与 firewall gate 均不改变。
+
+### r15 P1-C 状态迁移修复（2026-11-10）
+
+r14 真机按“播放 → 暂停 → 暂停 → 播放”观察时，播放两次均为 `stable_low_plateau=none`，暂停第一次命中 `5/6/15, spread=10`，暂停第二次因背景突发达到 `P90=60/max=99` 而保守退出。该退出属于预期的 uncertain=>charge，不继续放宽阈值。
+
+同时发现升级状态污染：r13 曾可能留下 `TEMPORAL_LAST_HINT=stable_low_plateau` 但 `TEMPORAL_CANDIDATE_START=0`；r14 修复状态持久后首次退出会计算 `NOW-0`，从而产生约 Unix epoch 大小的虚假累计/最长时长。r15 为 temporal observer 引入独立 `TEMPORAL_STATE_SCHEMA=v2`，升级时只重置 temporal 候选/累计，保留原始 ring 与 high-B/P Soak 历史；只读 report 在 writable migration 发生前也会隐藏旧污染值。
+
+r15 不修改 `TX_IDLE_BILLING_AUTHORITY=0`、controller billing、firewall gate、NAT/mangle/route。

@@ -105,6 +105,36 @@ done
 # temporal observer can inspect its full 12-window history.
 sed -i 's/MAX_LINES=5/MAX_LINES=2160/; s/TRIM_AT=7/TRIM_AT=2200/' "$DST"
 
+# r14 -> r15 temporal migration: legacy temporal state may contain an
+# impossible epoch-sized duration because r13 left candidate_start=0. Reset
+# only temporal aggregates; keep the main Soak evidence epoch intact.
+rm -f "$TMP/run/state" "$TMP/persist/soak-summary" "$TMP/run/ring.csv" "$TMP/run/schema"
+cat > "$TMP/run/state" <<'EOF'
+SOAK_SCHEMA=v2
+TOTAL_SAMPLES=77
+HIGH_RATIO_ENTERS=3
+HIGH_RATIO_EXITS=3
+TEMPORAL_LAST_HINT=stable_low_plateau
+TEMPORAL_CANDIDATE_START=0
+TEMPORAL_CANDIDATE_SAMPLES=99
+TEMPORAL_ENTERS=4
+TEMPORAL_EXITS=4
+TEMPORAL_SECONDS=1794240119
+TEMPORAL_MAX_SECONDS=1794240119
+TEMPORAL_LAST_DURATION=1794240119
+EOF
+run 1900 parent active 100 none 0 80 70 10 9000 60 100 100 200 2 0 playing >/dev/null
+grep -qx 'TEMPORAL_STATE_SCHEMA=v2' "$TMP/run/state"
+grep -qx 'TEMPORAL_LAST_HINT=none' "$TMP/run/state"
+grep -qx 'TEMPORAL_CANDIDATE_START=0' "$TMP/run/state"
+grep -qx 'TEMPORAL_ENTERS=0' "$TMP/run/state"
+grep -qx 'TEMPORAL_EXITS=0' "$TMP/run/state"
+grep -qx 'TEMPORAL_SECONDS=0' "$TMP/run/state"
+grep -qx 'TEMPORAL_MAX_SECONDS=0' "$TMP/run/state"
+grep -qx 'TEMPORAL_LAST_DURATION=0' "$TMP/run/state"
+grep -qx 'TOTAL_SAMPLES=78' "$TMP/run/state"
+grep -qx 'HIGH_RATIO_ENTERS=3' "$TMP/run/state"
+
 # P1-C temporal regression: a genuinely stable low plateau may be observed as
 # a Shadow-only candidate after ~2 minutes. It still has no billing authority.
 rm -f "$TMP/run/state" "$TMP/persist/soak-summary" "$TMP/run/ring.csv" "$TMP/run/schema"
