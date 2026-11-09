@@ -197,3 +197,14 @@ Adaptive Engine 的实时 rolling window 位于 `/var/run`，不是持久学习�
 如果 `/mnt/mmcblk2p4` 暂时未挂载，采集与运行态只写 `/var/run/tvguard-data`。挂载恢复后仅合并中断期间新增的数据，旧库种入 RAM 的前缀不会重复写回，因此不会因为挂载抖动人为放大学习样本权重。
 
 原始长期 Shadow Soak 仍禁止无界持久写入；高频窗口必须优先使用 volatile ring，持久摘要继续受 1 MiB 总设计预算约束。
+
+
+## Shadow Soak：长期观察阶段
+
+Shadow Soak 不产生新的模型权重，也不改变 paused/playing 分类边界。它只用于回答两个问题：
+
+1. 正常日常播放中，`high_ratio_pause` 会不会无人工干预地出现；
+2. 出现时持续多久、Adaptive 是 active 还是 ambiguous，以及恢复播放后是否能及时退出。
+
+高频原始窗口只保留在 `/var/run` 的有界环中。持久层只保存累计计数与当前/最近候选摘要，避免为了识别精度持续写 eMMC。只有当 Soak 长期数据证明假阳性足够低，才讨论下一阶段 `paused_verified`；在此之前 pause hint 始终没有 billing authority。
+
