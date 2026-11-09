@@ -95,17 +95,6 @@ END {
         exit
     }
 
-    # Before cross-App generalization is ready, reuse a sufficiently long
-    # manually labelled App-home session as a device-local idle fingerprint.
-    # It must match the App-home envelope across all metrics AND be clearly
-    # outside the observed playback envelope. This never turns arbitrary low
-    # PPS into free time; non-matching/unknown states continue to charge.
-    if (local_app_home_ready() && playback_reference_ready() &&
-        inside("app_home") && separated_from("playing")) {
-        print "app_home general 90"
-        exit
-    }
-
     # App-home and pause are both non-watching states for billing. They need
     # not be distinguishable from each other. Generic idle is allowed only
     # after cross-app evidence for playing + both idle classes, and the live
@@ -115,6 +104,17 @@ END {
         (inside("paused") || inside("app_home")) &&
         separated_from("playing")) {
         print "idle general 100"
+        exit
+    }
+
+    # Before cross-App generalization is ready, reuse a sufficiently long
+    # manually labelled App-home session as a device-local idle fingerprint.
+    # It must match the App-home envelope across all metrics AND be clearly
+    # outside the observed playback envelope. This never turns arbitrary low
+    # PPS into free time; non-matching/unknown states continue to charge.
+    if (local_app_home_ready() && playback_reference_ready() &&
+        inside("app_home") && separated_from("playing")) {
+        print "app_home general 90"
         exit
     }
 
