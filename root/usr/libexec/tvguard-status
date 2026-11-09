@@ -9,6 +9,7 @@ case "${1:-status}" in
     calibration-v4) exec /usr/libexec/tvguardctl calibration-v4 ;;
     learning) exec /usr/libexec/tvguardctl learning ;;
     storage) exec /usr/libexec/tvguard-retention report ;;
+    soak) exec /usr/libexec/tvguard-soak-report ;;
     isolation) exec /usr/libexec/tvguard-isolation-audit ;;
     *) exit 2 ;;
 esac
