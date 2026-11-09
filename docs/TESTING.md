@@ -14,7 +14,7 @@
 
 CI #42581313641：static + package 全部通过。
 Artifact：`tvguard-v0.1.13-r3-learning-center-ipk`。
-SHA256：`30a7f10286d92aafe598aeaf4be48de6d747ead5e024a4cafcf27fee2d574276`。
+Artifact 容器摘要曾由 Actions 返回；它不是 IPK 文件本身的 SHA256。r3 起由 CI 直接输出 IPK 的 `sha256sum`，以该值作为安装包校验依据。
 
 # TV Guard v0.1 · N1 联调计划
 
