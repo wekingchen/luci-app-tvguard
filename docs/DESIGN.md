@@ -248,3 +248,11 @@ N1 当前学习库：`playing` 53 样本/4 会话，`paused` 65/4，`app_home` 3
 - 因此现有 Reply Observer 对该单臂旁路由拓扑**没有足够回程覆盖**，不能进入 `USED_S`、`billing_state` 或任何 verified-idle 授权逻辑。测试结束后应恢复 `observe_reply=0` 并删除两条 observer 规则。
 
 工程结论：P1 下一步不再投入现有 RX counter 方案；应评估连接/流级元数据（如 conntrack 只读统计）能否在不改 NAT/mangle/路由、不依赖 payload 的情况下提供比 aggregate TX 更强的状态证据。若仍无法与低码率播放可靠分离，则继续采用保守 charge，而不是恢复免计时。
+
+### P1-B Conntrack 能力预检（2026-11-09）
+
+N1 当前未安装 `conntrack` 用户态工具，但 `/proc/net/nf_conntrack` 可读，`nf_conntrack_count=669`、`nf_conntrack_max=327680`，并已加载 `nf_conntrack_netlink`。这意味着无需安装软件即可先用 proc 表做只读流级验证；后续若需要事件驱动再评估 netlink。
+
+`nf_flow_table`/`xt_FLOWOFFLOAD` 模块虽已加载，但此前 UCI software/hardware flow offload 均为 0 且无 `FLOWOFFLOAD` 规则，因此模块存在本身不视为当前观测绕过证据。
+
+下一步只读确认 `nf_conntrack_acct` 是否启用、proc 条目是否含双向 `packets/bytes`，以及能否稳定过滤出 `192.168.101.76` 的 TCP/UDP 流。任何 conntrack 信号在真机区分度验证前仍只进入 Shadow/离线分析，不获得 billing authority。
