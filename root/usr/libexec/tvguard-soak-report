@@ -75,8 +75,30 @@ TEMPORAL_EXITS=0
 TEMPORAL_SECONDS=0
 TEMPORAL_MAX_SECONDS=0
 TEMPORAL_LAST_DURATION=0
+TEMPORAL_STATE_SCHEMA=v1
 
 . "$src"
+
+# Hide legacy r13/r14 temporal corruption before the next daemon tick performs
+# the writable v2 migration. Report-only reset; no files are modified here.
+if [ "$TEMPORAL_STATE_SCHEMA" != v2 ]; then
+    TEMPORAL_HINT=none
+    TEMPORAL_SCORE=0
+    TEMPORAL_WINDOWS=0
+    TEMPORAL_P10=0
+    TEMPORAL_P50=0
+    TEMPORAL_P90=0
+    TEMPORAL_SPREAD=0
+    TEMPORAL_MAX=0
+    TEMPORAL_LAST_HINT=none
+    TEMPORAL_CANDIDATE_START=0
+    TEMPORAL_CANDIDATE_SAMPLES=0
+    TEMPORAL_ENTERS=0
+    TEMPORAL_EXITS=0
+    TEMPORAL_SECONDS=0
+    TEMPORAL_MAX_SECONDS=0
+    TEMPORAL_LAST_DURATION=0
+fi
 
 ring_lines="$(wc -l < "$RING" 2>/dev/null || echo 0)"
 ring_bytes="$(wc -c < "$RING" 2>/dev/null || echo 0)"
