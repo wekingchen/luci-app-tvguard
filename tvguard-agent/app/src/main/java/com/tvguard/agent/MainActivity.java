@@ -103,6 +103,7 @@ public final class MainActivity extends Activity {
         autoPair.setText("自动配对 N1（无需输入密钥）");
         autoPair.setTextSize(18);
         autoPair.setFocusable(true);
+        autoPair.setFocusableInTouchMode(true);
         autoPair.setId(View.generateViewId());
         autoPair.setOnClickListener(new View.OnClickListener() {
             @Override public void onClick(View v) {
@@ -135,6 +136,7 @@ public final class MainActivity extends Activity {
         setContentView(scroller);
         // First-launch focus always lands on the only button needed for pairing.
         // The user does not need TV text input or DPAD_DOWN to begin.
+        autoPairButton.requestFocusFromTouch();
         autoPairButton.requestFocus();
     }
 
