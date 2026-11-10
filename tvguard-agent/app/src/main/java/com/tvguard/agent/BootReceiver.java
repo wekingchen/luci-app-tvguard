@@ -10,6 +10,7 @@ public final class BootReceiver extends BroadcastReceiver {
         if (Intent.ACTION_BOOT_COMPLETED.equals(intent.getAction())
                 && MonitorService.isEnabled(context)) {
             context.startService(new Intent(context, MonitorService.class));
+            WatchdogReceiver.schedule(context);
         }
     }
 }
