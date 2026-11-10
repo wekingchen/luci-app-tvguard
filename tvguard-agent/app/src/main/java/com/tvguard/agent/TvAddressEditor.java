@@ -30,24 +30,24 @@ final class TvAddressEditor {
         final StringBuilder address = new StringBuilder(current);
         final LinearLayout layout = new LinearLayout(activity);
         layout.setOrientation(LinearLayout.VERTICAL);
-        layout.setPadding(24, 16, 24, 16);
+        layout.setPadding(12, 4, 12, 4);
 
         final TextView preview = new TextView(activity);
-        preview.setTextSize(24);
+        preview.setTextSize(19);
         preview.setTextColor(Color.WHITE);
-        preview.setPadding(10, 12, 10, 16);
+        preview.setPadding(4, 0, 4, 4);
         preview.setText(address.toString());
         layout.addView(preview);
 
         final TextView instructions = new TextView(activity);
         instructions.setText("用遥控器方向键选择数字并按确定；不需要输入法。");
-        instructions.setTextSize(16);
+        instructions.setTextSize(12);
         instructions.setTextColor(0xFFE1E7EC);
-        instructions.setPadding(6, 0, 6, 16);
+        instructions.setPadding(2, 0, 2, 4);
         layout.addView(instructions);
 
         final GridLayout grid = new GridLayout(activity);
-        grid.setColumnCount(3);
+        grid.setColumnCount(4);
         layout.addView(grid);
         final String[] symbols = {
                 "1", "2", "3", "4", "5", "6", "7", "8", "9",
@@ -58,7 +58,10 @@ final class TvAddressEditor {
             final Button button = new Button(activity);
             button.setAllCaps(false);
             button.setText(symbol);
-            button.setTextSize(17);
+            button.setTextSize(13);
+            button.setMinHeight(0);
+            button.setMinimumHeight(0);
+            button.setPadding(1, 0, 1, 0);
             button.setFocusable(true);
             button.setOnClickListener(new View.OnClickListener() {
                 @Override public void onClick(View v) {
@@ -75,7 +78,8 @@ final class TvAddressEditor {
             });
             GridLayout.LayoutParams params = new GridLayout.LayoutParams();
             params.width = 0;
-            params.height = GridLayout.LayoutParams.WRAP_CONTENT;
+            // Ensure all 13 buttons fit in an Android 6 landscape dialog.
+            params.height = (int) (38 * activity.getResources().getDisplayMetrics().density);
             params.columnSpec = GridLayout.spec(GridLayout.UNDEFINED, 1f);
             button.setLayoutParams(params);
             grid.addView(button);
