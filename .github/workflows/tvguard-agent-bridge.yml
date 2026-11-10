@@ -22,6 +22,24 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Enforce v0.1.13 smart-billing baseline and core isolation
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f root/usr/libexec/tvguard-adaptive
+          test -f root/usr/libexec/tvguard-learn
+          test -f root/usr/libexec/tvguard-soak
+          git fetch --depth=1 origin feat/v0.1.13-smart-billing
+          git diff --name-only FETCH_HEAD HEAD | while IFS= read -r changed; do
+            case "$changed" in
+              bridge/*|tvguard-agent/*|scripts/build-agent-bridge-ipk.sh|.github/workflows/tvguard-agent.yml|.github/workflows/tvguard-agent-bridge.yml)
+                : ;;
+              *)
+                echo "::error::Unexpected change to existing smart-billing core: $changed"
+                exit 1 ;;
+            esac
+          done
+          echo "smart-billing baseline and non-overwrite gate: PASS"
       - name: Check executable scripts and isolation
         shell: bash
         run: |
