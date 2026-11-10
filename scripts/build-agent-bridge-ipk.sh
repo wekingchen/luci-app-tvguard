@@ -15,7 +15,7 @@ chmod 755 "$WORK/control/postinst" "$WORK/control/prerm"
 INSTALLED="$(du -sk "$WORK/data" | awk '{print $1 * 1024}')"
 cat > "$WORK/control/control" <<EOF
 Package: tvguard-agent-bridge
-Version: 0.2.2-1
+Version: 0.2.3-1
 Architecture: all
 Maintainer: TV Guard contributors
 Section: utils
@@ -28,7 +28,7 @@ FLAGS="--format=gnu --numeric-owner --owner=0 --group=0 --sort=name --mtime=@0"
 (cd "$WORK/data"; tar $FLAGS -cf - . | gzip -n > "$WORK/data.tar.gz")
 (cd "$WORK/control"; tar $FLAGS -cf - . | gzip -n > "$WORK/control.tar.gz")
 printf '2.0\n' > "$WORK/debian-binary"
-PKG="$OUT/tvguard-agent-bridge_0.2.2-1_all.ipk"
+PKG="$OUT/tvguard-agent-bridge_0.2.3-1_all.ipk"
 (cd "$WORK"; tar $FLAGS -cf - ./debian-binary ./data.tar.gz ./control.tar.gz | gzip -n > "$PKG")
 test -s "$PKG"
 echo "$PKG"
