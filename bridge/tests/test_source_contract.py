@@ -23,4 +23,13 @@ assert 'pair-window' in pair and 'now + 120' in pair
 assert 'TOKEN1|' in cgi and 'PAIR1' in cgi
 assert 'REMOTE_ADDR' in cgi and 'pair-claim' in cgi
 assert 'USED_S' not in pair and 'iptables' not in pair
-print('bridge isolation / one-tap pairing / BusyBox checks PASS')
+report=(p/'root/usr/libexec/tvguard-agent-bridge-report').read_text()
+soak=(p/'root/usr/libexec/tvguard-agent-bridge-soak').read_text()
+assert 'player_state_unresolved_audio_hint_off' in report
+assert 'player_open_audio_inactive' not in report
+assert 'last_received_epoch' in report and 'report_seq=' in report
+assert 'soak-v2.csv' in report and 'soak-v2.csv' in soak
+assert 'repeated_report_not_new_evidence' in soak
+assert 'agent_stale' in soak
+assert 'is_new_report' in report
+print('bridge isolation / freshness / BusyBox / one-tap pairing checks PASS')
