@@ -21,7 +21,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          for file in bridge/root/www/cgi-bin/tvguard-agent bridge/root/usr/libexec/tvguard-agent-bridge-report bridge/ipkg/postinst bridge/ipkg/prerm scripts/build-agent-bridge-ipk.sh; do
+          for file in bridge/root/www/cgi-bin/tvguard-agent bridge/root/usr/libexec/tvguard-agent-bridge-report bridge/root/usr/libexec/tvguard-agent-bridge-soak bridge/root/etc/init.d/tvguard-agent-bridge bridge/ipkg/postinst bridge/ipkg/prerm scripts/build-agent-bridge-ipk.sh; do
             dash -n "$file"
           done
           python3 bridge/tests/test_source_contract.py

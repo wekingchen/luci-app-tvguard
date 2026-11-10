@@ -1,0 +1,36 @@
+#!/bin/sh
+# Bounded RAM-only shadow ring. No quota, firewall or persistence writes.
+set -eu
+PATH=/usr/sbin:/usr/bin:/sbin:/bin
+export PATH
+RAM=/var/run/tvguard-agent-bridge
+DATA="$RAM/soak.csv"
+trap 'exit 0' TERM INT
+while :; do
+    if [ -s "$RAM/latest" ]; then
+        status="$(/usr/libexec/tvguard-agent-bridge-report status 2>/dev/null || :)"
+        if [ -n "$status" ]; then
+            fields="$(printf '%s\n' "$status" | awk -F= '
+                $1=="agent" {a=$2}
+                $1=="age_seconds" {age=$2}
+                $1=="package" {p=$2}
+                $1=="activity" {c=$2}
+                $1=="audio_active" {au=$2}
+                $1=="screen_on" {sc=$2}
+                $1=="network_pps" {pps=$2}
+                $1=="network_shadow" {sh=$2}
+                $1=="combined_candidate" {can=$2}
+                END { if (a=="online") printf "%s,%s,%s,%s,%s,%s,%s,%s", age,p,c,au,sc,pps,sh,can }
+            ')"
+            if [ -n "$fields" ]; then
+                printf '%s,%s\n' "$(date +%s)" "$fields" >> "$DATA"
+                lines="$(wc -l < "$DATA")"
+                if [ "$lines" -gt 180 ]; then
+                    tail -n 120 "$DATA" > "$RAM/soak.tmp"
+                    mv -f "$RAM/soak.tmp" "$DATA"
+                fi
+            fi
+        fi
+    fi
+    sleep 10
+done

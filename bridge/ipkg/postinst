@@ -8,5 +8,7 @@ if [ ! -s /etc/tvguard/agent-bridge.key ]; then
     printf '\n' >> /etc/tvguard/agent-bridge.key
 fi
 chmod 600 /etc/tvguard/agent-bridge.key
-chmod 755 /www/cgi-bin/tvguard-agent /usr/libexec/tvguard-agent-bridge-report
+chmod 755 /www/cgi-bin/tvguard-agent /usr/libexec/tvguard-agent-bridge-report /usr/libexec/tvguard-agent-bridge-soak /etc/init.d/tvguard-agent-bridge
+/etc/init.d/tvguard-agent-bridge enable
+/etc/init.d/tvguard-agent-bridge start
 echo 'TVGuard Agent bridge installed (shadow-only). No firewall or TVGuard controller changes.'

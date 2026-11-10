@@ -7,7 +7,7 @@ trap 'rm -rf "$WORK"' EXIT HUP INT TERM
 OUT="$ROOT/dist"
 mkdir -p "$OUT" "$WORK/control"
 cp -R "$ROOT/bridge/root" "$WORK/data"
-chmod 755 "$WORK/data/www/cgi-bin/tvguard-agent" "$WORK/data/usr/libexec/tvguard-agent-bridge-report"
+chmod 755 "$WORK/data/www/cgi-bin/tvguard-agent" "$WORK/data/usr/libexec/tvguard-agent-bridge-report" "$WORK/data/usr/libexec/tvguard-agent-bridge-soak" "$WORK/data/etc/init.d/tvguard-agent-bridge"
 printf '/etc/tvguard/agent-bridge.key\n' > "$WORK/control/conffiles"
 cp "$ROOT/bridge/ipkg/postinst" "$ROOT/bridge/ipkg/prerm" "$WORK/control/"
 chmod 755 "$WORK/control/postinst" "$WORK/control/prerm"
