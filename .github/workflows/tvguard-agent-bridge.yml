@@ -22,7 +22,7 @@ jobs:
           git fetch --depth=1 origin feat/v0.1.13-smart-billing
           git diff --name-only FETCH_HEAD HEAD | while IFS= read -r changed; do
             case "$changed" in
-              bridge/*|tvguard-agent/*|scripts/build-agent-bridge-ipk.sh|.github/workflows/tvguard-agent.yml|.github/workflows/tvguard-agent-bridge.yml|.github/workflows/tvguard-agent-integration-gate.yml|.github/ci/tvguard-agent-integration.trigger)
+              bridge/*|tvguard-agent/*|scripts/build-agent-bridge-ipk.sh|.github/workflows/ci.yml|.github/workflows/tvguard-agent.yml|.github/workflows/tvguard-agent-bridge.yml|.github/workflows/tvguard-agent-integration-gate.yml|.github/ci/tvguard-agent-integration.trigger)
                 : ;;
               *)
                 echo "::error::Unexpected change to existing smart-billing core: $changed"
