@@ -47,4 +47,13 @@ assert "android.util.Log" not in bridge_client
 assert "java.io.File" not in bridge_client
 assert "SharedPreferences.Editor" in service
 assert "editor.commit()" in service
+main_activity = (src / "java/com/tvguard/agent/MainActivity.java").read_text()
+editor = (src / "java/com/tvguard/agent/TvAddressEditor.java").read_text()
+assert "192.168.101.99" in bridge_client
+assert "PAIR1" in bridge_client
+assert "TOKEN1|" in bridge_client
+assert "TvAddressEditor.show" in main_activity
+assert "autoPair(MainActivity.this" in main_activity
+assert "EditText" not in main_activity
+assert "GridLayout" in editor and "清空" in editor
 print("Agent source guardrails: PASS")

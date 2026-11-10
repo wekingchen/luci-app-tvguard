@@ -40,3 +40,13 @@ v0.2.0 在真实 N1 安装时报告 `od: not found`，随后出现 `file_sha256s
 - 新增在 **没有 `od`** 的最小 BusyBox 模拟命令环境下执行 `postinst` 的回归测试，并检验幂等性、权限、缺陷修复和包元数据。
 
 如旧包仍处于已安装但配置失败状态，可只卸载 `tvguard-agent-bridge` 后安装修复版 0.2.1-1；**不得删除或降级 `luci-app-tvguard` 主包**。
+
+## v0.2.2 · 小米 Android 6 电视遥控器零键盘配对
+
+固定地址：N1 192.168.101.99，电视 192.168.101.76。电视 APK 首次自动预填 `http://192.168.101.99/cgi-bin/tvguard-agent`；更改地址通过电视遥控器可操作的数字键盘（不依赖 TV 输入法）。
+
+**一键配对步骤：** N1 SSH 执行 `/usr/libexec/tvguard-agent-bridge-pair open`，开启最长 120 秒的一次性配对窗口；电视打开 Agent v0.2.2，按方向键选「自动配对 N1（无需输入密钥）」并按确认键。只有源地址等于 UCI tvguard.main.ip 的电视可以 POST `PAIR1`，一次成功即关闭窗口，电视从 HTTP 响应中取得现有 32 位 token 并保存一次 SharedPreferences。窗口关闭后不再透露密钥。可执行 `/usr/libexec/tvguard-agent-bridge-pair status` 或 `close`。
+
+明文局域网 HTTP 上的 token 仍有局域网嗅探风险，因此 **仅用于影子观察，不参与正式限额、封禁、家庭成员权限判断**。不将固定密钥写入公开 APK；电视无持久日志/缓存/队列，配对 token 仅首次成功时写入小型配置文件。
+
+N1 独立 Bridge v0.2.2-1 可从 v0.2.1-1 单独升级，配置脚本保留已生成的合法 token，不需重装核心 luci-app-tvguard，不需重启 N1。

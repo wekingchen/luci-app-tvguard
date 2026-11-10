@@ -18,4 +18,9 @@ assert 'sha256sum' in postinst
 assert 'bs=32 count=1' in postinst
 assert 'control/conffiles' in ipk
 assert 'printf \'/etc/tvguard/agent-bridge.key' not in ipk
-print('bridge isolation / BusyBox key generation / opkg conffiles checks PASS')
+pair = (p/'root/usr/libexec/tvguard-agent-bridge-pair').read_text()
+assert 'pair-window' in pair and 'now + 120' in pair
+assert 'TOKEN1|' in cgi and 'PAIR1' in cgi
+assert 'REMOTE_ADDR' in cgi and 'pair-claim' in cgi
+assert 'USED_S' not in pair and 'iptables' not in pair
+print('bridge isolation / one-tap pairing / BusyBox checks PASS')
