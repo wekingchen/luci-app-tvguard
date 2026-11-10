@@ -1,6 +1,12 @@
 name: TVGuard Agent integration gate
 
 on:
+  # Development commits stay quiet. The assistant updates exactly one marker
+  # after a batch is ready, which triggers one integrated gate run.
+  push:
+    branches: [feat/v0.1.13-agent-integration]
+    paths:
+      - '.github/ci/tvguard-agent-integration.trigger'
   workflow_dispatch:
   pull_request:
     branches: [feat/v0.1.13-smart-billing]
