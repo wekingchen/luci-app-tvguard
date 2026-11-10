@@ -13,6 +13,11 @@ assert 'android:usesCleartextTraffic="false"' in manifest
 service = (src / "java/com/tvguard/agent/MonitorService.java").read_text()
 assert "SAMPLE_INTERVAL_MS = 5000L" in service
 assert "MAX_EVENTS_PER_POLL = 4096" in service
+assert "startForeground(NOTIFICATION_ID, notification)" in service
+assert "stopForeground(true)" in service
+main_activity = (src / "java/com/tvguard/agent/MainActivity.java").read_text()
+assert "if (MonitorService.isEnabled(this))" in main_activity
+assert "startService(new Intent(this, MonitorService.class))" in main_activity
 assert '事件超限，前台待确认' in service
 assert 'SamplingWindow.plan(now, lastScanEnd)' in service
 assert 'before.sampledMs' in service

@@ -40,6 +40,12 @@ if ! adb shell dumpsys activity services "$PKG" | grep -q 'MonitorService'; then
   exit 1
 fi
 echo "[smoke] service active PASS"
+# Foreground service must register an ongoing system notification.
+if ! adb shell dumpsys notification --noredact | grep -q "$PKG"; then
+  echo "[smoke] notification not registered"
+  exit 1
+fi
+echo "[smoke] visible foreground notification PASS"
 
 adb shell am start -W -a android.settings.SETTINGS >/dev/null
 sleep 8
@@ -59,6 +65,24 @@ sleep 12
 after="$(adb shell run-as "$PKG" du -sk . | head -1 | tr -d '\r' | awk '{print $1}')"
 test "$before" = "$after"
 echo "[smoke] no ongoing private disk growth PASS ($after KiB)"
+
+# Reproduce MiTV screenshot: enabled flag survives process death, Activity
+# reopened from launcher; a previously dead service must be restarted.
+adb shell am force-stop "$PKG"
+adb shell am start -W -n "$PKG/.MainActivity" >/dev/null
+sleep 8
+if ! adb shell dumpsys activity services "$PKG" | grep -q 'MonitorService'; then
+  echo "[smoke] FAILED reopening UI after process termination"
+  exit 1
+fi
+adb shell uiautomator dump /sdcard/tvguard-window.xml >/dev/null
+adb exec-out cat /sdcard/tvguard-window.xml > /tmp/tvguard-window.xml
+if ! grep -q '采样正常' /tmp/tvguard-window.xml; then
+  echo "[smoke] sample not recovered after reopening UI"
+  head -c 4500 /tmp/tvguard-window.xml || :
+  exit 1
+fi
+echo "[smoke] recovered user-enabled service after force stop PASS"
 
 adb reboot
 adb wait-for-device

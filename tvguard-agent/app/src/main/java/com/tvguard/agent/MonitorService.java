@@ -1,6 +1,8 @@
 package com.tvguard.agent;
 
 import android.app.AppOpsManager;
+import android.app.Notification;
+import android.app.PendingIntent;
 import android.app.Service;
 import android.app.usage.UsageEvents;
 import android.app.usage.UsageStatsManager;
@@ -18,6 +20,7 @@ import android.os.Process;
  */
 public final class MonitorService extends Service {
     private static final long SAMPLE_INTERVAL_MS = 5000L;
+    private static final int NOTIFICATION_ID = 1001;
     private static final int MAX_EVENTS_PER_POLL = 4096;
     private static volatile Snapshot latest = Snapshot.empty("未启动");
     private HandlerThread worker;
@@ -90,6 +93,21 @@ public final class MonitorService extends Service {
             stopSelf();
             return START_NOT_STICKY;
         }
+        // The user explicitly enabled monitoring. A standard visible foreground
+        // notification lowers background eviction risk without hidden keep-alive.
+        // Android/vendor policy can still terminate the process.
+        Intent openApp = new Intent(this, MainActivity.class);
+        PendingIntent open = PendingIntent.getActivity(this, 0, openApp,
+                PendingIntent.FLAG_UPDATE_CURRENT);
+        Notification notification = new Notification.Builder(this)
+                .setSmallIcon(android.R.drawable.ic_menu_info_details)
+                .setContentTitle("TVGuard 助手")
+                .setContentText("前台应用监测中 · 无运行日志")
+                .setContentIntent(open)
+                .setOngoing(true)
+                .setPriority(Notification.PRIORITY_MIN)
+                .build();
+        startForeground(NOTIFICATION_ID, notification);
         return START_STICKY;
     }
 
@@ -180,6 +198,7 @@ public final class MonitorService extends Service {
 
     @Override
     public void onDestroy() {
+        stopForeground(true);
         if (handler != null) {
             handler.removeCallbacksAndMessages(null);
             handler = null;

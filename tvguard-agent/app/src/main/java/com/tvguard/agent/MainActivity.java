@@ -40,7 +40,7 @@ public final class MainActivity extends Activity {
         panel.setOrientation(LinearLayout.VERTICAL);
         panel.setPadding(36, 30, 36, 30);
         scroller.addView(panel);
-        addText(panel, "TVGuard 助手 · 0.1.0", 27, 0xFFFFFFFF);
+        addText(panel, "TVGuard 助手 · 0.1.1", 27, 0xFFFFFFFF);
         addText(panel, "Android 6 权限与前台 App 观察验证版", 17, 0xFFB8C9D5);
         toggle = new Button(this);
         toggle.setAllCaps(false);
@@ -63,7 +63,7 @@ public final class MainActivity extends Activity {
         panel.addView(toggle);
         details = addText(panel, "", 20, 0xFFEAF4F9);
         guidance = addText(panel, "", 16, 0xFFB8C9D5);
-        addText(panel, "仅保留一个开关配置；无文件日志、数据库、网络权限、离线队列。", 14, 0xFFB8C9D5);
+        addText(panel, "开启后运行可见的后台监测通知；无文件日志、数据库、网络权限、离线队列。", 14, 0xFFB8C9D5);
         addText(panel, "本版不连接 N1，也不参与计时、奖励、暂停或防火墙判断。", 14, 0xFFB8C9D5);
         setContentView(scroller);
     }
@@ -127,6 +127,12 @@ public final class MainActivity extends Activity {
     @Override
     protected void onResume() {
         super.onResume();
+        // Fix the real MiTV case: persisted switch is enabled while the service
+        // was killed. Reopening the UI is an explicit user action, so restart it
+        // once here. This is NOT a periodic/hidden keep-alive.
+        if (MonitorService.isEnabled(this)) {
+            startService(new Intent(this, MonitorService.class));
+        }
         refreshHandler.removeCallbacks(refresh);
         refreshHandler.post(refresh);
     }
