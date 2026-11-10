@@ -40,7 +40,15 @@ public final class MainActivity extends Activity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        ScrollView scroller = new ScrollView(this);
+        // Android 6 TV navigation can be consumed by ScrollView before
+        // Activity.dispatchKeyEvent sees it; intercept at the container.
+        ScrollView scroller = new ScrollView(this) {
+            @Override
+            public boolean dispatchKeyEvent(KeyEvent event) {
+                if (handleRemoteKey(event)) return true;
+                return super.dispatchKeyEvent(event);
+            }
+        };
         scroller.setFillViewport(true);
         scroller.setBackgroundColor(Color.rgb(16, 27, 39));
         LinearLayout panel = new LinearLayout(this);
@@ -208,39 +216,30 @@ public final class MainActivity extends Activity {
         return value == null || value.length() == 0 ? "未知" : value;
     }
 
-    // On some Xiaomi Android 6 builds the ScrollView retains focus on the
-    // first Button even after DPAD_DOWN. Keep explicit remote selection and
-    // dispatch the OK click ourselves, independent of framework focus search.
-    // AlertDialog keypad has its own window and receives normal DPAD events.
-    @Override
-    public boolean dispatchKeyEvent(KeyEvent event) {
-        final int code = event.getKeyCode();
-        final boolean navigation = code == KeyEvent.KEYCODE_DPAD_UP ||
+    // All three remote buttons use a deterministic selection index.
+    // We consume navigation at ScrollView before child focus-search/scroll.
+    private boolean handleRemoteKey(KeyEvent event) {
+        int code = event.getKeyCode();
+        boolean navigation = code == KeyEvent.KEYCODE_DPAD_UP ||
                 code == KeyEvent.KEYCODE_DPAD_DOWN;
-        final boolean activate = code == KeyEvent.KEYCODE_DPAD_CENTER ||
+        boolean activate = code == KeyEvent.KEYCODE_DPAD_CENTER ||
                 code == KeyEvent.KEYCODE_ENTER ||
                 code == KeyEvent.KEYCODE_NUMPAD_ENTER;
-        if (navigation || activate) {
-            if (event.getAction() == KeyEvent.ACTION_UP) return true;
-            if (event.getAction() == KeyEvent.ACTION_DOWN) {
-                Button[] choices = { toggle, changeAddressButton, autoPairButton };
-                if (navigation) {
-                    remoteSelectedIndex = Math.max(0, Math.min(choices.length - 1,
-                            remoteSelectedIndex + (code == KeyEvent.KEYCODE_DPAD_DOWN ? 1 : -1)));
-                    Button selected = choices[remoteSelectedIndex];
-                    if (remoteDebug != null) remoteDebug.setText("遥控器：方向键已选中 " + remoteSelectedIndex);
-                    if (selected != null) selected.requestFocus();
-                    return true;
-                }
-                Button selected = choices[remoteSelectedIndex];
-                if (remoteDebug != null) remoteDebug.setText("遥控器：确认 " + remoteSelectedIndex);
-                if (selected != null && selected.isEnabled()) {
-                    selected.performClick();
-                    return true;
-                }
-            }
+        if (!navigation && !activate) return false;
+        if (event.getAction() == KeyEvent.ACTION_UP) return true;
+        if (event.getAction() != KeyEvent.ACTION_DOWN || event.getRepeatCount() > 0)
+            return true;
+        Button[] choices = { toggle, changeAddressButton, autoPairButton };
+        if (navigation) {
+            remoteSelectedIndex = Math.max(0, Math.min(choices.length - 1,
+                    remoteSelectedIndex + (code == KeyEvent.KEYCODE_DPAD_DOWN ? 1 : -1)));
+            Button selected = choices[remoteSelectedIndex];
+            if (selected != null) selected.requestFocus();
+            return true;
         }
-        return super.dispatchKeyEvent(event);
+        Button selected = choices[remoteSelectedIndex];
+        if (selected != null && selected.isEnabled()) selected.performClick();
+        return true;
     }
 
     @Override
