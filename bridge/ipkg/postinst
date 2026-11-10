@@ -56,7 +56,7 @@ if [ "$valid" -eq 0 ]; then
 fi
 
 chmod 600 "$KEY"
-chmod 755 /www/cgi-bin/tvguard-agent /usr/libexec/tvguard-agent-bridge-report /usr/libexec/tvguard-agent-bridge-soak /etc/init.d/tvguard-agent-bridge
+chmod 755 /www/cgi-bin/tvguard-agent /usr/libexec/tvguard-agent-bridge-report /usr/libexec/tvguard-agent-bridge-soak /usr/libexec/tvguard-agent-bridge-pair /etc/init.d/tvguard-agent-bridge
 /etc/init.d/tvguard-agent-bridge enable
 /etc/init.d/tvguard-agent-bridge start
-echo 'TVGuard Agent bridge 0.2.1 configured (shadow-only); core TVGuard unchanged.'
+echo 'TVGuard Agent bridge 0.2.2 configured (shadow-only); core TVGuard unchanged.'

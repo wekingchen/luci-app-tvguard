@@ -5,6 +5,20 @@ PKG=com.tvguard.agent
 adb install -r "$APK"
 adb shell am start -W -n "$PKG/.MainActivity" | grep -E 'Status: ok|Complete'
 echo "[smoke] boot/launch PASS"
+# Android TV remote must navigate to the address editor with DPAD and OK.
+adb shell input keyevent 20
+adb shell input keyevent 23
+sleep 2
+adb shell uiautomator dump /sdcard/tvguard-window.xml >/dev/null
+adb exec-out cat /sdcard/tvguard-window.xml > /tmp/tvguard-address-ui.xml
+if ! grep -q '清空' /tmp/tvguard-address-ui.xml; then
+  echo "[smoke] DPAD failed to open N1 address keypad"
+  head -c 4000 /tmp/tvguard-address-ui.xml || :
+  exit 1
+fi
+echo "[smoke] DPAD-only address editor PASS"
+adb shell input keyevent 4
+sleep 1
 adb shell appops set "$PKG" GET_USAGE_STATS allow
 adb shell appops get "$PKG" GET_USAGE_STATS | grep -q 'allow'
 echo "[smoke] appops PASS"
@@ -61,7 +75,7 @@ fi
 echo "[smoke] foreground usage event PASS"
 adb shell uiautomator dump /sdcard/tvguard-window.xml >/dev/null
 adb exec-out cat /sdcard/tvguard-window.xml > /tmp/tvguard-window.xml
-grep -q '保存 N1 配对' /tmp/tvguard-window.xml || { echo '[smoke] pairing UI missing'; exit 1; }
+grep -q '自动配对 N1' /tmp/tvguard-window.xml || { echo '[smoke] one-tap pairing UI missing'; exit 1; }
 echo "[smoke] N1 pairing UI PASS"
 
 # Reproduce real MiTV flow: Settings (stand-in for other app) -> HOME ->
