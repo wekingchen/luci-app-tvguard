@@ -39,6 +39,12 @@ assert "android.util.Log" not in service
 assert "java.io." not in service
 assert "SQLite" not in service
 assert "BridgeClient.maybeSend" in service
+assert "REPORT_INTERVAL_MS = 10000L" in service
+assert 'new HandlerThread("tvguard-uplink"' in service
+assert 'HeartbeatState.isFresh(now, sample.sampledMs)' in service
+assert 'fresh ? sample.currentPackage : "unknown"' in service
+assert service.index('BridgeClient.maybeSend(') < service.index('private void sampleOnce()')
+assert "reportHandler.removeCallbacksAndMessages(null)" in service
 bridge_client = (src / "java/com/tvguard/agent/BridgeClient.java").read_text()
 assert "setUseCaches(false)" in bridge_client
 assert "setInstanceFollowRedirects(false)" in bridge_client
