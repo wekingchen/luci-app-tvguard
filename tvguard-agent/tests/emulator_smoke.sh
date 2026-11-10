@@ -7,6 +7,16 @@ adb shell am start -W -n "$PKG/.MainActivity" | grep -E 'Status: ok|Complete'
 echo "[smoke] boot/launch PASS"
 # Android TV remote must navigate to the address editor with DPAD and OK.
 adb shell input keyevent 20
+adb shell uiautomator dump /sdcard/tvguard-window.xml >/dev/null
+adb exec-out cat /sdcard/tvguard-window.xml > /tmp/tvguard-after-down.xml
+python3 - <<'PY'
+import xml.etree.ElementTree as ET
+root=ET.parse('/tmp/tvguard-after-down.xml').getroot()
+for n in root.iter('node'):
+    t=n.attrib.get('text','')
+    if t.startswith('遥控器：') or n.attrib.get('focused') == 'true':
+        print('[smoke] down state:',t, n.attrib.get('class',''))
+PY
 adb shell input keyevent 23
 sleep 2
 adb shell uiautomator dump /sdcard/tvguard-window.xml >/dev/null
