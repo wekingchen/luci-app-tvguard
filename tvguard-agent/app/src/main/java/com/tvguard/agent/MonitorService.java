@@ -22,11 +22,14 @@ import android.os.Process;
  */
 public final class MonitorService extends Service {
     private static final long SAMPLE_INTERVAL_MS = 5000L;
+    private static final long REPORT_INTERVAL_MS = 10000L;
     private static final int NOTIFICATION_ID = 1001;
     private static final int MAX_EVENTS_PER_POLL = 4096;
     private static volatile Snapshot latest = Snapshot.empty("未启动");
     private HandlerThread worker;
     private Handler handler;
+    private HandlerThread reportWorker;
+    private Handler reportHandler;
     private long lastScanEnd;
     private final VideoActivityHistory recentActivity = new VideoActivityHistory();
 
@@ -98,6 +101,13 @@ public final class MonitorService extends Service {
         worker.start();
         handler = new Handler(worker.getLooper());
         handler.post(poll);
+        // Keep uplink independent of UsageStats/AudioManager reads. A stalled
+        // vendor UsageStats service must not silently stop N1 liveness reports.
+        reportWorker = new HandlerThread("tvguard-uplink",
+                Process.THREAD_PRIORITY_BACKGROUND);
+        reportWorker.start();
+        reportHandler = new Handler(reportWorker.getLooper());
+        reportHandler.postDelayed(report, 2000L);
     }
 
     @Override
@@ -144,6 +154,41 @@ public final class MonitorService extends Service {
             }
             if (handler != null) {
                 handler.postDelayed(this, SAMPLE_INTERVAL_MS);
+            }
+        }
+    };
+
+    // Independent latest-only LAN heartbeat: no disk log, queue or history.
+    // On an unavailable/stuck UsageStats reader, explicitly send "unknown"
+    // rather than recycling the last PlayerActivity as if still confirmed.
+    private final Runnable report = new Runnable() {
+        @Override
+        public void run() {
+            if (!isEnabled(MonitorService.this)) return;
+            try {
+                Snapshot sample = latest;
+                long now = System.currentTimeMillis();
+                boolean fresh = HeartbeatState.isFresh(now, sample.sampledMs) &&
+                        "监测中".equals(sample.state) &&
+                        sample.currentPackage.length() != 0 &&
+                        hasUsageAccess(MonitorService.this);
+                String pkg = fresh ? sample.currentPackage : "unknown";
+                String cls = fresh ? sample.currentClass : "unknown";
+                AudioManager audio = (AudioManager)
+                        getSystemService(Context.AUDIO_SERVICE);
+                PowerManager power = (PowerManager)
+                        getSystemService(Context.POWER_SERVICE);
+                boolean activeAudio = audio != null && audio.isMusicActive();
+                boolean screenOn = power != null && power.isInteractive();
+                BridgeClient.maybeSend(MonitorService.this, pkg, cls,
+                        activeAudio, screenOn, now);
+            } catch (RuntimeException e) {
+                BridgeClient.markUplinkError("本地上报异常：" +
+                        e.getClass().getSimpleName());
+            } finally {
+                if (reportHandler != null) {
+                    reportHandler.postDelayed(this, REPORT_INTERVAL_MS);
+                }
             }
         }
     };
@@ -225,14 +270,6 @@ public final class MonitorService extends Service {
                 recentActivity.lastVideo(),
                 recentActivity.lastNonLauncher(),
                 recentActivity.lastEvents(6));
-        // Android 6 provides only coarse audio/screen hints, not a universal
-        // playback/paused API. They must never directly authorize billing.
-        AudioManager audio = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
-        PowerManager screen = (PowerManager) getSystemService(Context.POWER_SERVICE);
-        boolean activeAudio = audio != null && audio.isMusicActive();
-        boolean interactive = screen != null && screen.isInteractive();
-        BridgeClient.maybeSend(this, reducer.currentPackage, reducer.currentClass,
-                activeAudio, interactive, now);
     }
 
     @Override
@@ -245,6 +282,14 @@ public final class MonitorService extends Service {
         if (worker != null) {
             worker.quitSafely();
             worker = null;
+        }
+        if (reportHandler != null) {
+            reportHandler.removeCallbacksAndMessages(null);
+            reportHandler = null;
+        }
+        if (reportWorker != null) {
+            reportWorker.quitSafely();
+            reportWorker = null;
         }
         recentActivity.clear();
         latest = Snapshot.empty("已停止");
