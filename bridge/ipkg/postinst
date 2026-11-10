@@ -1,0 +1,12 @@
+#!/bin/sh
+[ -n "${IPKG_INSTROOT:-}" ] && exit 0
+set -eu
+umask 077
+mkdir -p /etc/tvguard
+if [ ! -s /etc/tvguard/agent-bridge.key ]; then
+    head -c 16 /dev/urandom | od -An -tx1 | tr -d ' \n' > /etc/tvguard/agent-bridge.key
+    printf '\n' >> /etc/tvguard/agent-bridge.key
+fi
+chmod 600 /etc/tvguard/agent-bridge.key
+chmod 755 /www/cgi-bin/tvguard-agent /usr/libexec/tvguard-agent-bridge-report
+echo 'TVGuard Agent bridge installed (shadow-only). No firewall or TVGuard controller changes.'

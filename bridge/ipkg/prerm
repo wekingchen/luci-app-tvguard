@@ -1,0 +1,6 @@
+#!/bin/sh
+[ -n "${IPKG_INSTROOT:-}" ] && exit 0
+# Remove only bridge RAM state; keep pairing key for safe reinstall.
+rm -f /var/run/tvguard-agent-bridge/latest
+rmdir /var/run/tvguard-agent-bridge 2>/dev/null || :
+exit 0
