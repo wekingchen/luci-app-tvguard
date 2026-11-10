@@ -17,13 +17,18 @@ final class BridgeClient {
     static final String DEFAULT_ENDPOINT = "http://192.168.101.99/cgi-bin/tvguard-agent";
     private static volatile String state = "未配对";
     private static volatile long ackAt;
-    private static long sentElapsed;
+    private static volatile long sentElapsed;
     private static long sequence;
 
     private BridgeClient() { }
 
     static String state() { return state; }
     static long ackAt() { return ackAt; }
+
+    // Bounded, memory-only failure reason. Never writes a persistent log.
+    static void markUplinkError(String reason) {
+        state = reason;
+    }
 
     static String endpoint(Context ctx) {
         return ctx.getSharedPreferences(PREF, Context.MODE_PRIVATE).getString("endpoint", DEFAULT_ENDPOINT);
