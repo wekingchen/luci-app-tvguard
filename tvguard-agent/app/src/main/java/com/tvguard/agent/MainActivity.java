@@ -9,6 +9,8 @@ import android.os.Bundle;
 import android.os.Handler;
 import android.view.View;
 import android.widget.Button;
+import android.widget.EditText;
+import android.text.InputType;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
@@ -21,6 +23,7 @@ public final class MainActivity extends Activity {
     private TextView details;
     private TextView guidance;
     private Button toggle;
+    private TextView bridgeStatus;
 
     private final Runnable refresh = new Runnable() {
         @Override
@@ -40,7 +43,7 @@ public final class MainActivity extends Activity {
         panel.setOrientation(LinearLayout.VERTICAL);
         panel.setPadding(36, 30, 36, 30);
         scroller.addView(panel);
-        addText(panel, "TVGuard 助手 · 0.1.2", 27, 0xFFFFFFFF);
+        addText(panel, "TVGuard 助手 · 0.2.0", 27, 0xFFFFFFFF);
         addText(panel, "Android 6 视频 App 页面观察验证版", 17, 0xFFB8C9D5);
         toggle = new Button(this);
         toggle.setAllCaps(false);
@@ -61,10 +64,46 @@ public final class MainActivity extends Activity {
             }
         });
         panel.addView(toggle);
+
+        addText(panel, "N1 联动 · 仅旁路观察，不改变实际计时", 18, 0xFFEAF4F9);
+        final EditText endpoint = new EditText(this);
+        endpoint.setSingleLine(true);
+        endpoint.setTextSize(16);
+        endpoint.setTextColor(Color.WHITE);
+        endpoint.setHintTextColor(0xFF9BAFBE);
+        endpoint.setHint("http://N1_IP/cgi-bin/tvguard-agent");
+        endpoint.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_URI);
+        endpoint.setText(BridgeClient.endpoint(this));
+        panel.addView(endpoint);
+
+        final EditText key = new EditText(this);
+        key.setSingleLine(true);
+        key.setTextSize(16);
+        key.setTextColor(Color.WHITE);
+        key.setHintTextColor(0xFF9BAFBE);
+        key.setHint("32位 N1 配对码");
+        key.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD);
+        key.setText(BridgeClient.token(this));
+        panel.addView(key);
+
+        Button save = new Button(this);
+        save.setAllCaps(false);
+        save.setText("保存 N1 配对");
+        save.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                boolean ok = BridgeClient.savePair(MainActivity.this,
+                        endpoint.getText().toString(), key.getText().toString());
+                bridgeStatus.setText(ok ? "N1 配对已保存，监测中将自动上报" :
+                        "配对无效：检查 N1 私网地址及32位密钥");
+            }
+        });
+        panel.addView(save);
+        bridgeStatus = addText(panel, "", 16, 0xFFB8C9D5);
         details = addText(panel, "", 20, 0xFFEAF4F9);
         guidance = addText(panel, "", 16, 0xFFB8C9D5);
         addText(panel, "开启后运行可见的后台监测通知；无文件日志、数据库、网络权限、离线队列。", 14, 0xFFB8C9D5);
-        addText(panel, "本版不连接 N1，也不参与计时、奖励、暂停或防火墙判断。", 14, 0xFFB8C9D5);
+        addText(panel, "本版连接 N1 仅用于观察，不参与计时、奖励、暂停或防火墙判断。", 14, 0xFFB8C9D5);
         setContentView(scroller);
     }
 
@@ -104,6 +143,9 @@ public final class MainActivity extends Activity {
         String freshness = healthy ? "采样正常"
                 : "未确认正常采样（请查看状态与权限）";
         toggle.setText(enabled ? "停止监测" : "开始监测");
+        long ack = BridgeClient.ackAt();
+        bridgeStatus.setText("N1：" + BridgeClient.state() +
+                "  · 最近接收：" + (ack == 0 ? "尚无" : time(ack)));
         VideoActivityHistory.Event video = state.recentVideo;
         VideoActivityHistory.Event meaningful = state.recentNonLauncher;
         StringBuilder info = new StringBuilder();
