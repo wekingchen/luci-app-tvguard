@@ -55,7 +55,15 @@ assert "SharedPreferences.Editor" in service
 assert "editor.commit()" in service
 main_activity = (src / "java/com/tvguard/agent/MainActivity.java").read_text()
 editor = (src / "java/com/tvguard/agent/TvAddressEditor.java").read_text()
-assert "TVGuard 助手 · 0.2.3" in main_activity
+assert "TVGuard 助手 · 0.2.4" in main_activity
+watchdog = (src / "java/com/tvguard/agent/WatchdogReceiver.java").read_text()
+assert "INTERVAL_MS = 30000L" in watchdog
+assert "AlarmManager.ELAPSED_REALTIME" in watchdog
+assert "ELAPSED_REALTIME_WAKEUP" not in watchdog
+assert "context.startService(new Intent(context, MonitorService.class))" in watchdog
+assert "WatchdogReceiver.schedule(this)" in service
+assert "WatchdogReceiver.cancel(context)" in service
+assert '<receiver android:name=".WatchdogReceiver" android:exported="false" />' in manifest
 assert "192.168.101.99" in bridge_client
 assert "PAIR1" in bridge_client
 assert "TOKEN1|" in bridge_client
