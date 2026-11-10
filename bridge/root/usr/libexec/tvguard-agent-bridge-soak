@@ -7,6 +7,16 @@ export PATH
 RAM=/var/run/tvguard-agent-bridge
 DATA="$RAM/soak-v2.csv"
 last_signature=''
+last_seq=''
+if [ -s "$DATA" ]; then
+    last_line="$(tail -n 1 "$DATA" 2>/dev/null || :)"
+    last_seq="$(printf '%s\n' "$last_line" | awk -F, '{print $10}')"
+    last_recv="$(printf '%s\n' "$last_line" | awk -F, '{print $11}')"
+    case "$last_seq:$last_recv" in
+        *[!0-9:]*|:|*:) last_seq='' ;;
+        *) last_signature="$last_seq:$last_recv" ;;
+    esac
+fi
 trap 'exit 0' TERM INT
 
 while :; do
@@ -22,7 +32,15 @@ while :; do
             if [ -z "$signature" ] || [ "$signature" = "$last_signature" ]; then
                 fresh=0
             fi
-            fields="$(printf '%s\n' "$status" | awk -F= -v fresh="$fresh" '
+            current_seq="$(printf '%s\n' "$status" | awk -F= '
+                $1=="report_seq" || $1=="last_report_seq" {print $2; exit}
+            ')"
+            restart=0
+            case "$current_seq:$last_seq" in
+                *[!0-9:]*|:*|*:) : ;;
+                *) if [ "$fresh" -eq 1 ] && [ "$current_seq" -lt "$last_seq" ]; then restart=1; fi ;;
+            esac
+            fields="$(printf '%s\n' "$status" | awk -F= -v fresh="$fresh" -v restart="$restart" '
                 $1=="agent" {a=$2}
                 $1=="age_seconds" {age=$2}
                 $1=="package" {p=$2}
@@ -37,6 +55,7 @@ while :; do
                 END {
                     if (a=="online") {
                         if (fresh != 1) can="repeated_report_not_new_evidence"
+                        else if (restart == 1) can="agent_process_restart_suspected"
                         printf "%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s",
                             age,p,c,au,sc,pps,sh,can,seq,recv,fresh
                     } else if (a=="stale") {
@@ -48,6 +67,9 @@ while :; do
             if [ -n "$fields" ]; then
                 printf '%s,%s\n' "$(date +%s)" "$fields" >> "$DATA"
                 [ -n "$signature" ] && last_signature="$signature"
+                if [ "$fresh" -eq 1 ]; then
+                    case "$current_seq" in ''|*[!0-9]*) : ;; *) last_seq="$current_seq" ;; esac
+                fi
                 lines="$(wc -l < "$DATA")"
                 if [ "$lines" -gt 180 ]; then
                     tail -n 120 "$DATA" > "$RAM/soak-v2.tmp"
