@@ -12,4 +12,10 @@ assert '>>' not in cgi  # no ever-growing history
 assert 'USED_S' not in cgi and 'iptables' not in cgi
 assert 'billing_effect=none' in report
 assert 'luci-app-tvguard' not in ipk
-print('bridge isolation / no-persistent-log checks PASS')
+postinst=(p/'ipkg/postinst').read_text()
+assert 'od -An' not in postinst
+assert 'sha256sum' in postinst
+assert 'bs=32 count=1' in postinst
+assert 'control/conffiles' in ipk
+assert 'printf \'/etc/tvguard/agent-bridge.key' not in ipk
+print('bridge isolation / BusyBox key generation / opkg conffiles checks PASS')

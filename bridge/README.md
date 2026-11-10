@@ -1,10 +1,10 @@
-# TVGuard Agent + N1 Bridge · 双端联动 0.2.0（实验影子版）
+# TVGuard Agent + N1 Bridge · 双端联动 0.2.1（实验影子版）
 
 ## 为何不把旧的 TVGuard 全量 IPK 重打包？
 
 用户 N1 真机已经使用 `v0.1.13-r15-temporal-state-migration`。当前仓库 main 为更早 v0.1.12，公开 `feat/v0.1.13-smart-billing` 也没有 r15 的所有固化内容。**不可用旧源码生成的 luci-app-tvguard 覆盖真机。**
 
-本方案交付 **独立、仅影子观察的 `tvguard-agent-bridge_0.2.0-1_all.ipk`**。它仅安装独立 CGI、只读融合状态脚本和一次生成的配对密钥；不覆盖 `tvguardctl`、`tvguardd`、LuCI、iptables、防火墙、代理、配额和奖励，也不重启相关服务。
+本方案交付 **独立、仅影子观察的 `tvguard-agent-bridge_0.2.1-1_all.ipk`**。它仅安装独立 CGI、只读融合状态脚本和一次生成的配对密钥；不覆盖 `tvguardctl`、`tvguardd`、LuCI、iptables、防火墙、代理、配额和奖励，也不重启相关服务。
 
 ## 链路与安全
 
@@ -19,7 +19,7 @@ Agent → N1 的 OpenWrt uhttpd `/cgi-bin/tvguard-agent`（POST，固定最小�
 
 ## N1 操作（无需修改原 IPK）
 
-1. 单独安装 companion IPK：`opkg install /tmp/tvguard-agent-bridge_0.2.0-1_all.ipk`。不要使用旧版主仓生成的 `luci-app-tvguard` 替换 r15。
+1. 单独安装 companion IPK：`opkg install /tmp/tvguard-agent-bridge_0.2.1-1_all.ipk`。不要使用旧版主仓生成的 `luci-app-tvguard` 替换 r15。
 2. 确保 N1 当前 uhttpd 在 LAN 监听，且已启用 CGI prefix `/cgi-bin`。
 3. 查看一次性 token：`/usr/libexec/tvguard-agent-bridge-report pairing`。
 4. 记下 N1 的 LAN IP。电视 Agent UI 填写 `http://N1_LAN_IP/cgi-bin/tvguard-agent` 与配对码，保存后启动监测。
@@ -28,4 +28,15 @@ Agent → N1 的 OpenWrt uhttpd `/cgi-bin/tvguard-agent`（POST，固定最小�
 
 ## 对成功的定义
 
-0.2.0 只交付**真实两端数据互通的旁路观察闭环**，不是正式智能计时成品。必须收集人工标注下的 576p/720p、4K、暂停、App 首页、系统桌面/待机多种样本，验证联合证据何时可区别，之后才决定是否安全接入 `USED_S`。若暂停和低码率播放证据仍重合，不能宣称实现精确计时。
+0.2.1 只交付**真实两端数据互通的旁路观察闭环**，不是正式智能计时成品。必须收集人工标注下的 576p/720p、4K、暂停、App 首页、系统桌面/待机多种样本，验证联合证据何时可区别，之后才决定是否安全接入 `USED_S`。若暂停和低码率播放证据仍重合，不能宣称实现精确计时。
+
+## v0.2.1 · 修复 LEDE/N1 BusyBox 安装失败（2026-11-10）
+
+v0.2.0 在真实 N1 安装时报告 `od: not found`，随后出现 `file_sha256sum_alloc: Failed to open file /etc/tvguard/agent-bridge.key`。
+
+- 生成配对码不再调用 `od`。用 `dd` 从内核 `/dev/urandom` 读取 32 字节随机种子、`sha256sum` 运算，再取前 32 位十六进制字符串。任何依赖缺失或随机读取失败均拒绝生成。
+- 必须严格校验密钥内容，而非只看文件是否非空。旧失败安装留下的空文件、仅换行文件、无效内容会原子修复；已存在的合法配对密钥保持不变。
+- `control/conffiles` 不再声明一个不存在于 `data.tar.gz` 的运行时生成密钥，避免 opkg 校验无效路径；安装配置仅执行一次写入，密钥默认权限 600。
+- 新增在 **没有 `od`** 的最小 BusyBox 模拟命令环境下执行 `postinst` 的回归测试，并检验幂等性、权限、缺陷修复和包元数据。
+
+如旧包仍处于已安装但配置失败状态，可只卸载 `tvguard-agent-bridge` 后安装修复版 0.2.1-1；**不得删除或降级 `luci-app-tvguard` 主包**。
