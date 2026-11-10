@@ -2,7 +2,7 @@ from pathlib import Path
 p=Path(__file__).resolve().parents[1]
 cgi=(p/'root/www/cgi-bin/tvguard-agent').read_text()
 report=(p/'root/usr/libexec/tvguard-agent-bridge-report').read_text()
-ipk=(p/'../../scripts/build-agent-bridge-ipk.sh').resolve().read_text()
+ipk=(p/'../scripts/build-agent-bridge-ipk.sh').resolve().read_text()
 assert '/var/run/tvguard-agent-bridge' in cgi
 assert 'tvguard.main.ip' in cgi
 assert 'CONTENT_LENGTH' in cgi
