@@ -28,6 +28,27 @@ esac
 # Protocol: TVG1|token|seq|pkg|activity|audio|screen|client_epoch_ms
 IFS= read -r line || [ -n "${line:-}" ] || bad
 [ "${#line}" -le 512 ] || bad
+if [ "$line" = PAIR1 ]; then
+    # Same TV source IP whitelist as normal reporting. Root explicitly opened
+    # a one-time window; atomic claim prevents two concurrent token requests.
+    WINDOW="$RAM_DIR/pair-window"
+    CLAIM="$RAM_DIR/pair-claim"
+    [ -r "$WINDOW" ] || forbidden
+    IFS= read -r expiry < "$WINDOW" || forbidden
+    case "$expiry" in ''|*[!0-9]*) forbidden ;; esac
+    now="$(date +%s)"
+    [ "$expiry" -gt "$now" ] && [ "$expiry" -le "$((now + 120))" ] || forbidden
+    mkdir "$CLAIM" 2>/dev/null || forbidden
+    trap 'rmdir "$CLAIM" 2>/dev/null || :' 0
+    [ -r "$WINDOW" ] || forbidden
+    IFS= read -r expiry < "$WINDOW" || forbidden
+    case "$expiry" in ''|*[!0-9]*) forbidden ;; esac
+    now="$(date +%s)"
+    [ "$expiry" -gt "$now" ] && [ "$expiry" -le "$((now + 120))" ] || forbidden
+    rm -f "$WINDOW"
+    printf 'Status: 200 OK\r\nContent-Type: text/plain; charset=us-ascii\r\nCache-Control: no-store\r\n\r\nTOKEN1|%s\n' "$expected"
+    exit 0
+fi
 oldIFS="$IFS"
 IFS='|'
 read -r version token seq pkg activity audio screen client_ms extra <<EOF
