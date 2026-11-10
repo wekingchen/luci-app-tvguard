@@ -20,6 +20,7 @@ import java.util.Date;
 public final class MainActivity extends Activity {
     private final Handler refreshHandler = new Handler();
     private TextView details;
+    private TextView healthSummary;
     private TextView guidance;
     private Button toggle;
     private Button changeAddressButton;
@@ -76,6 +77,7 @@ public final class MainActivity extends Activity {
             }
         });
         panel.addView(toggle);
+        healthSummary = addText(panel, "采样状态：等待启动", 16, 0xFFB8C9D5);
 
         addText(panel, "N1 联动 · 仅旁路观察，不改变实际计时", 18, 0xFFEAF4F9);
         endpointDisplay = addText(panel, "N1 地址：" + BridgeClient.endpoint(this), 17, 0xFFB8C9D5);
@@ -175,6 +177,8 @@ public final class MainActivity extends Activity {
                     || "监测中（前台待确认）".equals(state.state));
         String freshness = healthy ? "采样正常"
                 : "未确认正常采样（请查看状态与权限）";
+        if (healthSummary != null) healthSummary.setText(
+                "监测状态：" + state.state + " · " + freshness);
         toggle.setText(enabled ? "停止监测" : "开始监测");
         long ack = BridgeClient.ackAt();
         bridgeStatus.setText("N1：" + BridgeClient.state() +
