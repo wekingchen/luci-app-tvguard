@@ -6,6 +6,23 @@ export PATH
 LATEST=/var/run/tvguard-agent-bridge/latest
 KEY_FILE=/etc/tvguard/agent-bridge.key
 case "${1:-status}" in
+    doctor)
+        printf 'bridge_component=installed\n'
+        [ -r "$KEY_FILE" ] && printf 'pairing_key=present\n' || printf 'pairing_key=missing\n'
+        tvip="$(uci -q get tvguard.main.ip 2>/dev/null || :)"
+        printf 'bound_tv_ip=%s\n' "${tvip:-missing}"
+        [ -x /www/cgi-bin/tvguard-agent ] &&
+            printf 'cgi_script=installed\n' || printf 'cgi_script=missing\n'
+        cgi_prefix="$(uci -q get uhttpd.main.cgi_prefix 2>/dev/null || :)"
+        printf 'cgi_prefix=%s\n' "${cgi_prefix:-unknown}"
+        case "$cgi_prefix" in
+            /cgi-bin) printf 'cgi_prefix_match=yes\n' ;;
+            *) printf 'cgi_prefix_match=check_uhttpd_config\n' ;;
+        esac
+        [ -d /var/run/tvguard-agent-bridge ] &&
+            printf 'ram_path=present\n' || printf 'ram_path=not_yet_created\n'
+        printf 'core_billing_modified=no\n'
+        exit 0 ;;
     pairing)
         if [ -r "$KEY_FILE" ]; then cat "$KEY_FILE"; else echo 'not-paired'; fi
         exit 0 ;;
@@ -13,7 +30,7 @@ case "${1:-status}" in
         [ -r /var/run/tvguard-agent-bridge/soak.csv ] && cat /var/run/tvguard-agent-bridge/soak.csv || echo "no samples"
         exit 0 ;;
     status) : ;;
-    *) echo 'usage: tvguard-agent-bridge-report [status|history|pairing]' >&2; exit 2 ;;
+    *) echo 'usage: tvguard-agent-bridge-report [doctor|status|history|pairing]' >&2; exit 2 ;;
 esac
 [ -r "$LATEST" ] || { printf 'agent=missing\nactivity=unknown\nbilling_effect=none\n'; exit 0; }
 IFS='|' read -r seen pkg activity audio screen client_ms seq < "$LATEST" || :
