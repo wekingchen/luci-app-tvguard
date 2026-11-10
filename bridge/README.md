@@ -61,3 +61,9 @@ N1 独立 Bridge v0.2.2-1 可从 v0.2.1-1 单独升级，配置脚本保留已�
 - `audio_active=0` 对视频播放不构成暂停证据，重命名为 `player_state_unresolved_audio_hint_off`；继续严格影子运行，不影响正式计时。
 - N1 Shadow Soak 切换到 `/var/run/tvguard-agent-bridge/soak-v2.csv`，最多 180 行，增加报告序号、接收时间与 is_new_report；同一报告重复采样标记为 `repeated_report_not_new_evidence`，超过 35 秒失联标记 `agent_stale`。旧 v1 数据保留在原 RAM 文件，重启后自然清空。
 - 如果电视整个进程被系统回收，独立上报线程也会停止，**不能因此宣称解决了厂商后台清理**。后续据真机 seq 和失联情况进一步诊断。
+
+## v0.2.4 · Agent 进程重启证据
+
+Shadow Soak v2 在 N1 RAM 中保留上一次报告序号。若新的有效报告序号从较大值回落（例如 6 → 1），该行标记 `agent_process_restart_suspected`。这与 Android Agent 的进程内 sequence 重置相对应，用来判断 watchdog 是否实际拉起了新进程。它仅是诊断证据，不参与正式计时。
+
+Soak 自身重启时会从 RAM 历史最后一行恢复 last_seq / last_received 签名，避免把同一条旧上报重新算成新证据。
