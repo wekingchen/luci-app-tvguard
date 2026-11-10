@@ -134,11 +134,12 @@ public final class MonitorService extends Service {
         long from = coldStart ? Math.max(0L, now - INITIAL_LOOKBACK_MS)
                 : Math.max(lastScanEnd - 1000L, now - MAX_RESUME_LOOKBACK_MS);
         Snapshot previous = latest;
-        String currentPackage = coldStart ? "" : previous.currentPackage;
-        String currentClass = coldStart ? "" : previous.currentClass;
-        String lastOtherPackage = coldStart ? "" : previous.lastOtherPackage;
-        String lastOtherClass = coldStart ? "" : previous.lastOtherClass;
-        long changedMs = coldStart ? 0L : previous.changedMs;
+        ForegroundReducer reducer = new ForegroundReducer(
+                coldStart ? "" : previous.currentPackage,
+                coldStart ? "" : previous.currentClass,
+                coldStart ? "" : previous.lastOtherPackage,
+                coldStart ? "" : previous.lastOtherClass,
+                coldStart ? 0L : previous.changedMs);
         UsageEvents events = manager.queryEvents(from, now + 1000L);
         if (events == null) {
             latest = Snapshot.empty("系统未返回使用事件");
@@ -160,24 +161,17 @@ public final class MonitorService extends Service {
                 continue;
             }
             if (type == UsageEvents.Event.MOVE_TO_FOREGROUND) {
-                currentPackage = pkg;
-                currentClass = e.getClassName() == null ? "" : e.getClassName();
-                changedMs = e.getTimeStamp();
-                if (!getPackageName().equals(pkg)) {
-                    lastOtherPackage = pkg;
-                    lastOtherClass = currentClass;
-                }
-            } else if (type == UsageEvents.Event.MOVE_TO_BACKGROUND
-                    && pkg.equals(currentPackage)) {
-                currentPackage = "";
-                currentClass = "";
-                changedMs = e.getTimeStamp();
+                reducer.foreground(pkg, e.getClassName(), e.getTimeStamp(),
+                        getPackageName());
+            } else if (type == UsageEvents.Event.MOVE_TO_BACKGROUND) {
+                reducer.background(pkg, e.getClassName(), e.getTimeStamp());
             }
         }
         lastScanEnd = now;
         latest = new Snapshot(overflow ? "事件超限，结果不完整" : "监测中",
-                currentPackage, currentClass, lastOtherPackage, lastOtherClass,
-                changedMs, now);
+                reducer.currentPackage, reducer.currentClass,
+                reducer.lastOtherPackage, reducer.lastOtherClass,
+                reducer.changedMs, now);
     }
 
     @Override
