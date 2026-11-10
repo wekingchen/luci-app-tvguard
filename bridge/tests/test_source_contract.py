@@ -30,6 +30,8 @@ assert 'player_open_audio_inactive' not in report
 assert 'last_received_epoch' in report and 'report_seq=' in report
 assert 'soak-v2.csv' in report and 'soak-v2.csv' in soak
 assert 'repeated_report_not_new_evidence' in soak
+assert 'agent_process_restart_suspected' in soak
+assert 'current_seq' in soak and 'last_seq' in soak
 assert 'agent_stale' in soak
 assert 'is_new_report' in report
 print('bridge isolation / freshness / BusyBox / one-tap pairing checks PASS')
