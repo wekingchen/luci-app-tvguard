@@ -170,8 +170,13 @@ if ! adb shell dumpsys activity services "$PKG" | grep -q 'MonitorService'; then
   echo "[smoke] FAILED reopening UI after process termination"
   exit 1
 fi
-adb shell uiautomator dump /sdcard/tvguard-window.xml >/dev/null
-adb exec-out cat /sdcard/tvguard-window.xml > /tmp/tvguard-window.xml
+for i in 1 2 3 4 5; do
+  adb shell uiautomator dump /sdcard/tvguard-window.xml >/dev/null
+  adb exec-out cat /sdcard/tvguard-window.xml > /tmp/tvguard-window.xml
+  if grep -q '采样正常' /tmp/tvguard-window.xml; then break; fi
+  adb shell input swipe 1100 950 1100 250 450
+  sleep 1
+done
 if ! grep -q '采样正常' /tmp/tvguard-window.xml; then
   echo "[smoke] sample not recovered after reopening UI"
   head -c 4500 /tmp/tvguard-window.xml || :
