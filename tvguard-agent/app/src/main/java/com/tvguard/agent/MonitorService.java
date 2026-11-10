@@ -82,7 +82,12 @@ public final class MonitorService extends Service {
         SharedPreferences.Editor editor =
                 context.getSharedPreferences("control", Context.MODE_PRIVATE)
                         .edit().putBoolean("enabled", enabled);
-        return editor.commit(); // One tiny write only on explicit user action.
+        boolean saved = editor.commit(); // One tiny write only on explicit user action.
+        if (saved) {
+            if (enabled) WatchdogReceiver.schedule(context);
+            else WatchdogReceiver.cancel(context);
+        }
+        return saved;
     }
 
     public static boolean hasUsageAccess(Context context) {
@@ -131,6 +136,7 @@ public final class MonitorService extends Service {
                 .setPriority(Notification.PRIORITY_MIN)
                 .build();
         startForeground(NOTIFICATION_ID, notification);
+        WatchdogReceiver.schedule(this);
         return START_STICKY;
     }
 
@@ -293,6 +299,7 @@ public final class MonitorService extends Service {
         }
         recentActivity.clear();
         latest = Snapshot.empty("已停止");
+        if (isEnabled(this)) WatchdogReceiver.schedule(this);
         super.onDestroy();
     }
 
