@@ -93,3 +93,11 @@
 用户真实电视播放期间后台上报约 69 秒未更新，且 `AudioManager.isMusicActive()` 返回 false，即使 N1 PPS 很高。
 
 上报不再依赖 5 秒 UsageStats 轮询完整成功；专门的低优先级 HandlerThread 每约 10 秒读取 RAM 最新快照并向 N1 上报，系统/权限异常时发送 unknown（快照最长 20 秒有效），网络失败直接丢弃，无离线队列、SQLite、运行日志或多余权限。采样线程阻塞的情况可以继续报告“未知”；系统杀死整个进程仍需真机排查。
+
+## v0.2.4 · 小米电视后台进程回收自恢复
+
+真机 v0.2.3 在独立 uplink 线程下仍出现 `report_seq=6` 后数分钟无新报告，说明问题不再只是 UsageStats 采样阻塞，而是整个进程/Service 后台存活失败或等价级故障。
+
+监测开启时新增 Android AlarmManager 30 秒低频 watchdog。使用 **ELAPSED_REALTIME 非唤醒闹钟**：电视待机时不会主动唤醒设备；电视正在观看、系统处于唤醒状态时，如果进程被普通后台回收，闹钟会重新启动前台 MonitorService。显式关闭监测会取消 watchdog。Android 的 force-stop 会按系统规则取消闹钟，因此 force-stop 后仍需用户重新打开 App。
+
+无新增权限、无文件日志、数据库或离线队列；仅保留原本用户显式保存的 enabled / N1 配对设置。
