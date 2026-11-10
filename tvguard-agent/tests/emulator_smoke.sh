@@ -106,6 +106,12 @@ if ! adb shell dumpsys notification --noredact | grep -q "$PKG"; then
   exit 1
 fi
 echo "[smoke] visible foreground notification PASS"
+if ! adb shell dumpsys alarm | grep -q 'com.tvguard.agent.WATCHDOG'; then
+  echo "[smoke] recovery watchdog alarm not armed"
+  adb shell dumpsys alarm | grep -A4 -B4 'com.tvguard.agent' || :
+  exit 1
+fi
+echo "[smoke] non-wakeup 30s recovery watchdog armed PASS"
 
 adb shell am start -W -a android.settings.SETTINGS >/dev/null
 sleep 8
