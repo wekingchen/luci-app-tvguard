@@ -59,6 +59,10 @@ if ! grep -q 'com.android.settings' /tmp/tvguard-window.xml; then
   exit 1
 fi
 echo "[smoke] foreground usage event PASS"
+adb shell uiautomator dump /sdcard/tvguard-window.xml >/dev/null
+adb exec-out cat /sdcard/tvguard-window.xml > /tmp/tvguard-window.xml
+grep -q '保存 N1 配对' /tmp/tvguard-window.xml || { echo '[smoke] pairing UI missing'; exit 1; }
+echo "[smoke] N1 pairing UI PASS"
 
 # Reproduce real MiTV flow: Settings (stand-in for other app) -> HOME ->
 # reopen Agent. The last non-launcher must remain Settings, not the home app.

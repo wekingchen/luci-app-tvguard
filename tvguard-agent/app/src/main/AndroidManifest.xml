@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <uses-permission android:name="android.permission.PACKAGE_USAGE_STATS" />
+    <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-feature android:name="android.hardware.touchscreen" android:required="false" />
     <uses-feature android:name="android.software.leanback" android:required="false" />
@@ -12,7 +13,7 @@
         android:banner="@drawable/tvguard_banner"
         android:theme="@android:style/Theme.Material.NoActionBar"
         android:supportsRtl="true"
-        android:usesCleartextTraffic="false">
+        android:usesCleartextTraffic="true">
         <activity android:name=".MainActivity"
             android:exported="true"
             android:screenOrientation="landscape">

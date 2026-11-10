@@ -7,9 +7,10 @@ src = root / "app/src/main"
 manifest = (src / "AndroidManifest.xml").read_text()
 assert "android.permission.PACKAGE_USAGE_STATS" in manifest
 assert "android.permission.RECEIVE_BOOT_COMPLETED" in manifest
-assert "android.permission.INTERNET" not in manifest
+assert "android.permission.INTERNET" in manifest
+assert 'android:usesCleartextTraffic="true"' in manifest
 assert 'android:allowBackup="false"' in manifest
-assert 'android:usesCleartextTraffic="false"' in manifest
+assert 'android:usesCleartextTraffic="true"' in manifest
 service = (src / "java/com/tvguard/agent/MonitorService.java").read_text()
 assert "SAMPLE_INTERVAL_MS = 5000L" in service
 assert "MAX_EVENTS_PER_POLL = 4096" in service
@@ -37,7 +38,13 @@ assert "getBoolean(\"enabled\", false)" in service
 assert "android.util.Log" not in service
 assert "java.io." not in service
 assert "SQLite" not in service
-assert "INTERNET" not in service
+assert "BridgeClient.maybeSend" in service
+bridge_client = (src / "java/com/tvguard/agent/BridgeClient.java").read_text()
+assert "setUseCaches(false)" in bridge_client
+assert "setInstanceFollowRedirects(false)" in bridge_client
+assert "Proxy.NO_PROXY" in bridge_client
+assert "android.util.Log" not in bridge_client
+assert "java.io.File" not in bridge_client
 assert "SharedPreferences.Editor" in service
 assert "editor.commit()" in service
 print("Agent source guardrails: PASS")
