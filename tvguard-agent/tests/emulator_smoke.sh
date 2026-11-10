@@ -111,8 +111,16 @@ adb shell am start -W -a android.settings.SETTINGS >/dev/null
 sleep 8
 adb shell am start -W -n "$PKG/.MainActivity" >/dev/null
 sleep 3
-adb shell uiautomator dump /sdcard/tvguard-window.xml >/dev/null
-adb exec-out cat /sdcard/tvguard-window.xml > /tmp/tvguard-window.xml
+# New TV-only pairing controls occupy the top viewport. UsageStats evidence
+# is BELOW the fold; UIAutomator only dumps visible nodes. Scroll deliberately
+# before concluding the application did not record the Activity.
+for i in 1 2 3 4 5; do
+  adb shell uiautomator dump /sdcard/tvguard-window.xml >/dev/null
+  adb exec-out cat /sdcard/tvguard-window.xml > /tmp/tvguard-window.xml
+  if grep -q 'com.android.settings' /tmp/tvguard-window.xml; then break; fi
+  adb shell input swipe 1100 950 1100 250 450
+  sleep 1
+done
 if ! grep -q 'com.android.settings' /tmp/tvguard-window.xml; then
   echo "[smoke] foreground usage state not displayed"
   head -c 4000 /tmp/tvguard-window.xml || :
@@ -132,8 +140,13 @@ adb shell input keyevent 3
 sleep 4
 adb shell am start -W -n "$PKG/.MainActivity" >/dev/null
 sleep 5
-adb shell uiautomator dump /sdcard/tvguard-window.xml >/dev/null
-adb exec-out cat /sdcard/tvguard-window.xml > /tmp/tvguard-window.xml
+for i in 1 2 3 4 5; do
+  adb shell uiautomator dump /sdcard/tvguard-window.xml >/dev/null
+  adb exec-out cat /sdcard/tvguard-window.xml > /tmp/tvguard-window.xml
+  if grep -q '【最近非桌面 App】' /tmp/tvguard-window.xml; then break; fi
+  adb shell input swipe 1100 950 1100 250 450
+  sleep 1
+done
 python3 - <<'PY'
 import xml.etree.ElementTree as ET
 root = ET.parse('/tmp/tvguard-window.xml').getroot()
