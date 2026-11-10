@@ -3,6 +3,8 @@ package com.tvguard.agent;
 import android.app.AppOpsManager;
 import android.app.Notification;
 import android.app.PendingIntent;
+import android.media.AudioManager;
+import android.os.PowerManager;
 import android.app.Service;
 import android.app.usage.UsageEvents;
 import android.app.usage.UsageStatsManager;
@@ -223,6 +225,14 @@ public final class MonitorService extends Service {
                 recentActivity.lastVideo(),
                 recentActivity.lastNonLauncher(),
                 recentActivity.lastEvents(6));
+        // Android 6 provides only coarse audio/screen hints, not a universal
+        // playback/paused API. They must never directly authorize billing.
+        AudioManager audio = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
+        PowerManager screen = (PowerManager) getSystemService(Context.POWER_SERVICE);
+        boolean activeAudio = audio != null && audio.isMusicActive();
+        boolean interactive = screen != null && screen.isInteractive();
+        BridgeClient.maybeSend(this, reducer.currentPackage, reducer.currentClass,
+                activeAudio, interactive, now);
     }
 
     @Override
