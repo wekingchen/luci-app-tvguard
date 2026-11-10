@@ -38,7 +38,10 @@ case "${seen:-}" in ''|*[!0-9]*) echo 'agent=invalid'; exit 0 ;; esac
 now="$(date +%s)"
 age=$((now - seen))
 if [ "$age" -lt 0 ] || [ "$age" -gt 35 ]; then
-    printf 'agent=stale\nage_seconds=%s\nactivity=unknown\nbilling_effect=none\n' "$age"
+    # Forensics only: identify which report was last received, but do not
+    # present its old PlayerActivity as a live/current video state.
+    printf 'agent=stale\nage_seconds=%s\nlast_received_epoch=%s\nlast_report_seq=%s\nlast_package=%s\nactivity=unknown\nbilling_effect=none\n' \
+        "$age" "$seen" "${seq:-unknown}" "${pkg:-unknown}"
     exit 0
 fi
 network_pps=unknown
@@ -60,10 +63,13 @@ case "$pkg:$activity:$screen:$audio" in
         case "$activity" in
             *Player*|*player*|*VideoActivity*|*Playback*)
                 if [ "$audio" = 1 ]; then candidate=playing_candidate
-                else candidate=player_open_audio_inactive; fi ;;
+                else candidate=player_state_unresolved_audio_hint_off; fi ;;
             *) candidate=app_home_candidate ;;
         esac ;;
     *) candidate=unknown ;;
 esac
-printf 'agent=online\nage_seconds=%s\npackage=%s\nactivity=%s\naudio_active=%s\nscreen_on=%s\nnetwork_pps=%s\nnetwork_shadow=%s\ncombined_candidate=%s\nbilling_effect=none\n' \
-   "$age" "$pkg" "$activity" "$audio" "$screen" "$network_pps" "$shadow" "$candidate"
+if [ "$age" -gt 20 ]; then
+    candidate=agent_report_delayed
+fi
+printf 'agent=online\nage_seconds=%s\nreceived_epoch=%s\nreport_seq=%s\nclient_epoch_ms=%s\npackage=%s\nactivity=%s\naudio_active=%s\nscreen_on=%s\nnetwork_pps=%s\nnetwork_shadow=%s\ncombined_candidate=%s\nbilling_effect=none\n' \
+   "$age" "$seen" "$seq" "$client_ms" "$pkg" "$activity" "$audio" "$screen" "$network_pps" "$shadow" "$candidate"
