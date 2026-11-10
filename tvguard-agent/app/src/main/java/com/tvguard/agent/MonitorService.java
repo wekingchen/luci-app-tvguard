@@ -18,8 +18,6 @@ import android.os.Process;
  */
 public final class MonitorService extends Service {
     private static final long SAMPLE_INTERVAL_MS = 5000L;
-    private static final long INITIAL_LOOKBACK_MS = 60L * 60L * 1000L;
-    private static final long MAX_RESUME_LOOKBACK_MS = 5L * 60L * 1000L;
     private static final int MAX_EVENTS_PER_POLL = 4096;
     private static volatile Snapshot latest = Snapshot.empty("未启动");
     private HandlerThread worker;
@@ -106,10 +104,10 @@ public final class MonitorService extends Service {
                 sampleOnce();
             } catch (RuntimeException failure) {
                 Snapshot before = latest;
+                // Never mark a failed query as a successful new sample.
                 latest = new Snapshot("读取失败：" + failure.getClass().getSimpleName(),
-                        before.currentPackage, before.currentClass,
-                        before.lastOtherPackage, before.lastOtherClass,
-                        before.changedMs, System.currentTimeMillis());
+                        "", "", "", "", 0L, before.sampledMs);
+                lastScanEnd = 0L;
             }
             if (handler != null) {
                 handler.postDelayed(this, SAMPLE_INTERVAL_MS);
@@ -130,17 +128,16 @@ public final class MonitorService extends Service {
             latest = Snapshot.empty("系统未提供 UsageStats 服务");
             return;
         }
-        boolean coldStart = lastScanEnd == 0L || now < lastScanEnd;
-        long from = coldStart ? Math.max(0L, now - INITIAL_LOOKBACK_MS)
-                : Math.max(lastScanEnd - 1000L, now - MAX_RESUME_LOOKBACK_MS);
+        SamplingWindow window = SamplingWindow.plan(now, lastScanEnd);
         Snapshot previous = latest;
+        // A stale foreground must not survive suspension or clock rollback.
         ForegroundReducer reducer = new ForegroundReducer(
-                coldStart ? "" : previous.currentPackage,
-                coldStart ? "" : previous.currentClass,
-                coldStart ? "" : previous.lastOtherPackage,
-                coldStart ? "" : previous.lastOtherClass,
-                coldStart ? 0L : previous.changedMs);
-        UsageEvents events = manager.queryEvents(from, now + 1000L);
+                window.reset ? "" : previous.currentPackage,
+                window.reset ? "" : previous.currentClass,
+                window.reset ? "" : previous.lastOtherPackage,
+                window.reset ? "" : previous.lastOtherClass,
+                window.reset ? 0L : previous.changedMs);
+        UsageEvents events = manager.queryEvents(window.fromMs, now + 1000L);
         if (events == null) {
             latest = Snapshot.empty("系统未返回使用事件");
             lastScanEnd = 0L;
@@ -168,7 +165,14 @@ public final class MonitorService extends Service {
             }
         }
         lastScanEnd = now;
-        latest = new Snapshot(overflow ? "事件超限，结果不完整" : "监测中",
+        if (overflow) {
+            // A partial event window is not valid proof of foreground state.
+            latest = new Snapshot("事件超限，前台待确认", "", "", "", "", 0L, now);
+            return;
+        }
+        String state = reducer.currentPackage.length() == 0
+                ? "监测中（前台待确认）" : "监测中";
+        latest = new Snapshot(state,
                 reducer.currentPackage, reducer.currentClass,
                 reducer.lastOtherPackage, reducer.lastOtherClass,
                 reducer.changedMs, now);

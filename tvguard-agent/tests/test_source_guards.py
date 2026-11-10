@@ -13,6 +13,9 @@ assert 'android:usesCleartextTraffic="false"' in manifest
 service = (src / "java/com/tvguard/agent/MonitorService.java").read_text()
 assert "SAMPLE_INTERVAL_MS = 5000L" in service
 assert "MAX_EVENTS_PER_POLL = 4096" in service
+assert '事件超限，前台待确认' in service
+assert 'SamplingWindow.plan(now, lastScanEnd)' in service
+assert 'before.sampledMs' in service
 assert "GET_USAGE_STATS" in service
 assert "MODE_ALLOWED" in service
 assert "getBoolean(\"enabled\", false)" in service

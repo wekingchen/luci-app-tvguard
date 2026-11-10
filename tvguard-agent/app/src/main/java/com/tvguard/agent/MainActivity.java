@@ -98,8 +98,11 @@ public final class MainActivity extends Activity {
         boolean enabled = MonitorService.isEnabled(this);
         boolean access = MonitorService.hasUsageAccess(this);
         long elapsed = state.sampledMs == 0 ? -1 : System.currentTimeMillis() - state.sampledMs;
-        String freshness = elapsed >= 0 && elapsed < 20000L ? "最近采样正常"
-                : "没有近期采样（服务可能未运行）";
+        boolean healthy = enabled && access && elapsed >= 0 && elapsed < 20000L
+                && ("监测中".equals(state.state)
+                    || "监测中（前台待确认）".equals(state.state));
+        String freshness = healthy ? "采样正常"
+                : "未确认正常采样（请查看状态与权限）";
         toggle.setText(enabled ? "停止监测" : "开始监测");
         details.setText("\n权限：" + (access ? "已允许" : "未授权")
                 + "\n监测开关：" + (enabled ? "已开启" : "未开启")
