@@ -27,7 +27,15 @@ case "${1:-status}" in
         if [ -r "$KEY_FILE" ]; then cat "$KEY_FILE"; else echo 'not-paired'; fi
         exit 0 ;;
     history)
-        [ -r /var/run/tvguard-agent-bridge/soak.csv ] && cat /var/run/tvguard-agent-bridge/soak.csv || echo "no samples"
+        if [ -r /var/run/tvguard-agent-bridge/soak-v2.csv ]; then
+            printf '#schema=v2 epoch,age,package,activity,audio,screen,pps,network_shadow,candidate,report_seq,received_epoch,is_new_report\n'
+            cat /var/run/tvguard-agent-bridge/soak-v2.csv
+        elif [ -r /var/run/tvguard-agent-bridge/soak.csv ]; then
+            printf '#schema=v1 legacy_history_do_not_count_duplicate_rows_as_new_reports\n'
+            cat /var/run/tvguard-agent-bridge/soak.csv
+        else
+            echo "no samples"
+        fi
         exit 0 ;;
     status) : ;;
     *) echo 'usage: tvguard-agent-bridge-report [doctor|status|history|pairing]' >&2; exit 2 ;;
