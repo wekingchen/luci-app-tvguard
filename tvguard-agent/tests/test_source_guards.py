@@ -55,6 +55,7 @@ assert "SharedPreferences.Editor" in service
 assert "editor.commit()" in service
 main_activity = (src / "java/com/tvguard/agent/MainActivity.java").read_text()
 editor = (src / "java/com/tvguard/agent/TvAddressEditor.java").read_text()
+assert "TVGuard 助手 · 0.2.3" in main_activity
 assert "192.168.101.99" in bridge_client
 assert "PAIR1" in bridge_client
 assert "TOKEN1|" in bridge_client
