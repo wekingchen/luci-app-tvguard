@@ -1,13 +1,7 @@
 name: TVGuard Agent Android 6 build
 
 on:
-  push:
-    branches:
-      - feat/v0.1.13-agent-integration
-  pull_request:
-    paths:
-      - 'tvguard-agent/**'
-      - '.github/workflows/tvguard-agent.yml'
+  workflow_call:
   workflow_dispatch:
 
 permissions:

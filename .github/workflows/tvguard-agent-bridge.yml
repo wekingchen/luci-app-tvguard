@@ -1,17 +1,7 @@
 name: Agent + N1 bridge shadow integration
 
 on:
-  push:
-    branches: [feat/v0.1.13-agent-integration]
-    paths:
-      - 'bridge/**'
-      - 'scripts/build-agent-bridge-ipk.sh'
-      - '.github/workflows/tvguard-agent-bridge.yml'
-  pull_request:
-    paths:
-      - 'bridge/**'
-      - 'scripts/build-agent-bridge-ipk.sh'
-      - '.github/workflows/tvguard-agent-bridge.yml'
+  workflow_call:
   workflow_dispatch:
 
 permissions:
