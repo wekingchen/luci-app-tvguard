@@ -24,6 +24,7 @@ public final class MainActivity extends Activity {
     private Button toggle;
     private Button changeAddressButton;
     private Button autoPairButton;
+    private int remoteSelectedIndex;
     private TextView bridgeStatus;
     private TextView endpointDisplay;
 
@@ -205,24 +206,32 @@ public final class MainActivity extends Activity {
         return value == null || value.length() == 0 ? "未知" : value;
     }
 
-    // Xiaomi Android 6 TV can let ScrollView consume DPAD_DOWN without
-    // advancing focus. Route up/down explicitly among the three main buttons.
-    // Dialog windows receive their own key events for the numeric keypad.
+    // On some Xiaomi Android 6 builds the ScrollView retains focus on the
+    // first Button even after DPAD_DOWN. Keep explicit remote selection and
+    // dispatch the OK click ourselves, independent of framework focus search.
+    // AlertDialog keypad has its own window and receives normal DPAD events.
     @Override
     public boolean dispatchKeyEvent(KeyEvent event) {
-        if (event.getAction() == KeyEvent.ACTION_DOWN) {
-            int code = event.getKeyCode();
-            if (code == KeyEvent.KEYCODE_DPAD_DOWN ||
-                    code == KeyEvent.KEYCODE_DPAD_UP) {
-                View[] stops = { toggle, changeAddressButton, autoPairButton };
-                View focused = getCurrentFocus();
-                int index = 0;
-                for (int i=0; i<stops.length; i++) {
-                    if (stops[i] == focused) { index = i; break; }
+        final int code = event.getKeyCode();
+        final boolean navigation = code == KeyEvent.KEYCODE_DPAD_UP ||
+                code == KeyEvent.KEYCODE_DPAD_DOWN;
+        final boolean activate = code == KeyEvent.KEYCODE_DPAD_CENTER ||
+                code == KeyEvent.KEYCODE_ENTER ||
+                code == KeyEvent.KEYCODE_NUMPAD_ENTER;
+        if (navigation || activate) {
+            if (event.getAction() == KeyEvent.ACTION_UP) return true;
+            if (event.getAction() == KeyEvent.ACTION_DOWN) {
+                Button[] choices = { toggle, changeAddressButton, autoPairButton };
+                if (navigation) {
+                    remoteSelectedIndex = Math.max(0, Math.min(choices.length - 1,
+                            remoteSelectedIndex + (code == KeyEvent.KEYCODE_DPAD_DOWN ? 1 : -1)));
+                    Button selected = choices[remoteSelectedIndex];
+                    if (selected != null) selected.requestFocus();
+                    return true;
                 }
-                int desired = index + (code == KeyEvent.KEYCODE_DPAD_DOWN ? 1 : -1);
-                if (desired >= 0 && desired < stops.length && stops[desired] != null) {
-                    stops[desired].requestFocus();
+                Button selected = choices[remoteSelectedIndex];
+                if (selected != null && selected.isEnabled()) {
+                    selected.performClick();
                     return true;
                 }
             }
