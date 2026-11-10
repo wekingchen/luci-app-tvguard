@@ -1,0 +1,44 @@
+name: Agent + N1 bridge shadow integration
+
+on:
+  push:
+    branches: [feat/v0.1.13-agent-integration]
+    paths:
+      - 'bridge/**'
+      - 'scripts/build-agent-bridge-ipk.sh'
+      - '.github/workflows/tvguard-agent-bridge.yml'
+  pull_request:
+    paths:
+      - 'bridge/**'
+      - 'scripts/build-agent-bridge-ipk.sh'
+      - '.github/workflows/tvguard-agent-bridge.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  bridge:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check executable scripts and isolation
+        shell: bash
+        run: |
+          set -euo pipefail
+          for file in bridge/root/www/cgi-bin/tvguard-agent bridge/root/usr/libexec/tvguard-agent-bridge-report bridge/root/usr/libexec/tvguard-agent-bridge-soak bridge/root/etc/init.d/tvguard-agent-bridge bridge/ipkg/postinst bridge/ipkg/prerm scripts/build-agent-bridge-ipk.sh; do
+            dash -n "$file"
+          done
+          python3 bridge/tests/test_source_contract.py
+      - name: Run testable bridge HTTP ingress contract
+        run: python3 bridge/tests/test_http_bridge.py
+      - name: Package standalone OpenWrt companion IPK
+        run: |
+          sh scripts/build-agent-bridge-ipk.sh
+          tar -tzf dist/tvguard-agent-bridge_0.2.0-1_all.ipk | grep -q './data.tar.gz'
+          tar -xOzf dist/tvguard-agent-bridge_0.2.0-1_all.ipk ./data.tar.gz | tar -tzf - | grep -q './www/cgi-bin/tvguard-agent'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: tvguard-agent-bridge-0.2.0-ipk
+          path: dist/tvguard-agent-bridge_0.2.0-1_all.ipk
+          retention-days: 7

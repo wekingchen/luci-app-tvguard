@@ -1,0 +1,52 @@
+#!/bin/sh
+# User-facing N1-only shadow fusion. Read-only; does NOT edit quota or gate.
+set -eu
+PATH=/usr/sbin:/usr/bin:/sbin:/bin
+export PATH
+LATEST=/var/run/tvguard-agent-bridge/latest
+KEY_FILE=/etc/tvguard/agent-bridge.key
+case "${1:-status}" in
+    pairing)
+        if [ -r "$KEY_FILE" ]; then cat "$KEY_FILE"; else echo 'not-paired'; fi
+        exit 0 ;;
+    history)
+        [ -r /var/run/tvguard-agent-bridge/soak.csv ] && cat /var/run/tvguard-agent-bridge/soak.csv || echo "no samples"
+        exit 0 ;;
+    status) : ;;
+    *) echo 'usage: tvguard-agent-bridge-report [status|history|pairing]' >&2; exit 2 ;;
+esac
+[ -r "$LATEST" ] || { printf 'agent=missing\nactivity=unknown\nbilling_effect=none\n'; exit 0; }
+IFS='|' read -r seen pkg activity audio screen client_ms seq < "$LATEST" || :
+case "${seen:-}" in ''|*[!0-9]*) echo 'agent=invalid'; exit 0 ;; esac
+now="$(date +%s)"
+age=$((now - seen))
+if [ "$age" -lt 0 ] || [ "$age" -gt 35 ]; then
+    printf 'agent=stale\nage_seconds=%s\nactivity=unknown\nbilling_effect=none\n' "$age"
+    exit 0
+fi
+network_pps=unknown
+shadow=unknown
+if [ -x /usr/libexec/tvguard-status ] && command -v jsonfilter >/dev/null 2>&1; then
+    status="$(/usr/libexec/tvguard-status status 2>/dev/null || :)"
+    if [ -n "$status" ]; then
+        p="$(printf '%s' "$status" | jsonfilter -e '@.pps' 2>/dev/null || :)"
+        s="$(printf '%s' "$status" | jsonfilter -e '@.shadow_label' 2>/dev/null || :)"
+        case "$p" in ''|*[!0-9]*) : ;; *) network_pps="$p";; esac
+        case "$s" in playing|paused|app_home|system_home|unknown) shadow="$s";; esac
+    fi
+fi
+case "$pkg:$activity:$screen:$audio" in
+    *:0:*) candidate=sleep_candidate ;;
+    com.mitv.tvhome:*|com.android.tvlauncher:*|com.google.android.tvlauncher:*)
+        candidate=system_home ;;
+    com.gitvdemo.video:*|com.ktcp.video:*|org.smarttube.stable:*|com.hunantv.license:*)
+        case "$activity" in
+            *Player*|*player*|*VideoActivity*|*Playback*)
+                if [ "$audio" = 1 ]; then candidate=playing_candidate
+                else candidate=player_open_audio_inactive; fi ;;
+            *) candidate=app_home_candidate ;;
+        esac ;;
+    *) candidate=unknown ;;
+esac
+printf 'agent=online\nage_seconds=%s\npackage=%s\nactivity=%s\naudio_active=%s\nscreen_on=%s\nnetwork_pps=%s\nnetwork_shadow=%s\ncombined_candidate=%s\nbilling_effect=none\n' \
+   "$age" "$pkg" "$activity" "$audio" "$screen" "$network_pps" "$shadow" "$candidate"

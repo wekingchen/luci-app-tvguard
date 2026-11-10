@@ -1,0 +1,8 @@
+#!/bin/sh
+[ -n "${IPKG_INSTROOT:-}" ] && exit 0
+/etc/init.d/tvguard-agent-bridge stop 2>/dev/null || :
+/etc/init.d/tvguard-agent-bridge disable 2>/dev/null || :
+# Remove only bridge RAM state; keep pairing key for safe reinstall.
+rm -f /var/run/tvguard-agent-bridge/latest /var/run/tvguard-agent-bridge/soak.csv /var/run/tvguard-agent-bridge/soak.tmp
+rmdir /var/run/tvguard-agent-bridge 2>/dev/null || :
+exit 0

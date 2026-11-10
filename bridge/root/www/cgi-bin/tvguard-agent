@@ -1,0 +1,59 @@
+#!/bin/sh
+# TVGuard Agent bridge v1: isolated shadow-only ingress. Never touches billing.
+# Requires stock OpenWrt uhttpd CGI (/cgi-bin/) and a single pairing token.
+set -eu
+umask 077
+PATH=/usr/sbin:/usr/bin:/sbin:/bin
+export PATH
+KEY_FILE=/etc/tvguard/agent-bridge.key
+RAM_DIR=/var/run/tvguard-agent-bridge
+OUT="$RAM_DIR/latest"
+send() {
+    printf 'Status: %s\r\nContent-Type: text/plain; charset=utf-8\r\nCache-Control: no-store\r\n\r\n%s\n' "$1" "$2"
+}
+bad() { send '400 Bad Request' 'rejected'; exit 0; }
+forbidden() { send '403 Forbidden' 'forbidden'; exit 0; }
+[ "${REQUEST_METHOD:-}" = POST ] || { send '405 Method Not Allowed' 'POST only'; exit 0; }
+len="${CONTENT_LENGTH:-}"
+case "$len" in ''|*[!0-9]*) bad ;; esac
+[ "$len" -gt 0 ] && [ "$len" -le 512 ] || bad
+TV_IP="$(uci -q get tvguard.main.ip 2>/dev/null || :)"
+[ -n "$TV_IP" ] && [ "${REMOTE_ADDR:-}" = "$TV_IP" ] || forbidden
+[ -r "$KEY_FILE" ] || forbidden
+IFS= read -r expected < "$KEY_FILE" || :
+case "$expected" in
+    ''|*[!0-9a-f]*) forbidden ;;
+esac
+[ "${#expected}" -eq 32 ] || forbidden
+# Protocol: TVG1|token|seq|pkg|activity|audio|screen|client_epoch_ms
+IFS= read -r line || [ -n "${line:-}" ] || bad
+[ "${#line}" -le 512 ] || bad
+oldIFS="$IFS"
+IFS='|'
+read -r version token seq pkg activity audio screen client_ms extra <<EOF
+$line
+EOF
+IFS="$oldIFS"
+[ "$version" = TVG1 ] && [ "$token" = "$expected" ] || forbidden
+[ -z "${extra:-}" ] || bad
+for number in "$seq" "$client_ms"; do
+    case "$number" in ''|*[!0-9]*) bad ;; esac
+    [ "${#number}" -le 16 ] || bad
+done
+for bit in "$audio" "$screen"; do
+    case "$bit" in 0|1) : ;; *) bad ;; esac
+done
+case "$pkg" in ''|*[!A-Za-z0-9._]*) bad ;; esac
+case "$activity" in ''|*[!A-Za-z0-9._\$]*) bad ;; esac
+[ "${#pkg}" -le 128 ] && [ "${#activity}" -le 160 ] || bad
+# Ephemeral, atomic latest-sample replacement. No event log / append queue.
+mkdir -p "$RAM_DIR" || { send '503 Service Unavailable' 'unavailable'; exit 0; }
+now="$(date +%s)"
+tmp="$RAM_DIR/latest.$$"
+if printf '%s|%s|%s|%s|%s|%s|%s\n' "$now" "$pkg" "$activity" "$audio" "$screen" "$client_ms" "$seq" > "$tmp" &&
+   mv -f "$tmp" "$OUT"; then
+    send '200 OK' 'ok'
+else
+    rm -f "$tmp"
+    send '503 Service Unavailable' 'unavailable'
+fi

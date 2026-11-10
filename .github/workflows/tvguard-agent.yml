@@ -1,0 +1,72 @@
+name: TVGuard Agent Android 6 build
+
+on:
+  push:
+    branches:
+      - feat/v0.1.13-agent-integration
+  pull_request:
+    paths:
+      - 'tvguard-agent/**'
+      - '.github/workflows/tvguard-agent.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  android6:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Check hosted Android SDK
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "ANDROID_HOME=$ANDROID_HOME"
+          ls -la "$ANDROID_HOME/platforms"
+          if [ ! -f "$ANDROID_HOME/platforms/android-35/android.jar" ]; then
+            sdkmanager --install 'platforms;android-35' 'build-tools;35.0.0'
+          fi
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.7'
+      - name: Check no-write source contract
+        run: python3 tvguard-agent/tests/test_source_guards.py
+      - name: Run foreground state unit tests
+        working-directory: tvguard-agent
+        run: gradle --no-daemon :app:testDebugUnitTest
+      - name: Build APK for API 23
+        working-directory: tvguard-agent
+        run: gradle --no-daemon :app:assembleDebug
+      - name: Validate APK and size
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK=tvguard-agent/app/build/outputs/apk/debug/app-debug.apk
+          test -s "$APK"
+          test "$(stat -c%s "$APK")" -lt 1048576
+          unzip -l "$APK" | grep -q classes.dex
+          echo "APK bytes: $(stat -c%s "$APK")"
+      - name: Enable KVM on hosted runner
+        run: |
+          if [ -e /dev/kvm ]; then sudo chmod 666 /dev/kvm; fi
+      - name: Android 6 API 23 emulator smoke test
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 23
+          target: default
+          arch: x86_64
+          profile: Nexus 5
+          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim
+          script: bash tvguard-agent/tests/emulator_smoke.sh
+      - name: Upload test APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: tvguard-agent-0.2.0-android6-apk
+          path: tvguard-agent/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+          retention-days: 7
