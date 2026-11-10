@@ -24,7 +24,7 @@ public final class MainActivity extends Activity {
     private Button toggle;
     private Button changeAddressButton;
     private Button autoPairButton;
-    private int remoteSelectedIndex;
+    private int remoteSelectedIndex = 2;
     private TextView bridgeStatus;
     private TextView endpointDisplay;
     private TextView remoteDebug;
@@ -127,13 +127,15 @@ public final class MainActivity extends Activity {
         changeAddress.setNextFocusDownId(autoPair.getId());
         autoPair.setNextFocusUpId(changeAddress.getId());
         bridgeStatus = addText(panel, "", 16, 0xFFB8C9D5);
-        remoteDebug = addText(panel, "遥控器：默认选中开始监测", 14, 0xFFB8C9D5);
+        remoteDebug = addText(panel, "遥控器：首次打开直接按确定进行自动配对", 14, 0xFFB8C9D5);
         details = addText(panel, "", 20, 0xFFEAF4F9);
         guidance = addText(panel, "", 16, 0xFFB8C9D5);
         addText(panel, "开启后有可见后台监测通知；仅向 N1 发送当前状态，无文件日志、数据库或离线队列。", 14, 0xFFB8C9D5);
         addText(panel, "本版连接 N1 仅用于观察，不参与计时、奖励、暂停或防火墙判断。", 14, 0xFFB8C9D5);
         setContentView(scroller);
-        toggle.requestFocus();
+        // First-launch focus always lands on the only button needed for pairing.
+        // The user does not need TV text input or DPAD_DOWN to begin.
+        autoPairButton.requestFocus();
     }
 
     private TextView addText(LinearLayout parent, String text, int sp, int color) {
