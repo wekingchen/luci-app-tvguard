@@ -8,6 +8,7 @@ import android.graphics.Color;
 import android.os.Bundle;
 import android.os.Handler;
 import android.view.View;
+import android.view.KeyEvent;
 import android.widget.Button;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
@@ -21,6 +22,8 @@ public final class MainActivity extends Activity {
     private TextView details;
     private TextView guidance;
     private Button toggle;
+    private Button changeAddressButton;
+    private Button autoPairButton;
     private TextView bridgeStatus;
     private TextView endpointDisplay;
 
@@ -83,6 +86,7 @@ public final class MainActivity extends Activity {
             }
         });
         panel.addView(changeAddress);
+        changeAddressButton = changeAddress;
 
         final Button autoPair = new Button(this);
         autoPair.setAllCaps(false);
@@ -106,6 +110,7 @@ public final class MainActivity extends Activity {
             }
         });
         panel.addView(autoPair);
+        autoPairButton = autoPair;
         toggle.setId(View.generateViewId());
         toggle.setNextFocusDownId(changeAddress.getId());
         changeAddress.setNextFocusUpId(toggle.getId());
@@ -198,6 +203,31 @@ public final class MainActivity extends Activity {
 
     private String blank(String value) {
         return value == null || value.length() == 0 ? "未知" : value;
+    }
+
+    // Xiaomi Android 6 TV can let ScrollView consume DPAD_DOWN without
+    // advancing focus. Route up/down explicitly among the three main buttons.
+    // Dialog windows receive their own key events for the numeric keypad.
+    @Override
+    public boolean dispatchKeyEvent(KeyEvent event) {
+        if (event.getAction() == KeyEvent.ACTION_DOWN) {
+            int code = event.getKeyCode();
+            if (code == KeyEvent.KEYCODE_DPAD_DOWN ||
+                    code == KeyEvent.KEYCODE_DPAD_UP) {
+                View[] stops = { toggle, changeAddressButton, autoPairButton };
+                View focused = getCurrentFocus();
+                int index = 0;
+                for (int i=0; i<stops.length; i++) {
+                    if (stops[i] == focused) { index = i; break; }
+                }
+                int desired = index + (code == KeyEvent.KEYCODE_DPAD_DOWN ? 1 : -1);
+                if (desired >= 0 && desired < stops.length && stops[desired] != null) {
+                    stops[desired].requestFocus();
+                    return true;
+                }
+            }
+        }
+        return super.dispatchKeyEvent(event);
     }
 
     @Override
