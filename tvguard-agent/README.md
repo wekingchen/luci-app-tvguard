@@ -1,4 +1,4 @@
-# TVGuard Agent 0.1.0 · 小米 Android 6 验证版
+# TVGuard Agent 0.1.2 · 小米 Android 6 验证版
 
 目标电视：MiTV4-ANSM0 / xmen / Android 6.0.1 / API 23。
 
@@ -8,8 +8,8 @@
 
 - 不声明 INTERNET 权限，不上传任何数据；v0.1.0 不连接 N1。
 - 不创建本地日志、SQLite、缓存文件、离线补传队列、崩溃上传组件。
-- 仅保存一个 enabled 布尔配置，用户主动切换时才写入一次 SharedPreferences。
-- 事件仅在内存中遍历，初次最多查询 60 分钟；随后每 5 秒短窗口采样，单轮最多处理 4096 条事件；无历史事件列表。
+- 仅保存一个 enabled 布尔配置，用户主动切换时才写入一次 SharedPreferences。视频 App 最近页面和最近 24 条前台事件全部是 RAM 内存数据，不写入私有存储。
+- 事件仅在内存中遍历，初次最多查询 60 分钟；随后每 5 秒短窗口采样，单轮最多处理 4096 条事件；有上限为 24 条的纯内存最近前台事件环；界面最多展示 6 条，重启时不写入本地历史。
 - 关闭或重启后运行时状态清空。操作系统可能自行生成缓存、安装元数据或系统诊断，不能承诺系统级绝对零写入。
 - 服务由 BOOT_COMPLETED 尝试恢复；小米固件后台保活和权限跨重启保留仍需真机验收。
 
@@ -21,7 +21,7 @@
     adb shell appops set com.tvguard.agent GET_USAGE_STATS allow
     adb shell appops get com.tvguard.agent GET_USAGE_STATS
 
-电视桌面打开「TVGuard 助手」，选择「开始监测」。再切换到银河奇异果、云视听极光或 SmartTube，然后返回助手，观察“最近其他 App”和 Activity。因为返回助手后助手自身就是当前前台，所以应以最近其他 App 栏检查刚才使用的视频 App。
+电视桌面打开「TVGuard 助手」，选择「开始监测」。再切换到银河奇异果、云视听极光或 SmartTube，然后返回助手，观察“最近视频 App”“最近非桌面 App”和“最近前台页面切换”。经过电视桌面不会覆盖最近视频 App；默认最近 60 分钟 Android UsageEvents 可用于恢复已被系统结束的 Agent 进程，但并不证明 Agent 在整个播放期间连续存活。
 
 接着关闭电视 ADB 调试，重复 App 切换验证；再重启电视（ADB 会自动关闭），打开助手检查权限和采样时间是否仍正常，必要时观察是否先前后台服务已恢复。
 
@@ -77,3 +77,13 @@
 - 仍无法保证小米定制系统不会清理进程；视频 App 后台运行时的稳定性必须在设备实测，不能把 UI 恢复当作后台持续采样证明。
 - 模拟器追加「force-stop 进程 → 再次打开助手 → 服务与采样恢复」以及系统通知存在性验证。
 - 升级旧 Debug APK 可能遭遇签名不一致，因为不同 GitHub Actions runner 使用不同临时 Debug 密钥；可以先卸载旧测试版再安装新版，重新 AppOps 授权。唯一持久配置 enabled 会随卸载清除。
+
+## v0.1.2 · 正确解决 Home 经过桌面导致“最近 App 永远是桌面”
+
+真实小米电视没有可靠的最近任务切换入口；用户正常操作「视频 App → Home → 应用菜单 → TVGuard 助手」始终经过 com.mitv.tvhome。旧版只展示 lastOtherPackage，被桌面覆盖，因而无法证明视频 App 页面识别成功。
+
+修复：增加 VideoActivityHistory 纯内存上限 24 条的前台页面环，仅展示最近 6 条；**最近视频 App** 单独匹配银河奇异果 com.gitvdemo.video、云视听极光 com.ktcp.video、SmartTube org.smarttube.stable 和芒果TV com.hunantv.license（另有少量常见包名）。**最近非桌面 App** 对未知第三方视频包仍有意义，不会被电视桌面覆盖。无新权限、没有文件日志、数据库和待传队列。
+
+首次查询 Android 系统 UsageEvents 可回放最近 60 分钟前台事件，这些记录来自系统现有使用事件，并不是本 APK 在闪存中积累日志。进程被终止后能否查到过去的视频 Activity，仍取决于小米厂商对 UsageStats 的支持和事件保留。权限失效、读取错误、时间回拨/长间断等情况继续明确标注待确认，禁止宣称历史页面必然被捕获。
+
+**模拟器回归覆盖视频→桌面→助手的纯 Java 逻辑，以及 Settings→Home→助手的真实 Android 6 UI 路径。** 之后必须在小米电视上复现银河奇异果首页→PlayerActivity→暂停→Home→助手流程，并核对界面。暂停是否发生无法只靠 Activity 判断，需 N1 进一步融合网络证据。

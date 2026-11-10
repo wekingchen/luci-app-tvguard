@@ -13,6 +13,16 @@ assert 'android:usesCleartextTraffic="false"' in manifest
 service = (src / "java/com/tvguard/agent/MonitorService.java").read_text()
 assert "SAMPLE_INTERVAL_MS = 5000L" in service
 assert "MAX_EVENTS_PER_POLL = 4096" in service
+assert "recentActivity.lastVideo()" in service
+assert "recentActivity.lastNonLauncher()" in service
+assert "recentActivity.lastEvents(6)" in service
+history = (src / "java/com/tvguard/agent/VideoActivityHistory.java").read_text()
+assert "CAPACITY = 24" in history
+assert "new ArrayDeque<Event>(CAPACITY)" in history
+assert "recent.removeFirst()" in history
+assert "java.io." not in history
+assert "SharedPreferences" not in history
+assert "SQLite" not in history
 assert "startForeground(NOTIFICATION_ID, notification)" in service
 assert "stopForeground(true)" in service
 main_activity = (src / "java/com/tvguard/agent/MainActivity.java").read_text()

@@ -60,6 +60,24 @@ if ! grep -q 'com.android.settings' /tmp/tvguard-window.xml; then
 fi
 echo "[smoke] foreground usage event PASS"
 
+# Reproduce real MiTV flow: Settings (stand-in for other app) -> HOME ->
+# reopen Agent. The last non-launcher must remain Settings, not the home app.
+adb shell am start -W -a android.settings.SETTINGS >/dev/null
+sleep 4
+adb shell input keyevent 3
+sleep 4
+adb shell am start -W -n "$PKG/.MainActivity" >/dev/null
+sleep 5
+adb shell uiautomator dump /sdcard/tvguard-window.xml >/dev/null
+adb exec-out cat /sdcard/tvguard-window.xml > /tmp/tvguard-window.xml
+python3 - <<'PY'
+import xml.etree.ElementTree as ET
+root = ET.parse('/tmp/tvguard-window.xml').getroot()
+texts = [node.attrib.get("text", "") for node in root.iter("node")]
+assert any("【最近非桌面 App】" in t and "com.android.settings" in t for t in texts), texts
+PY
+echo "[smoke] home-navigation does not erase previous non-launcher app PASS"
+
 before="$(adb shell run-as "$PKG" du -sk . | head -1 | tr -d '\r' | awk '{print $1}')"
 sleep 12
 after="$(adb shell run-as "$PKG" du -sk . | head -1 | tr -d '\r' | awk '{print $1}')"
