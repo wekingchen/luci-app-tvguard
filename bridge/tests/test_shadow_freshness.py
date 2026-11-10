@@ -57,6 +57,8 @@ with tempfile.TemporaryDirectory(prefix="tvguard-soak-v2-") as folder:
         time.sleep(0.27)
         status_file.write_text(stale(8, 1794319643))
         time.sleep(0.27)
+        status_file.write_text(online(1, 1794319700))
+        time.sleep(0.27)
     finally:
         proc.terminate()
         try:
@@ -73,5 +75,7 @@ with tempfile.TemporaryDirectory(prefix="tvguard-soak-v2-") as folder:
                and r[9] == "7" and r[11] == "0" for r in rows), rows
     assert any(r[9] == "8" and r[11] == "1" for r in rows), rows
     assert any(r[8] == "agent_stale" and r[11] == "0" for r in rows), rows
+    assert any(r[8] == "agent_process_restart_suspected"
+               and r[9] == "1" and r[11] == "1" for r in rows), rows
     assert len(rows) < 180
 print("RAM shadow v2: fresh vs repeat vs stale report handling PASS")
