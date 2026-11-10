@@ -1,16 +1,28 @@
 #!/bin/sh
-# Bounded RAM-only shadow ring. No quota, firewall or persistence writes.
+# Bounded RAM-only shadow v2 ring. No quota, firewall or persistence writes.
+# Distinguishes new TV reports from repeated N1 samples of the same report.
 set -eu
 PATH=/usr/sbin:/usr/bin:/sbin:/bin
 export PATH
 RAM=/var/run/tvguard-agent-bridge
-DATA="$RAM/soak.csv"
+DATA="$RAM/soak-v2.csv"
+last_signature=''
 trap 'exit 0' TERM INT
+
 while :; do
     if [ -s "$RAM/latest" ]; then
         status="$(/usr/libexec/tvguard-agent-bridge-report status 2>/dev/null || :)"
         if [ -n "$status" ]; then
-            fields="$(printf '%s\n' "$status" | awk -F= '
+            signature="$(printf '%s\n' "$status" | awk -F= '
+                $1=="report_seq" || $1=="last_report_seq" {s=$2}
+                $1=="received_epoch" || $1=="last_received_epoch" {r=$2}
+                END {if (s!="" && r!="") printf "%s:%s",s,r}
+            ')"
+            fresh=1
+            if [ -z "$signature" ] || [ "$signature" = "$last_signature" ]; then
+                fresh=0
+            fi
+            fields="$(printf '%s\n' "$status" | awk -F= -v fresh="$fresh" '
                 $1=="agent" {a=$2}
                 $1=="age_seconds" {age=$2}
                 $1=="package" {p=$2}
@@ -20,14 +32,26 @@ while :; do
                 $1=="network_pps" {pps=$2}
                 $1=="network_shadow" {sh=$2}
                 $1=="combined_candidate" {can=$2}
-                END { if (a=="online") printf "%s,%s,%s,%s,%s,%s,%s,%s", age,p,c,au,sc,pps,sh,can }
+                $1=="report_seq" || $1=="last_report_seq" {seq=$2}
+                $1=="received_epoch" || $1=="last_received_epoch" {recv=$2}
+                END {
+                    if (a=="online") {
+                        if (fresh != 1) can="repeated_report_not_new_evidence"
+                        printf "%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s",
+                            age,p,c,au,sc,pps,sh,can,seq,recv,fresh
+                    } else if (a=="stale") {
+                        printf "%s,unknown,unknown,unknown,unknown,unknown,unknown,agent_stale,%s,%s,0",
+                            age,seq,recv
+                    }
+                }
             ')"
             if [ -n "$fields" ]; then
                 printf '%s,%s\n' "$(date +%s)" "$fields" >> "$DATA"
+                [ -n "$signature" ] && last_signature="$signature"
                 lines="$(wc -l < "$DATA")"
                 if [ "$lines" -gt 180 ]; then
-                    tail -n 120 "$DATA" > "$RAM/soak.tmp"
-                    mv -f "$RAM/soak.tmp" "$DATA"
+                    tail -n 120 "$DATA" > "$RAM/soak-v2.tmp"
+                    mv -f "$RAM/soak-v2.tmp" "$DATA"
                 fi
             fi
         fi
