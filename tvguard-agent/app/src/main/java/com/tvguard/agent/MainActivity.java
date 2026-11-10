@@ -234,7 +234,11 @@ public final class MainActivity extends Activity {
             remoteSelectedIndex = Math.max(0, Math.min(choices.length - 1,
                     remoteSelectedIndex + (code == KeyEvent.KEYCODE_DPAD_DOWN ? 1 : -1)));
             Button selected = choices[remoteSelectedIndex];
-            if (selected != null) selected.requestFocus();
+            if (selected != null) {
+                selected.requestFocus();
+                if (remoteDebug != null) remoteDebug.setText(
+                        "遥控器：已选中 " + selected.getText());
+            }
             return true;
         }
         Button selected = choices[remoteSelectedIndex];

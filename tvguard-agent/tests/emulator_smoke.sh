@@ -5,6 +5,17 @@ PKG=com.tvguard.agent
 adb install -r "$APK"
 adb shell am start -W -n "$PKG/.MainActivity" | grep -E 'Status: ok|Complete'
 echo "[smoke] boot/launch PASS"
+# am start -W can finish BEFORE the Android 6 window receives input focus.
+# A DPAD_DOWN injected during transition gets dropped, while the next OK
+# arrives after focus and incorrectly clicks "Start monitoring".
+# Wait for our window to own the input focus before sending remote keys.
+for i in $(seq 1 15); do
+  if adb shell dumpsys window windows | grep -q 'mCurrentFocus=.*com.tvguard.agent'; then
+    break
+  fi
+  sleep 1
+done
+sleep 2
 # Android TV remote must navigate to the address editor with DPAD and OK.
 adb shell input keyevent 20
 adb shell uiautomator dump /sdcard/tvguard-window.xml >/dev/null
