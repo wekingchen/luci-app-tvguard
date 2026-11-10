@@ -27,6 +27,7 @@ public final class MainActivity extends Activity {
     private int remoteSelectedIndex;
     private TextView bridgeStatus;
     private TextView endpointDisplay;
+    private TextView remoteDebug;
 
     private final Runnable refresh = new Runnable() {
         @Override
@@ -118,6 +119,7 @@ public final class MainActivity extends Activity {
         changeAddress.setNextFocusDownId(autoPair.getId());
         autoPair.setNextFocusUpId(changeAddress.getId());
         bridgeStatus = addText(panel, "", 16, 0xFFB8C9D5);
+        remoteDebug = addText(panel, "遥控器：默认选中开始监测", 14, 0xFFB8C9D5);
         details = addText(panel, "", 20, 0xFFEAF4F9);
         guidance = addText(panel, "", 16, 0xFFB8C9D5);
         addText(panel, "开启后有可见后台监测通知；仅向 N1 发送当前状态，无文件日志、数据库或离线队列。", 14, 0xFFB8C9D5);
@@ -226,10 +228,12 @@ public final class MainActivity extends Activity {
                     remoteSelectedIndex = Math.max(0, Math.min(choices.length - 1,
                             remoteSelectedIndex + (code == KeyEvent.KEYCODE_DPAD_DOWN ? 1 : -1)));
                     Button selected = choices[remoteSelectedIndex];
+                    if (remoteDebug != null) remoteDebug.setText("遥控器：方向键已选中 " + remoteSelectedIndex);
                     if (selected != null) selected.requestFocus();
                     return true;
                 }
                 Button selected = choices[remoteSelectedIndex];
+                if (remoteDebug != null) remoteDebug.setText("遥控器：确认 " + remoteSelectedIndex);
                 if (selected != null && selected.isEnabled()) {
                     selected.performClick();
                     return true;
