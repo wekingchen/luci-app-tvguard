@@ -237,8 +237,11 @@ else
 fi
 
 if [ "$restart" -eq 1 ]; then
-    # Keep a directly observable home state, but never carry player temporal
-    # confidence across an Agent process restart.
+    # Keep a directly observable home state, but never carry OR immediately
+    # rebuild player temporal confidence from the first post-restart report.
+    pause_streak=0
+    pause_miss=0
+    latched=none
     case "$combined" in
         system_home|app_home) : ;;
         *) combined=unknown; candidate=agent_process_restart_context_reset ;;
