@@ -2,6 +2,8 @@
 'require view';
 'require form';
 'require uci';
+'require fs';
+'require ui';
 
 function validateServer(section_id, value) {
     var url = String(value || '').trim();
@@ -128,7 +130,21 @@ return view.extend({
         o.placeholder = '00:05';
         o.default = '00:05';
         o.validate = validateTime;
-        o.description = 'N1 路由器本地时间，默认次日 00:05 发送昨天的完整观看估算。';
+        o.description = 'N1 路由器本地时间，默认次日 00:05 发送昨天的完整观看估算。当天儿童模式没有观看记录则不推送。';
+
+        o = report.option(form.Button, '_bark_test', '发送测试推送');
+        o.inputstyle = 'apply';
+        o.description = '请先保存并应用 Bark 服务器和推送 ID。点击后立即采样，推送截至此刻的儿童模式累计观看时长；零记录不发送。不会占用或取消每天的正式日报。';
+        o.onclick = function() {
+            return fs.exec('/usr/libexec/tvguardctl', ['bark-test']).then(function(r) {
+                if (r.code)
+                    throw new Error(String(r.stderr || r.stdout || 'Bark 测试推送失败').trim());
+                ui.addNotification(null,
+                    E('p', {}, String(r.stdout || 'Bark 测试推送已发送').trim()), 'info');
+            }).catch(function(err) {
+                ui.addNotification(null, E('p', {}, String(err.message || err)), 'error');
+            });
+        };
 
         var device = m.section(form.NamedSection, 'main', 'tvguard', '设备绑定（只读）');
         device.addremove = false;
