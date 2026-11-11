@@ -87,10 +87,8 @@ public final class MonitorService extends Service {
         boolean saved = editor.commit(); // One tiny write only on explicit user action.
         if (saved) {
             if (enabled) {
-                WatchdogReceiver.schedule(context);
                 RecoveryScheduler.ensureScheduled(context);
             } else {
-                WatchdogReceiver.cancel(context);
                 RecoveryScheduler.cancel(context);
             }
         }
@@ -132,7 +130,6 @@ public final class MonitorService extends Service {
         // MiTV Android 6 explicitly rejects promotion of this third-party
         // service to foreground. Recovery is therefore owned by JobScheduler,
         // not by repeated foreground-service promotion attempts.
-        WatchdogReceiver.schedule(this);
         RecoveryScheduler.ensureScheduled(this);
         return START_STICKY;
     }
@@ -296,7 +293,6 @@ public final class MonitorService extends Service {
         }
         recentActivity.clear();
         latest = Snapshot.empty("已停止");
-        if (isEnabled(this)) WatchdogReceiver.schedule(this);
         super.onDestroy();
     }
 
