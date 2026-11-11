@@ -12,7 +12,12 @@ while :; do
         logger -t tvguard "durable data prepare failed; keeping current data root"
     /usr/libexec/tvguard-data config-sync >/dev/null 2>&1 || \
         logger -t tvguard "UCI config persistence sync failed; keeping live config"
-    /usr/libexec/tvguardctl tick ||
+    if /usr/libexec/tvguardctl tick; then
+        # Bark failures cannot change billing, gate, or packet counting.
+        /usr/libexec/tvguard-daily-report tick >/dev/null 2>&1 ||
+            logger -t tvguard "daily report worker failed (billing unaffected)"
+    else
         logger -t tvguard "sample/update failed; keeping existing firewall gate"
+    fi
     sleep 10
 done
