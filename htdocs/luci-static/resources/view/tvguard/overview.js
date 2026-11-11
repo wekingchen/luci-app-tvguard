@@ -1010,7 +1010,7 @@ return view.extend({
                 ])
             ], 180, 'tvg-summary-grid'),
 
-            panel('今日累计观看', '沿用儿童模式的计时判断，不区分家长和儿童模式；联网活动估算不等同于实际视频播放时长。', [
+            panel('今日儿童模式累计观看', '只统计儿童模式；观察模式下即使超出额度也会继续累计。家长模式不计入。统计来自现有联网计时规则，不等于准确的视频播放时长。', [
                 E('div', { 'style': 'margin-bottom:6px' }, watchTodayNode),
                 E('div', { 'class': 'description' }, ['上一完整自然日：', watchYesterdayNode]),
                 E('div', { 'class': 'description', 'style': 'margin-top:8px' },
