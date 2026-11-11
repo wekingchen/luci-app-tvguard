@@ -54,6 +54,7 @@ defaults() {
     PARENT_UNTIL=0
     USED_S=0
     WATCH_S=0
+    WATCH_SCOPE=legacy
     PREV_DATE=none
     PREV_WATCH_S=0
     ROLLED_OVER=0
@@ -152,11 +153,14 @@ load_state() {
     # Once loaded from the currently selected root, normalize the marker to
     # the current mode so the next runtime snapshot is self-consistent.
     DATA_ROOT_MODE="$DATA_MODE"
-    # Existing child usage is all we can restore on the first upgrade.
-    if [ "$STATE_PRESENT" = 1 ] && ! grep -q '^WATCH_S=' "$RUN" 2>/dev/null &&
-       ! grep -q '^WATCH_S=' "$STATE" 2>/dev/null; then
-        WATCH_S="$USED_S"
+    # r18 wrongly counted parent sessions. Child USED_S is authoritative.
+    # Discard any old all-mode previous-day snapshot before Bark can send it.
+    if [ "$WATCH_SCOPE" != child ]; then
+        PREV_DATE=none
+        PREV_WATCH_S=0
     fi
+    WATCH_SCOPE=child
+    WATCH_S="$USED_S"
     case "$WATCH_S" in ''|*[!0-9]*) WATCH_S=0;; esac
     case "$PREV_WATCH_S" in ''|*[!0-9]*) PREV_WATCH_S=0;; esac
     case "$PREV_DATE" in none|[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]) :;; *) PREV_DATE=none;; esac
@@ -207,6 +211,7 @@ MODE=$MODE
 PARENT_UNTIL=$PARENT_UNTIL
 USED_S=$USED_S
 WATCH_S=$WATCH_S
+WATCH_SCOPE=$WATCH_SCOPE
 PREV_DATE=$PREV_DATE
 PREV_WATCH_S=$PREV_WATCH_S
 BONUS_S=$BONUS_S
@@ -409,7 +414,7 @@ rollover() {
     today="$(date +%Y-%m-%d)"
     if [ "$TODAY" != "$today" ]; then
         PREV_DATE="$TODAY"
-        PREV_WATCH_S="$WATCH_S"
+        PREV_WATCH_S="$USED_S"
         WATCH_S=0
         ROLLED_OVER=1
         TODAY="$today"
@@ -867,15 +872,13 @@ tick() {
         CAL_UNTIL=0
     fi
 
-    # Same billing decision, all modes: an ESTIMATE rather than screen time.
-    # Real firewall blocks do not accrue viewing time.
-    if [ "$ACTIVITY" = active ] && [ "$dt" -gt 0 ] &&
+    # Same child quota billing decision. Observation ENFORCE=0 does not
+    # cap used/watch seconds, even after the allowance is exhausted.
+    if [ "$MODE" = child ] && [ "$ACTIVITY" = active ] && [ "$dt" -gt 0 ] &&
        [ "$BILLING_STATE" = charge ] &&
        { [ "$ENFORCE" != 1 ] || [ "$BLOCKED" != 1 ]; }; then
-        WATCH_S=$((WATCH_S + dt))
-        if [ "$MODE" = child ]; then
-            USED_S=$((USED_S + dt))
-        fi
+        USED_S=$((USED_S + dt))
+        WATCH_S="$USED_S"
     fi
     LAST_EPOCH="$NOW"
     calculate
@@ -950,7 +953,7 @@ brief() {
             "$ADAPTIVE_ACTIVE_HITS" "$ADAPTIVE_TREND_PCT"
     fi
     printf '用量: %dm%02ds · 剩余 %dm%02ds\n' "$used_m" "$used_r" "$left_m" "$left_r"
-    printf '今日观看估算: %d 秒（含家长与儿童模式）\n' "$WATCH_S"
+    printf '今日儿童模式累计观看估算: %d 秒（家长模式不计入）\n' "$WATCH_S"
     printf '流量: %s PPS (TCP %s / UDP %s) · %s B/s\n' "$PPS" "$TCP_PPS" "$UDP_PPS" "$BYTES_PER_S"
     printf '控制: gate=%s · enforce=%s · armed=%s\n' "$firewall_state" "$ENFORCE" "$ARMED"
 }
