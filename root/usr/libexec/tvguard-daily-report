@@ -10,6 +10,8 @@ DATA=/usr/libexec/tvguard-data
 DIR="$("$DATA" root)"
 STATE="$DIR/state"
 SENT="$DIR/daily-report.sent"
+SENT1="$DIR/daily-report.sent.1"
+SENT2="$DIR/daily-report.sent.2"
 RETRY=/var/run/tvguard-daily-report.retry
 action="${1:-tick}"
 case "$action" in tick|test) :;; *) exit 2;; esac
@@ -26,12 +28,13 @@ if [ "$action" = tick ]; then
     [ "$(uci -q get tvguard.main.bark_enabled 2>/dev/null || echo 0)" = 1 ] || exit 0
 fi
 server="$(uci -q get tvguard.main.bark_server 2>/dev/null || echo '')"
-key="$(uci -q get tvguard.main.bark_key 2>/dev/null || echo '')"
+key1="$(uci -q get tvguard.main.bark_key 2>/dev/null || echo '')"
+key2="$(uci -q get tvguard.main.bark_key2 2>/dev/null || echo '')"
 name="$(uci -q get tvguard.main.child_name 2>/dev/null || echo '孩子')"
 schedule="$(uci -q get tvguard.main.bark_daily_time 2>/dev/null || echo 00:05)"
-if [ -z "$server" ] || [ -z "$key" ]; then
+if [ -z "$server" ] || { [ -z "$key1" ] && [ -z "$key2" ]; }; then
     [ "$action" = tick ] && exit 0
-    echo '请先保存 Bark 服务器和推送 ID，再测试。' >&2
+    echo '请先保存 Bark 服务器和至少一个推送 ID，再测试。' >&2
     exit 2
 fi
 
@@ -40,9 +43,21 @@ case "$server" in */) server="${server%/}";; esac
 host="${server#*://}"
 # Only server root (no URL credentials, path, query, header injection).
 case "$host" in ''|*/*|*' '*|*'?'*|*'#'*|*'@'*|*'\'*) invalid_config 'Bark 服务器只能填写根地址，不要附加路径或参数。';; esac
-case "$key" in ''|*[!a-zA-Z0-9_-]*) invalid_config 'Bark 推送 ID 格式不正确。';; esac
-if [ "${#key}" -lt 6 ] || [ "${#key}" -gt 128 ]; then
-    invalid_config 'Bark 推送 ID 长度不正确。'
+validate_key() {
+    label="$1"
+    value="$2"
+    [ -n "$value" ] || return 0
+    case "$value" in
+        *[!a-zA-Z0-9_-]*) invalid_config "Bark 推送 ID ${label} 格式不正确。";;
+    esac
+    if [ "${#value}" -lt 6 ] || [ "${#value}" -gt 128 ]; then
+        invalid_config "Bark 推送 ID ${label} 长度不正确。"
+    fi
+}
+validate_key 1 "$key1"
+validate_key 2 "$key2"
+if [ -n "$key1" ] && [ "$key1" = "$key2" ]; then
+    key2=''
 fi
 if [ "$action" = tick ]; then
     case "$schedule" in
@@ -135,29 +150,71 @@ fi
 response="$(mktemp /var/run/tvguard-bark.XXXXXX)" || exit 1
 trap 'rm -f "$response"' EXIT HUP INT TERM
 
-if curl --silent --show-error --fail --connect-timeout 4 --max-time 8 \
+send_one() {
+    push_key="$1"
+    : > "$response"
+    curl --silent --show-error --fail --connect-timeout 4 --max-time 8 \
         --max-filesize 16384 --request POST \
-        --data-urlencode "device_key=$key" \
+        --data-urlencode "device_key=$push_key" \
         --data-urlencode "title=$title" \
         --data-urlencode "body=$body" \
         --data-urlencode "group=TV Guard" \
         "$server/push" > "$response" 2>/dev/null &&
-   grep -Eq '"code"[[:space:]]*:[[:space:]]*200([,}[:space:]]|$)' "$response"; then
-    if [ "$action" = test ]; then
-        printf '测试推送已发送：%s，儿童模式累计%s。\n' "$today" "$viewing"
+    grep -Eq '"code"[[:space:]]*:[[:space:]]*200([,}[:space:]]|$)' "$response"
+}
+
+configured=0
+delivered=0
+failed=0
+send_slot() {
+    slot="$1"
+    push_key="$2"
+    [ -n "$push_key" ] || return 0
+    configured=$((configured + 1))
+    marker="$SENT1"
+    [ "$slot" = 2 ] && marker="$SENT2"
+
+    if [ "$action" = tick ] &&
+       [ "$(cat "$marker" 2>/dev/null || :)" = "$report_date" ]; then
+        delivered=$((delivered + 1))
+        return 0
+    fi
+
+    if send_one "$push_key"; then
+        delivered=$((delivered + 1))
+        if [ "$action" = tick ]; then
+            temp="${marker}.$$"
+            printf '%s\n' "$report_date" > "$temp"
+            chmod 600 "$temp"
+            mv -f "$temp" "$marker"
+        fi
     else
-        temp="${SENT}.$"
+        failed=$((failed + 1))
+    fi
+}
+
+send_slot 1 "$key1"
+send_slot 2 "$key2"
+
+if [ "$action" = test ]; then
+    if [ "$failed" -eq 0 ] && [ "$delivered" -eq "$configured" ]; then
+        printf '测试推送已发送到 %s 台设备：%s，儿童模式累计%s。\n' \
+            "$delivered" "$today" "$viewing"
+    else
+        printf 'Bark 测试推送未全部成功：成功 %s 台，失败 %s 台。请检查对应推送 ID 和 N1 网络连接。\n' \
+            "$delivered" "$failed" >&2
+        exit 1
+    fi
+else
+    if [ "$failed" -eq 0 ] && [ "$delivered" -eq "$configured" ]; then
+        temp="${SENT}.$$"
         printf '%s\n' "$report_date" > "$temp"
         chmod 600 "$temp"
         mv -f "$temp" "$SENT"
         rm -f "$RETRY"
-        logger -t tvguard "daily Bark report delivered for $report_date"
+        logger -t tvguard "daily Bark report delivered for $report_date to $delivered device(s)"
+    else
+        printf '%s\n' "$((now_epoch + 300))" > "$RETRY"
+        logger -t tvguard "daily Bark report partial failure for $report_date; delivered=$delivered failed=$failed retry after 300s"
     fi
-else
-    if [ "$action" = test ]; then
-        echo 'Bark 测试推送失败，请检查服务器地址、推送 ID 和 N1 网络连接。' >&2
-        exit 1
-    fi
-    printf '%s\n' "$((now_epoch + 300))" > "$RETRY"
-    logger -t tvguard "daily Bark report failed; retry after 300s"
 fi
