@@ -13,7 +13,6 @@ public final class BootReceiver extends BroadcastReceiver {
                 || Intent.ACTION_MY_PACKAGE_REPLACED.equals(action);
         if (recoveryEvent && MonitorService.isEnabled(context)) {
             context.startService(new Intent(context, MonitorService.class));
-            WatchdogReceiver.schedule(context);
             RecoveryScheduler.ensureScheduled(context);
         }
     }
