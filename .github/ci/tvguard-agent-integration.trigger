@@ -1,3 +1,3 @@
 tvguard-agent integration gate trigger
-version=r17-home-only-billing-bridge-0.2.8-r3
-reason=Formal billing grants free time only to explicit system_home/app_home; paused/playing/unknown/stale remain chargeable
+version=r17-home-only-billing-bridge-0.2.8-r3-fix1
+reason=Re-run after BusyBox postinst contract and billing-hint executable permission fix
