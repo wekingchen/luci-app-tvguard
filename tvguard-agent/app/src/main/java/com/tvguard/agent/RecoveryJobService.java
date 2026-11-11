@@ -5,24 +5,34 @@ import android.app.job.JobService;
 import android.content.Intent;
 
 /**
- * System-owned persisted fallback. Runs at low frequency and only ensures the
- * foreground monitor service exists when monitoring was explicitly enabled.
+ * System-owned recovery entry point. The next persisted one-shot job is armed
+ * first, then the monitor service is restored only when the Agent process does
+ * not already have it running.
  */
 public final class RecoveryJobService extends JobService {
     @Override
     public boolean onStartJob(JobParameters params) {
-        if (MonitorService.isEnabled(this)) {
-            startService(new Intent(this, MonitorService.class));
-            WatchdogReceiver.schedule(this);
-        } else {
+        if (!MonitorService.isEnabled(this)) {
             RecoveryScheduler.cancel(this);
+            return false;
         }
-        jobFinished(params, false);
+
+        // Arm the next system-owned recovery point before doing anything else.
+        // Alternating IDs avoid replacing the currently executing job.
+        RecoveryScheduler.scheduleNext(this, params.getJobId());
+
+        if (!MonitorService.isRunning()) {
+            startService(new Intent(this, MonitorService.class));
+        }
+        WatchdogReceiver.schedule(this);
         return false;
     }
 
     @Override
     public boolean onStopJob(JobParameters params) {
+        if (MonitorService.isEnabled(this)) {
+            RecoveryScheduler.ensureScheduled(this);
+        }
         return false;
     }
 }
