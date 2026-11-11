@@ -2,6 +2,15 @@ name: TVGuard Agent Android 6 build
 
 on:
   workflow_call:
+    secrets:
+      TVGUARD_KEYSTORE_B64:
+        required: true
+      TVGUARD_STORE_PASSWORD:
+        required: true
+      TVGUARD_KEY_ALIAS:
+        required: true
+      TVGUARD_KEY_PASSWORD:
+        required: true
   workflow_dispatch:
 
 permissions:
@@ -33,10 +42,10 @@ jobs:
       - name: Run foreground state unit tests
         working-directory: tvguard-agent
         run: gradle --no-daemon :app:testDebugUnitTest
-      - name: Build APK for API 23
+      - name: Build debug APK for API 23 smoke test
         working-directory: tvguard-agent
         run: gradle --no-daemon :app:assembleDebug
-      - name: Validate APK and size
+      - name: Validate debug APK and size
         shell: bash
         run: |
           set -euo pipefail
@@ -44,7 +53,7 @@ jobs:
           test -s "$APK"
           test "$(stat -c%s "$APK")" -lt 1048576
           unzip -l "$APK" | grep -q classes.dex
-          echo "APK bytes: $(stat -c%s "$APK")"
+          echo "Debug APK bytes: $(stat -c%s "$APK")"
       - name: Enable KVM on hosted runner
         run: |
           if [ -e /dev/kvm ]; then sudo chmod 666 /dev/kvm; fi
@@ -57,10 +66,55 @@ jobs:
           profile: Nexus 5
           emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim
           script: bash tvguard-agent/tests/emulator_smoke.sh
-      - name: Upload test APK
+
+      - name: Prepare stable release keystore
+        shell: bash
+        env:
+          TVGUARD_KEYSTORE_B64: ${{ secrets.TVGUARD_KEYSTORE_B64 }}
+        run: |
+          set -euo pipefail
+          test -n "$TVGUARD_KEYSTORE_B64"
+          KEYSTORE="$RUNNER_TEMP/tvguard-release.p12"
+          printf '%s' "$TVGUARD_KEYSTORE_B64" | base64 --decode > "$KEYSTORE"
+          chmod 600 "$KEYSTORE"
+          ACTUAL_SHA256="$(sha256sum "$KEYSTORE" | awk '{print $1}')"
+          EXPECTED_SHA256="96e920be816ff3a59c8b914f99909a5da9c6c59b07ccc833ee901b2700bc74a8"
+          test "$ACTUAL_SHA256" = "$EXPECTED_SHA256"
+          echo "TVGUARD_KEYSTORE_PATH=$KEYSTORE" >> "$GITHUB_ENV"
+          echo "Release keystore SHA256 verified."
+
+      - name: Build stable signed release APK
+        working-directory: tvguard-agent
+        env:
+          TVGUARD_STORE_PASSWORD: ${{ secrets.TVGUARD_STORE_PASSWORD }}
+          TVGUARD_KEY_ALIAS: ${{ secrets.TVGUARD_KEY_ALIAS }}
+          TVGUARD_KEY_PASSWORD: ${{ secrets.TVGUARD_KEY_PASSWORD }}
+        run: gradle --no-daemon :app:assembleRelease
+
+      - name: Verify release APK signature and identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK=tvguard-agent/app/build/outputs/apk/release/app-release.apk
+          test -s "$APK"
+          test "$(stat -c%s "$APK")" -lt 1048576
+          unzip -l "$APK" | grep -q classes.dex
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose --print-certs "$APK" | tee "$RUNNER_TEMP/apksigner.txt"
+          EXPECTED_CERT_SHA256="f4c300999b1bb3f04f4f80a630ebd5273dd268810a35b25b6c4c60a63cf376fa"
+          ACTUAL_CERT_SHA256="$(sed -n 's/^Signer #1 certificate SHA-256 digest: //p' "$RUNNER_TEMP/apksigner.txt" | head -n1 | tr '[:upper:]' '[:lower:]' | tr -d ':[:space:]')"
+          test "$ACTUAL_CERT_SHA256" = "$EXPECTED_CERT_SHA256"
+          echo "Release signer SHA256 verified: $ACTUAL_CERT_SHA256"
+          echo "Release APK bytes: $(stat -c%s "$APK")"
+
+      - name: Upload stable signed release APK
         uses: actions/upload-artifact@v4
         with:
-          name: tvguard-agent-0.2.6-android6-apk
-          path: tvguard-agent/app/build/outputs/apk/debug/app-debug.apk
+          name: tvguard-agent-0.2.6-release-signed-apk
+          path: tvguard-agent/app/build/outputs/apk/release/app-release.apk
           if-no-files-found: error
-          retention-days: 7
+          retention-days: 30
+
+      - name: Remove temporary release keystore
+        if: always()
+        shell: bash
+        run: rm -f "$RUNNER_TEMP/tvguard-release.p12"
