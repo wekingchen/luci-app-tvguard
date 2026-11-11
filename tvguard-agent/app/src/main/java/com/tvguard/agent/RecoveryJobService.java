@@ -5,9 +5,9 @@ import android.app.job.JobService;
 import android.content.Intent;
 
 /**
- * System-owned recovery entry point. The next persisted one-shot job is armed
- * first, then the monitor service is restored only when the Agent process does
- * not already have it running.
+ * System-owned recovery entry point. Fast non-persisted jobs re-arm each other
+ * while the TV is running; the low-frequency persisted job only survives boot
+ * and re-seeds the fast chain when needed.
  */
 public final class RecoveryJobService extends JobService {
     @Override
@@ -17,9 +17,12 @@ public final class RecoveryJobService extends JobService {
             return false;
         }
 
-        // Arm the next system-owned recovery point before doing anything else.
-        // Alternating IDs avoid replacing the currently executing job.
-        RecoveryScheduler.scheduleNext(this, params.getJobId());
+        if (params.getJobId() == RecoveryScheduler.PERSISTED_JOB_ID) {
+            RecoveryScheduler.ensureFastScheduled(this);
+        } else {
+            // Arm the next in-memory recovery point before doing any other work.
+            RecoveryScheduler.scheduleNextFast(this, params.getJobId());
+        }
 
         if (!MonitorService.isRunning()) {
             startService(new Intent(this, MonitorService.class));
