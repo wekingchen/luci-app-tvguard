@@ -112,6 +112,12 @@ if ! adb shell dumpsys alarm | grep -q 'com.tvguard.agent.WATCHDOG'; then
   exit 1
 fi
 echo "[smoke] non-wakeup 30s recovery watchdog armed PASS"
+if ! adb shell dumpsys jobscheduler | grep -q 'com.tvguard.agent.*RecoveryJobService'; then
+  echo "[smoke] persisted cold-boot recovery job not scheduled"
+  adb shell dumpsys jobscheduler | grep -A10 -B5 'com.tvguard.agent' || :
+  exit 1
+fi
+echo "[smoke] persisted JobScheduler cold-boot fallback scheduled PASS"
 
 adb shell am start -W -a android.settings.SETTINGS >/dev/null
 sleep 8
@@ -199,4 +205,5 @@ test "$(adb shell getprop sys.boot_completed | tr -d '\r')" = 1
 adb shell appops get "$PKG" GET_USAGE_STATS | grep -q 'allow'
 sleep 8
 adb shell dumpsys activity services "$PKG" | grep -q 'MonitorService'
-echo "[smoke] permission and service survive boot PASS"
+adb shell dumpsys jobscheduler | grep -q 'com.tvguard.agent.*RecoveryJobService'
+echo "[smoke] permission, service and persisted recovery job survive boot PASS"
