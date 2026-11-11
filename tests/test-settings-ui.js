@@ -99,7 +99,7 @@ const page = factory(view, form, uci, mockFs, mockUi, E);
     assert.equal(loaded, true);
 
     const map = page.render();
-    assert.equal(map.title, 'TV Guard · 时间规则');
+    assert.equal(map.title, 'TV Guard · 设置');
     assert.match(map.description, /高风险功能/);
     assert.deepEqual(
         map.sections.map(section => section.title),
@@ -110,7 +110,7 @@ const page = factory(view, form, uci, mockFs, mockUi, E);
     const byName = Object.fromEntries(options.map(option => [option.name, option]));
 
     for (const name of ['weekday_minutes', 'weekend_minutes', 'max_bonus_minutes', 'allow_start',
-                        'allow_end', 'silence_seconds', 'child_name', 'bark_enabled', 'bark_server', 'bark_key', 'bark_daily_time', '_bark_test', 'ip', 'interface']) {
+                        'allow_end', 'silence_seconds', 'child_name', 'bark_enabled', 'bark_server', 'bark_key', 'bark_key2', 'bark_daily_time', '_bark_test', 'ip', 'interface']) {
         assert.ok(byName[name], 'missing settings field: ' + name);
         assert.ok(byName[name].description.length > 0, 'missing description: ' + name);
     }
@@ -136,12 +136,17 @@ const page = factory(view, form, uci, mockFs, mockUi, E);
     assert.equal(byName.bark_server.default, 'https://api.day.app');
     assert.equal(byName.bark_daily_time.default, '00:05');
     assert.equal(byName.bark_key.password, true);
+    assert.equal(byName.bark_key2.password, true);
+    assert.match(byName.bark_key.description, /最多支持两台设备|至少填写一个/);
+    assert.match(byName.bark_key2.description, /爸爸和妈妈|第二台/);
     assert.equal(byName.child_name.validate('main', '小明'), true);
     assert.notEqual(byName.child_name.validate('main', 'A\nB'), true);
     assert.equal(byName.bark_server.validate('main', 'https://api.day.app'), true);
     assert.notEqual(byName.bark_server.validate('main', 'https://example.com/key'), true);
     assert.equal(byName.bark_key.validate('main', 'abcdef1234'), true);
     assert.notEqual(byName.bark_key.validate('main', 'bad/key'), true);
+    assert.equal(byName.bark_key2.validate('main', 'secondDevice123'), true);
+    assert.notEqual(byName.bark_key2.validate('main', 'bad/key2'), true);
     assert.equal(byName.bark_daily_time.validate('main', '00:05'), true);
     assert.notEqual(byName.bark_daily_time.validate('main', '24:00'), true);
     assert.equal(byName.ip.type, 'DummyValue');
