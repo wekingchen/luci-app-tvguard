@@ -316,3 +316,19 @@ r15 不修改 `TX_IDLE_BILLING_AUTHORITY=0`、controller billing、firewall gate
 r15 重启后的干净 RAM ring 显示前 10 个窗口均为 `PPS=0`；按原条件，满 12 窗后纯静默也会满足低位稳定平台。纯静默已有 `activity=silent / billing_state=idle_silent` 专门处理，不应重复计入 `stable_low_plateau` 研究样本。
 
 r16 在 Shadow-only 条件中增加 `TEMPORAL_P50 > 0`：纯静默以及“11 个静默窗 + 1 个零星包”的近静默历史均不得进入候选；已确认系统首页、真实暂停正例和两段 576p 播放反例保持原有判定。该修改不改变 `TX_IDLE_BILLING_AUTHORITY=0`、controller billing、firewall gate、NAT/mangle/route。
+
+
+## r17 保守 Home-only 正式计时（2026-11-11）
+
+真机已证明：576p 正常播放与真实暂停后的预取/缓存流量高度重叠，PPS/BPS/UDP 占比均不足以可靠区分；Android `audio_active=0` 在恢复播放后也可能继续出现。因此正式计时不再追求“必须识别 paused”。
+
+r17 的正式规则收敛为：
+
+- `ACTIVITY=silent`：沿用现有网络静默边界，不扣儿童额度；
+- fresh Agent + generic fusion 明确 `system_home`：不扣；
+- fresh Agent + generic fusion 明确 `app_home`：不扣；
+- `playing / paused / unknown / ambiguous`：只要网络活动存在，一律扣；
+- Agent missing/stale/invalid、bridge 缺失或 billing hint 异常：fail-closed，网络活动存在则扣；
+- Adaptive pause hints、burst guard、pause streak 继续只做 Shadow 研究，不具备免计时授权。
+
+实现上由独立 `tvguard-agent-billing-hint` 输出唯一窄接口：`free system_home`、`free app_home` 或 `charge <state>`。它不读取/修改 USED_S、BILLING_STATE、iptables、UCI；核心 `tvguardctl` 是唯一正式计时写入方。
