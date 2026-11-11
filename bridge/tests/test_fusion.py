@@ -53,6 +53,13 @@ with tempfile.TemporaryDirectory(prefix="tvguard-fusion-") as folder:
                pause_hint="none", pause_score=0)[:2] == (
         "app_home", "app_home_confirmed_galaxy")
 
+    # Do not over-generalize every non-player Galaxy page into App-home.
+    # Only the HomeActivity verified on the real TV may claim app_home.
+    assert run(3, 120,
+               activity="com.gala.video.app.detail.DetailActivity",
+               pause_hint="none", pause_score=0)[:2] == (
+        "unknown", "galaxy_nonplayer_activity_unresolved")
+
     # Galaxy PlayerActivity + strong pause hint must be sustained for 3 NEW
     # Agent reports. audio_active=1 intentionally does not veto a real pause.
     reset()
