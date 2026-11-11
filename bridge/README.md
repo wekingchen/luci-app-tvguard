@@ -1,4 +1,4 @@
-# TVGuard Agent + N1 Bridge · 双端联动 0.2.8（通用上下文影子版）
+# TVGuard Agent + N1 Bridge · 双端联动 0.2.8（通用上下文 + Home-only 计时提示）
 
 ## 为何不把旧的 TVGuard 全量 IPK 重打包？
 
@@ -235,3 +235,14 @@ r2 不增加 App 特判，而是在同一 learned media context 内学习**强�
 - `active_votes` / `clear_current` / `overlap` 交替。
 
 整段 trace 的硬门禁是：**不得出现任何 `combined_state=paused`。**
+
+
+## v0.2.8-r3 · Home-only 正式计时提示
+
+暂停识别不再承担正式免计时职责。新增 `tvguard-agent-billing-hint`，其合同只有三类结果：
+
+- `free system_home`
+- `free app_home`
+- 其他任何情况均为 `charge <state>`
+
+其中 `paused` 即使在 Shadow Fusion 中被确认，也仍返回 `charge paused`。Agent 丢失、超过 20 秒、输入异常或 fusion 不可用均返回 `charge unknown`。该 helper 本身不修改额度或防火墙；只有 r17 核心显式消费上述 Home-only 结果。
