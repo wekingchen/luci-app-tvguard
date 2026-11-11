@@ -57,6 +57,9 @@ assert "editor.commit()" in service
 main_activity = (src / "java/com/tvguard/agent/MainActivity.java").read_text()
 editor = (src / "java/com/tvguard/agent/TvAddressEditor.java").read_text()
 assert "TVGuard 助手 · 0.2.6" in main_activity
+gradle = (root / "app/build.gradle").read_text()
+assert "targetSdk 23" in gradle
+assert "disable 'ExpiredTargetSdkVersion'" in gradle
 watchdog = (src / "java/com/tvguard/agent/WatchdogReceiver.java").read_text()
 assert "INTERVAL_MS = 30000L" in watchdog
 assert "AlarmManager.ELAPSED_REALTIME" in watchdog
