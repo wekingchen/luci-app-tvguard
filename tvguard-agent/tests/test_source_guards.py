@@ -14,16 +14,23 @@ assert 'android:usesCleartextTraffic="true"' in manifest
 service = (src / "java/com/tvguard/agent/MonitorService.java").read_text()
 assert "SAMPLE_INTERVAL_MS = 5000L" in service
 assert "MAX_EVENTS_PER_POLL = 4096" in service
-assert "recentActivity.lastVideo()" in service
 assert "recentActivity.lastNonLauncher()" in service
+assert "VideoActivityHistory" not in service
+assert not (src / "java/com/tvguard/agent/VideoActivityHistory.java").exists()
 assert "recentActivity.lastEvents(6)" in service
-history = (src / "java/com/tvguard/agent/VideoActivityHistory.java").read_text()
+history = (src / "java/com/tvguard/agent/ForegroundActivityHistory.java").read_text()
 assert "CAPACITY = 24" in history
 assert "new ArrayDeque<Event>(CAPACITY)" in history
 assert "recent.removeFirst()" in history
 assert "java.io." not in history
 assert "SharedPreferences" not in history
 assert "SQLite" not in history
+for forbidden in ("com.gitvdemo.video", "com.ktcp.video", "com.hunantv.license",
+                  "org.smarttube.stable", "com.youku.tv", "com.iqiyi.tv",
+                  "com.bilibili.tv"):
+    assert forbidden not in history
+assert "isVideoPackage" not in history
+assert "不维护视频 App 白名单" in main_activity
 assert "startForeground(" not in service
 assert "stopForeground(" not in service
 assert "static boolean isRunning()" in service
@@ -56,7 +63,7 @@ assert "SharedPreferences.Editor" in service
 assert "editor.commit()" in service
 main_activity = (src / "java/com/tvguard/agent/MainActivity.java").read_text()
 editor = (src / "java/com/tvguard/agent/TvAddressEditor.java").read_text()
-assert "TVGuard 助手 · 0.2.6-r2" in main_activity
+assert "TVGuard 助手 · 0.2.8" in main_activity
 gradle = (root / "app/build.gradle").read_text()
 assert "targetSdk 23" in gradle
 assert "disable 'ExpiredTargetSdkVersion'" in gradle
