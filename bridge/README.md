@@ -122,3 +122,24 @@ v0.2.7 安装后先只观察银河奇异果：
 
 银河通过后，再单独为腾讯共享 Activity 建立可靠 discriminator；在此之前腾讯保持 conservative unknown，
 不为了“凑齐四状态”制造假确定性。
+
+
+## v0.2.7-2 · 无打扰观察与回归矩阵
+
+0.2.7-2 不改变 0.2.7 的状态判定阈值，也不接入正式计费。它只增强可验证性：
+
+- 新增 `/usr/libexec/tvguard-agent-bridge-report summary`，直接汇总 RAM-only `soak-v3.csv`；
+- summary 只统计已有 RAM 观察，不主动唤醒电视、不要求 ADB、不写闪存；
+- 输出 fresh/repeated/stale 数量，以及 playing/paused/app_home/system_home/unknown 分布；
+- 单独统计 pause warming / confirmed / hold、idle_overlap unresolved、Tencent shared Activity unresolved、Agent restart reset；
+- 固化两组已观察到的芒果 576p 低码率 PPS 序列，保证它们在未验证 Activity 语义下永远不能被误判成 paused；
+- 固化银河低码率 PlayerActivity + idle_overlap 不累计 pause streak；
+- 固化腾讯 HomeSingleTaskActivity 即使出现 high_ratio_pause 也保持 unknown。
+
+因此孩子正常看电视期间不需要做任何人工标注。等方便时可以先看：
+
+```sh
+/usr/libexec/tvguard-agent-bridge-report summary
+```
+
+它只能作为“自然运行观察摘要”，不能替代有明确 App / 清晰度 / 暂停时点的人工真机验收。
