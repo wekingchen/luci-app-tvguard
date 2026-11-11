@@ -24,8 +24,9 @@ assert "recent.removeFirst()" in history
 assert "java.io." not in history
 assert "SharedPreferences" not in history
 assert "SQLite" not in history
-assert "startForeground(NOTIFICATION_ID, notification)" in service
-assert "stopForeground(true)" in service
+assert "startForeground(" not in service
+assert "stopForeground(" not in service
+assert "static boolean isRunning()" in service
 main_activity = (src / "java/com/tvguard/agent/MainActivity.java").read_text()
 assert "if (MonitorService.isEnabled(this))" in main_activity
 assert "startService(new Intent(this, MonitorService.class))" in main_activity
@@ -55,12 +56,13 @@ assert "SharedPreferences.Editor" in service
 assert "editor.commit()" in service
 main_activity = (src / "java/com/tvguard/agent/MainActivity.java").read_text()
 editor = (src / "java/com/tvguard/agent/TvAddressEditor.java").read_text()
-assert "TVGuard 助手 · 0.2.5" in main_activity
+assert "TVGuard 助手 · 0.2.6" in main_activity
 watchdog = (src / "java/com/tvguard/agent/WatchdogReceiver.java").read_text()
 assert "INTERVAL_MS = 30000L" in watchdog
 assert "AlarmManager.ELAPSED_REALTIME" in watchdog
 assert "ELAPSED_REALTIME_WAKEUP" not in watchdog
 assert "context.startService(new Intent(context, MonitorService.class))" in watchdog
+assert "if (!MonitorService.isRunning())" in watchdog
 assert "WatchdogReceiver.schedule(this)" in service
 assert "WatchdogReceiver.cancel(context)" in service
 assert '<receiver android:name=".WatchdogReceiver" android:exported="false" />' in manifest
@@ -70,16 +72,22 @@ assert 'android:exported="true"' in manifest
 recovery_scheduler = (src / "java/com/tvguard/agent/RecoveryScheduler.java").read_text()
 recovery_job = (src / "java/com/tvguard/agent/RecoveryJobService.java").read_text()
 boot_receiver = (src / "java/com/tvguard/agent/BootReceiver.java").read_text()
-assert "JOB_ID = 7025" in recovery_scheduler
-assert "PERIOD_MS = 15L * 60L * 1000L" in recovery_scheduler
+assert "JOB_ID_A = 7025" in recovery_scheduler
+assert "JOB_ID_B = 7026" in recovery_scheduler
+assert "MIN_LATENCY_MS = 20000L" in recovery_scheduler
+assert "DEADLINE_MS = 30000L" in recovery_scheduler
 assert ".setPersisted(true)" in recovery_scheduler
-assert ".setPeriodic(PERIOD_MS)" in recovery_scheduler
+assert ".setMinimumLatency(MIN_LATENCY_MS)" in recovery_scheduler
+assert ".setOverrideDeadline(DEADLINE_MS)" in recovery_scheduler
+assert ".setPeriodic(" not in recovery_scheduler
 assert "RecoveryScheduler.ensureScheduled(context)" in service
 assert "RecoveryScheduler.cancel(context)" in service
 assert "RecoveryScheduler.ensureScheduled(this)" in service
 assert "RecoveryScheduler.ensureScheduled(context)" in boot_receiver
 assert "Intent.ACTION_MY_PACKAGE_REPLACED" in boot_receiver
 assert "RecoveryJobService" in recovery_job
+assert "RecoveryScheduler.scheduleNext(this, params.getJobId())" in recovery_job
+assert "if (!MonitorService.isRunning())" in recovery_job
 assert "startService(new Intent(this, MonitorService.class))" in recovery_job
 assert "192.168.101.99" in bridge_client
 assert "PAIR1" in bridge_client
