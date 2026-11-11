@@ -62,6 +62,8 @@ assert '/var/run/tvguard-agent-bridge' in fusion
 assert 'playing_confirmed_context_learned' in fusion
 assert 'paused_confirmed_learned_context' in fusion
 assert 'learned_media_idle_overlap_unresolved' in fusion
+assert 'recent_play_burst_guard' in fusion
+assert 'burst_gap_max' in fusion and 'burst_hits' in fusion
 assert 'app_nonplaying_confirmed' in fusion
 assert 'unlearned_package_pause_hint_ignored' in fusion
 assert 'media_pkg' in fusion and 'media_activity' in fusion
