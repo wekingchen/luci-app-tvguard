@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Exercise v0.2.7 RAM-only Agent/N1 temporal fusion with real shell code."""
+"""Exercise v0.2.8 generic learned-context temporal fusion with real shell code."""
 import subprocess
 import tempfile
 from pathlib import Path
@@ -7,11 +7,11 @@ from pathlib import Path
 root = Path(__file__).resolve().parents[1]
 source = (root / "root/usr/libexec/tvguard-agent-fusion").read_text()
 
-GALAXY = "com.gitvdemo.video"
-PLAYER = "com.gala.video.app.player.PlayerActivity"
-HOME = "com.gala.video.app.epg.HomeActivity"
-TENCENT = "com.ktcp.video"
-TENCENT_SHARED = "com.ktcp.video.activity.onepage.HomeSingleTaskActivity"
+APP_A = "com.example.videoa"
+PLAYER_A = "com.example.videoa.ui.RootTaskActivity"
+BROWSE_A = "com.example.videoa.ui.BrowseActivity"
+APP_B = "com.example.videob"
+PLAYER_B = "com.example.videob.ui.WatchScreen"
 
 with tempfile.TemporaryDirectory(prefix="tvguard-fusion-") as folder:
     d = Path(folder)
@@ -28,7 +28,7 @@ with tempfile.TemporaryDirectory(prefix="tvguard-fusion-") as folder:
             elif p.is_dir():
                 p.rmdir()
 
-    def run(seq, seen, pkg=GALAXY, activity=PLAYER, audio=1, screen=1,
+    def run(seq, seen, pkg=APP_A, activity=PLAYER_A, audio=1, screen=1,
             pps=20, shadow="idle", adaptive_state="ambiguous",
             adaptive_score=50, adaptive_reason="overlap",
             pause_hint="bursty_pause", pause_score=75, active_floor=100):
@@ -43,82 +43,127 @@ with tempfile.TemporaryDirectory(prefix="tvguard-fusion-") as folder:
         assert len(out) == 3, out
         return out[0], out[1], int(out[2])
 
-    # Directly observable UI states.
+    # Platform launcher remains a directly observable system-home signal.
     reset()
     assert run(1, 100, pkg="com.mitv.tvhome",
                activity="com.mitv.tvhome.MainActivityUserMode",
                pause_hint="none", pause_score=0)[:2] == (
         "system_home", "system_home_confirmed")
-    assert run(2, 110, activity=HOME,
-               pause_hint="none", pause_score=0)[:2] == (
-        "app_home", "app_home_confirmed_galaxy")
 
-    # Do not over-generalize every non-player Galaxy page into App-home.
-    # Only the HomeActivity verified on the real TV may claim app_home.
-    assert run(3, 120,
-               activity="com.gala.video.app.detail.DetailActivity",
-               pause_hint="none", pause_score=0)[:2] == (
-        "unknown", "galaxy_nonplayer_activity_unresolved")
-
-    # Galaxy PlayerActivity + strong pause hint must be sustained for 3 NEW
-    # Agent reports. audio_active=1 intentionally does not veto a real pause.
+    # An arbitrary app/package name is NOT special-cased. It becomes a learned
+    # media context only after strong current playback evidence.
     reset()
-    assert run(10, 200) == ("unknown", "pause_candidate_warming", 1)
-    assert run(11, 210) == ("unknown", "pause_candidate_warming", 2)
-    assert run(12, 220) == ("paused", "paused_confirmed_temporal", 3)
+    assert run(1, 200, pkg=APP_A, activity=PLAYER_A,
+               pps=160, shadow="unknown",
+               adaptive_state="active", adaptive_score=100,
+               adaptive_reason="clear_current",
+               pause_hint="none", pause_score=0,
+               active_floor=100) == (
+        "playing", "playing_confirmed_context_learned", 0)
 
-    # Re-reading the same report cannot manufacture another temporal vote.
-    assert run(12, 220) == ("paused", "paused_confirmed_temporal", 3)
+    # The same learned context may enter pause only after three NEW strong
+    # pause-hint reports. Activity name contains no Player/Video keyword.
+    assert run(2, 210, pkg=APP_A, activity=PLAYER_A) == (
+        "unknown", "pause_candidate_learned_context", 1)
+    assert run(3, 220, pkg=APP_A, activity=PLAYER_A) == (
+        "unknown", "pause_candidate_learned_context", 2)
+    assert run(4, 230, pkg=APP_A, activity=PLAYER_A) == (
+        "paused", "paused_confirmed_learned_context", 3)
 
-    # One missing hint is held to avoid flicker; a second missing fresh report
-    # releases pause unless strong playback appears first.
-    assert run(13, 230, pause_hint="none", pause_score=0) == (
+    # Duplicate reads cannot manufacture another temporal vote.
+    assert run(4, 230, pkg=APP_A, activity=PLAYER_A) == (
+        "paused", "paused_confirmed_learned_context", 3)
+
+    # One missing hint is held; a second releases pause.
+    assert run(5, 240, pkg=APP_A, activity=PLAYER_A,
+               pause_hint="none", pause_score=0) == (
         "paused", "paused_temporal_hold", 3)
-    assert run(14, 240, pause_hint="none", pause_score=0) == (
-        "unknown", "player_context_unresolved", 0)
+    assert run(6, 250, pkg=APP_A, activity=PLAYER_A,
+               pause_hint="none", pause_score=0) == (
+        "unknown", "learned_media_context_unresolved", 0)
 
-    # Strong current network evidence exits pause immediately.
-    reset()
-    run(20, 300)
-    run(21, 310)
-    assert run(22, 320) == ("paused", "paused_confirmed_temporal", 3)
-    assert run(23, 330, pps=150, shadow="unknown",
+    # Explicit playback evidence exits pause immediately and refreshes the
+    # learned context.
+    run(7, 260, pkg=APP_A, activity=PLAYER_A,
+        pause_hint="bursty_pause", pause_score=75)
+    run(8, 270, pkg=APP_A, activity=PLAYER_A,
+        pause_hint="bursty_pause", pause_score=75)
+    assert run(9, 280, pkg=APP_A, activity=PLAYER_A,
+               pps=180, shadow="unknown",
                adaptive_state="active", adaptive_score=100,
                adaptive_reason="clear_current",
                pause_hint="high_ratio_pause", pause_score=95,
                active_floor=100) == (
-        "playing", "playing_confirmed_network", 0)
+        "playing", "playing_confirmed_context_learned", 0)
 
-    # P0 guard: idle_overlap is never sufficient to call PlayerActivity paused,
-    # even for repeated very-low-PPS windows.
+    # P0 guard: low-rate playback in a learned media context can remain
+    # idle_overlap forever without becoming paused.
     reset()
-    for i in range(1, 8):
+    run(1, 300, pkg=APP_B, activity=PLAYER_B,
+        pps=180, shadow="unknown", adaptive_state="active",
+        adaptive_score=100, adaptive_reason="clear_current",
+        pause_hint="none", pause_score=0, active_floor=100)
+    for i, pps in enumerate((9, 12, 8, 11, 10, 14, 7), 2):
         state, candidate, streak = run(
-            i, 400 + i * 10, pps=9, shadow="idle",
+            i, 300 + i * 10, pkg=APP_B, activity=PLAYER_B,
+            audio=1, pps=pps, shadow="idle",
             adaptive_state="idle", adaptive_score=95,
             adaptive_reason="stable_low",
-            pause_hint="idle_overlap", pause_score=60, active_floor=100)
+            pause_hint="idle_overlap", pause_score=60,
+            active_floor=100)
         assert state == "unknown", (i, state, candidate, streak)
-        assert candidate == "player_idle_overlap_unresolved"
+        assert candidate == "learned_media_idle_overlap_unresolved"
         assert streak == 0
 
-    # Agent process restart must discard accumulated player temporal confidence.
+    # Generic app-side non-playing state: after playback taught APP_A as a media
+    # package, another Activity with sustained low/no-audio evidence becomes
+    # app_home. This means "app-side non-playing UI", not a package-specific root.
     reset()
-    run(30, 600)
-    run(31, 610)
-    assert run(32, 620)[0] == "paused"
-    assert run(1, 630) == (
+    run(1, 500, pkg=APP_A, activity=PLAYER_A,
+        pps=160, shadow="unknown", adaptive_state="active",
+        adaptive_score=100, adaptive_reason="clear_current",
+        pause_hint="none", pause_score=0, active_floor=100)
+    assert run(2, 510, pkg=APP_A, activity=BROWSE_A, audio=0, pps=8,
+               shadow="idle", adaptive_state="idle", adaptive_score=95,
+               adaptive_reason="stable_low", pause_hint="idle_overlap",
+               pause_score=60, active_floor=100) == (
+        "unknown", "app_nonplaying_warming", 0)
+    assert run(3, 520, pkg=APP_A, activity=BROWSE_A, audio=0, pps=7,
+               shadow="idle", adaptive_state="idle", adaptive_score=95,
+               adaptive_reason="stable_low", pause_hint="idle_overlap",
+               pause_score=60, active_floor=100) == (
+        "unknown", "app_nonplaying_warming", 0)
+    assert run(4, 530, pkg=APP_A, activity=BROWSE_A, audio=0, pps=6,
+               shadow="idle", adaptive_state="idle", adaptive_score=95,
+               adaptive_reason="stable_low", pause_hint="idle_overlap",
+               pause_score=60, active_floor=100) == (
+        "app_home", "app_nonplaying_confirmed", 0)
+
+    # A never-learned package cannot claim app_home or pause from network hints.
+    reset()
+    for i in range(1, 5):
+        state, candidate, streak = run(
+            i, 600 + i * 10, pkg="com.example.unknown",
+            activity="com.example.unknown.HomeActivity",
+            audio=0, pps=5, shadow="idle",
+            adaptive_state="idle", adaptive_score=95,
+            adaptive_reason="stable_low",
+            pause_hint="high_ratio_pause", pause_score=95)
+        assert state == "unknown"
+        assert candidate == "unlearned_package_pause_hint_ignored"
+        assert streak == 0
+
+    # Agent restart clears hysteresis but preserves N1-learned context. First
+    # post-restart report is recovery only and does not vote pause/home.
+    reset()
+    run(30, 700, pkg=APP_A, activity=PLAYER_A,
+        pps=160, shadow="unknown", adaptive_state="active",
+        adaptive_score=100, adaptive_reason="clear_current",
+        pause_hint="none", pause_score=0, active_floor=100)
+    run(31, 710, pkg=APP_A, activity=PLAYER_A)
+    run(32, 720, pkg=APP_A, activity=PLAYER_A)
+    assert run(33, 730, pkg=APP_A, activity=PLAYER_A)[0] == "paused"
+    assert run(1, 740, pkg=APP_A, activity=PLAYER_A) == (
         "unknown", "agent_process_restart_context_reset", 0)
 
-    # Tencent's real shared HomeSingleTaskActivity cannot be treated as App-home
-    # or pause: it is observed during both actual playback and pause.
-    reset()
-    assert run(1, 700, pkg=TENCENT, activity=TENCENT_SHARED,
-               audio=0, pps=96, shadow="unknown",
-               adaptive_state="active", adaptive_score=95,
-               adaptive_reason="active_votes",
-               pause_hint="high_ratio_pause", pause_score=95,
-               active_floor=138) == (
-        "unknown", "tencent_shared_activity_unresolved", 0)
-
-print("v0.2.7 temporal fusion: pause hysteresis + low-bitrate safety PASS")
+print("v0.2.8 generic fusion: learned media context + universal hysteresis PASS")
