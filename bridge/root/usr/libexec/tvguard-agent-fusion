@@ -1,0 +1,255 @@
+#!/bin/sh
+# TVGuard v0.2.7 Agent/N1 shadow fusion.
+# RAM-only observer: never edits quota, billing state, firewall or persistent data.
+set -eu
+PATH=/usr/sbin:/usr/bin:/sbin:/bin
+export PATH
+
+RAM=/var/run/tvguard-agent-bridge
+STATE="$RAM/fusion.state"
+LOCK="$RAM/fusion.lock"
+
+[ "$#" -eq 15 ] || {
+    echo "unknown invalid_arguments 0"
+    exit 0
+}
+
+now="$1"
+seen="$2"
+seq="$3"
+pkg="$4"
+activity="$5"
+audio="$6"
+screen="$7"
+pps="$8"
+shadow="$9"
+shift 9
+adaptive_state="$1"
+adaptive_score="$2"
+adaptive_reason="$3"
+pause_hint="$4"
+pause_score="$5"
+active_floor="$6"
+
+for n in "$now" "$seen" "$seq" "$audio" "$screen" "$pps" "$adaptive_score" "$pause_score" "$active_floor"; do
+    case "$n" in ''|*[!0-9]*) echo "unknown invalid_numeric 0"; exit 0 ;; esac
+done
+case "$audio:$screen" in 0:0|0:1|1:0|1:1) : ;; *) echo "unknown invalid_bits 0"; exit 0 ;; esac
+case "$shadow" in playing|idle|paused|app_home|system_home|sleep|unknown) : ;; *) shadow=unknown ;; esac
+case "$adaptive_state" in unready|warming|idle|active|ambiguous|unknown) : ;; *) adaptive_state=unknown ;; esac
+case "$adaptive_reason" in
+    none|no_model|need_sessions|overlap_model|need_window|clear_current|active_votes|active_median|stable_low|overlap|unknown) : ;;
+    *) adaptive_reason=unknown ;;
+esac
+case "$pause_hint" in none|idle_overlap|bursty_pause|high_ratio_pause|unknown) : ;; *) pause_hint=unknown ;; esac
+
+mkdir -p "$RAM"
+locked=0
+if mkdir "$LOCK" 2>/dev/null; then
+    locked=1
+else
+    # report + soak can collide occasionally. One bounded retry avoids corrupting
+    # temporal state without turning this helper into a daemon or disk writer.
+    sleep 1
+    if mkdir "$LOCK" 2>/dev/null; then locked=1; fi
+fi
+[ "$locked" -eq 1 ] || { echo "unknown fusion_busy 0"; exit 0; }
+cleanup() { rmdir "$LOCK" 2>/dev/null || :; }
+trap cleanup EXIT HUP INT TERM
+
+schema=0
+last_sig=''
+last_seq=0
+pause_streak=0
+pause_miss=0
+latched=none
+extra=''
+if [ -r "$STATE" ]; then
+    oldIFS="$IFS"
+    IFS='|'
+    read -r schema last_sig last_seq pause_streak pause_miss latched extra < "$STATE" || :
+    IFS="$oldIFS"
+    if [ "$schema" != 1 ]; then
+        last_sig=''; last_seq=0; pause_streak=0; pause_miss=0; latched=none
+    fi
+    case "$last_seq" in ''|*[!0-9]*) last_seq=0 ;; esac
+    case "$pause_streak" in ''|*[!0-9]*) pause_streak=0 ;; esac
+    case "$pause_miss" in ''|*[!0-9]*) pause_miss=0 ;; esac
+    case "$latched" in none|paused) : ;; *) latched=none ;; esac
+fi
+
+sig="$seq:$seen"
+fresh=1
+[ "$sig" = "$last_sig" ] && fresh=0
+restart=0
+if [ "$fresh" -eq 1 ] && [ "$last_seq" -gt 0 ] && [ "$seq" -lt "$last_seq" ]; then
+    restart=1
+    pause_streak=0
+    pause_miss=0
+    latched=none
+fi
+
+is_player=0
+case "$activity" in
+    *Player*|*player*|*VideoActivity*|*Playback*) is_player=1 ;;
+esac
+
+combined=unknown
+candidate=unknown
+
+# Screen-off is not one of the four requested UI/video states.
+if [ "$screen" -eq 0 ]; then
+    combined=unknown
+    candidate=sleep_candidate
+    pause_streak=0
+    pause_miss=0
+    latched=none
+
+# System launcher is directly observable from Agent foreground context.
+elif [ "$pkg" = com.mitv.tvhome ] ||
+     [ "$pkg" = com.android.tvlauncher ] ||
+     [ "$pkg" = com.google.android.tvlauncher ]; then
+    combined=system_home
+    candidate=system_home_confirmed
+    pause_streak=0
+    pause_miss=0
+    latched=none
+
+# Galaxy/iQIYI has been verified on the real TV: HomeActivity and
+# PlayerActivity are distinct. v0.2.7 therefore scopes pause authority here.
+elif [ "$pkg" = com.gitvdemo.video ]; then
+    if [ "$is_player" -ne 1 ]; then
+        combined=app_home
+        candidate=app_home_confirmed_galaxy
+        pause_streak=0
+        pause_miss=0
+        latched=none
+    else
+        strong_play=0
+        if [ "$shadow" = playing ]; then
+            strong_play=1
+        elif [ "$adaptive_state" = active ] &&
+             { [ "$adaptive_reason" = clear_current ] ||
+               { [ "$active_floor" -gt 0 ] && [ "$pps" -ge "$active_floor" ]; }; }; then
+            # active_votes / active_median alone are intentionally not enough:
+            # real paused samples can retain old active votes.
+            strong_play=1
+        fi
+
+        pause_evidence=0
+        if [ "$pause_hint" = high_ratio_pause ] && [ "$pause_score" -ge 90 ]; then
+            pause_evidence=1
+        elif [ "$pause_hint" = bursty_pause ] && [ "$pause_score" -ge 75 ]; then
+            pause_evidence=1
+        fi
+        [ "$strong_play" -eq 0 ] || pause_evidence=0
+
+        if [ "$strong_play" -eq 1 ]; then
+            # Resume exits pause immediately; no symmetric 3-window delay.
+            combined=playing
+            candidate=playing_confirmed_network
+            pause_streak=0
+            pause_miss=0
+            latched=none
+        elif [ "$pause_evidence" -eq 1 ]; then
+            if [ "$fresh" -eq 1 ]; then
+                pause_streak=$((pause_streak + 1))
+                pause_miss=0
+            fi
+            if [ "$latched" = paused ] || [ "$pause_streak" -ge 3 ]; then
+                latched=paused
+                combined=paused
+                candidate=paused_confirmed_temporal
+            else
+                combined=unknown
+                candidate=pause_candidate_warming
+            fi
+        else
+            if [ "$latched" = paused ]; then
+                if [ "$fresh" -eq 1 ]; then pause_miss=$((pause_miss + 1)); fi
+                if [ "$pause_miss" -le 1 ]; then
+                    combined=paused
+                    candidate=paused_temporal_hold
+                else
+                    latched=none
+                    pause_streak=0
+                    pause_miss=0
+                    combined=unknown
+                    candidate=player_context_unresolved
+                fi
+            else
+                if [ "$fresh" -eq 1 ]; then
+                    pause_streak=0
+                    pause_miss=0
+                fi
+                combined=unknown
+                if [ "$pause_hint" = idle_overlap ]; then
+                    # Critical P0 guard: low-rate playback overlaps this hint.
+                    # idle_overlap can never enter paused by itself.
+                    candidate=player_idle_overlap_unresolved
+                elif [ "$audio" -eq 1 ]; then
+                    candidate=player_context_audio_hint_on
+                else
+                    candidate=player_context_audio_hint_off
+                fi
+            fi
+        fi
+    fi
+
+# Tencent real-device evidence shows HomeSingleTaskActivity during both real
+# playback and pause. Never turn this shared Activity into App-home or pause
+# without a separate validated player-context discriminator.
+elif [ "$pkg" = com.ktcp.video ]; then
+    pause_streak=0
+    pause_miss=0
+    latched=none
+    if [ "$is_player" -eq 1 ] &&
+       { [ "$shadow" = playing ] ||
+         { [ "$adaptive_state" = active ] && [ "$adaptive_reason" = clear_current ]; }; }; then
+        combined=playing
+        candidate=playing_confirmed_network_unvalidated_tencent_activity
+    else
+        combined=unknown
+        candidate=tencent_shared_activity_unresolved
+    fi
+
+# Other video packages stay conservative until their Activity semantics are
+# validated on this exact TV. Strong network playback may be reported, but
+# no free-time state is inferred from an unvalidated Activity.
+elif [ "$pkg" = org.smarttube.stable ] || [ "$pkg" = com.hunantv.license ]; then
+    pause_streak=0
+    pause_miss=0
+    latched=none
+    if [ "$shadow" = playing ] ||
+       { [ "$adaptive_state" = active ] && [ "$adaptive_reason" = clear_current ]; }; then
+        combined=playing
+        candidate=playing_confirmed_network_unvalidated_activity
+    else
+        combined=unknown
+        candidate=video_app_context_unresolved
+    fi
+else
+    pause_streak=0
+    pause_miss=0
+    latched=none
+    combined=unknown
+    candidate=unknown
+fi
+
+if [ "$restart" -eq 1 ]; then
+    # Keep a directly observable home state, but never carry player temporal
+    # confidence across an Agent process restart.
+    case "$combined" in
+        system_home|app_home) : ;;
+        *) combined=unknown; candidate=agent_process_restart_context_reset ;;
+    esac
+fi
+
+if [ "$fresh" -eq 1 ]; then
+    tmp="$STATE.$$"
+    printf '1|%s|%s|%s|%s|%s\n'         "$sig" "$seq" "$pause_streak" "$pause_miss" "$latched" > "$tmp"
+    chmod 600 "$tmp"
+    mv -f "$tmp" "$STATE"
+fi
+
+printf '%s %s %s\n' "$combined" "$candidate" "$pause_streak"
