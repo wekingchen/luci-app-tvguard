@@ -119,11 +119,19 @@ elif [ "$pkg" = com.mitv.tvhome ] ||
 # PlayerActivity are distinct. v0.2.7 therefore scopes pause authority here.
 elif [ "$pkg" = com.gitvdemo.video ]; then
     if [ "$is_player" -ne 1 ]; then
-        combined=app_home
-        candidate=app_home_confirmed_galaxy
         pause_streak=0
         pause_miss=0
         latched=none
+        case "$activity" in
+            com.gala.video.app.epg.HomeActivity)
+                combined=app_home
+                candidate=app_home_confirmed_galaxy ;;
+            *)
+                # Only the exact HomeActivity observed on this TV is allowed to
+                # claim app_home. Detail/search/category pages stay unresolved.
+                combined=unknown
+                candidate=galaxy_nonplayer_activity_unresolved ;;
+        esac
     else
         strong_play=0
         if [ "$shadow" = playing ]; then
