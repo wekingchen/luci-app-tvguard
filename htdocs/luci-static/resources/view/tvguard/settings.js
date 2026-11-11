@@ -96,7 +96,7 @@ return view.extend({
         var report = m.section(form.NamedSection, 'main', 'tvguard', '每日观看日报 · Bark');
         report.addremove = false;
         report.anonymous = true;
-        report.description = '默认不发通知。启用并填写推送 ID 后，每天在设定时间发送前一天完整自然日的观看估算，不改变断网设置。';
+        report.description = '默认不发通知。启用并填写推送 ID 后，每天在设定时间仅发送前一天儿童模式下的累计观看估算；超额也会完整统计，不改变断网设置。';
 
         o = report.option(form.Value, 'child_name', '孩子称呼');
         o.rmempty = false;
