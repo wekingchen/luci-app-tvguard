@@ -55,6 +55,7 @@ defaults() {
     USED_S=0
     WATCH_S=0
     WATCH_SCOPE=legacy
+    WATCH_SCOPE_UPGRADED=0
     PREV_DATE=none
     PREV_WATCH_S=0
     ROLLED_OVER=0
@@ -158,6 +159,7 @@ load_state() {
     if [ "$WATCH_SCOPE" != child ]; then
         PREV_DATE=none
         PREV_WATCH_S=0
+        WATCH_SCOPE_UPGRADED=1
     fi
     WATCH_SCOPE=child
     WATCH_S="$USED_S"
@@ -886,6 +888,7 @@ tick() {
     save_runtime
     if [ $((NOW - SAVED_EPOCH)) -ge 60 ] ||
        [ "$ROLLED_OVER" = 1 ] ||
+       [ "$WATCH_SCOPE_UPGRADED" = 1 ] ||
        [ "$BLOCKED" != "$previous_blocked" ] ||
        [ "$CAL_LAST_FINISHED" != "$previous_finished" ]; then
         persist
