@@ -64,6 +64,7 @@ const form = {
     NamedSection: 'NamedSection',
     Value: 'Value',
     Flag: 'Flag',
+    Button: 'Button',
     DummyValue: 'DummyValue'
 };
 
@@ -77,8 +78,21 @@ const uci = {
 };
 
 const view = { extend: value => value };
-const factory = new Function('view', 'form', 'uci', source);
-const page = factory(view, form, uci);
+const notices = [];
+const commands = [];
+let pushFails = false;
+const mockFs = {
+    exec(path, args) {
+        commands.push([path, args]);
+        return Promise.resolve(pushFails ?
+            {code: 3, stdout: '', stderr: '今天还没有儿童模式下的观看记录，未发送测试推送。'} :
+            {code: 0, stdout: '测试推送已发送：儿童模式累计约20分钟。'});
+    }
+};
+const mockUi = {addNotification(_id, node, type) {notices.push({node, type});}};
+const E = (tag, attrs, children) => ({tag, children});
+const factory = new Function('view', 'form', 'uci', 'fs', 'ui', 'E', source);
+const page = factory(view, form, uci, mockFs, mockUi, E);
 
 (async () => {
     await page.load();
@@ -96,7 +110,7 @@ const page = factory(view, form, uci);
     const byName = Object.fromEntries(options.map(option => [option.name, option]));
 
     for (const name of ['weekday_minutes', 'weekend_minutes', 'max_bonus_minutes', 'allow_start',
-                        'allow_end', 'silence_seconds', 'child_name', 'bark_enabled', 'bark_server', 'bark_key', 'bark_daily_time', 'ip', 'interface']) {
+                        'allow_end', 'silence_seconds', 'child_name', 'bark_enabled', 'bark_server', 'bark_key', 'bark_daily_time', '_bark_test', 'ip', 'interface']) {
         assert.ok(byName[name], 'missing settings field: ' + name);
         assert.ok(byName[name].description.length > 0, 'missing description: ' + name);
     }
@@ -106,6 +120,16 @@ const page = factory(view, form, uci);
             'high-risk switch must not appear in ordinary settings: ' + forbidden);
     }
 
+    assert.equal(byName._bark_test.type, 'Button');
+    assert.match(byName._bark_test.description, /先保存并应用/);
+    assert.match(byName._bark_test.description, /截至此刻|截止/);
+    await byName._bark_test.onclick();
+    assert.deepEqual(commands.at(-1), ['/usr/libexec/tvguardctl', ['bark-test']]);
+    assert.equal(notices.at(-1).type, 'info');
+    pushFails = true;
+    await byName._bark_test.onclick();
+    assert.equal(notices.at(-1).type, 'error');
+    assert.match(notices.at(-1).node.children, /没有儿童模式下的观看记录/);
     assert.equal(byName.bark_enabled.type, 'Flag');
     assert.equal(byName.bark_enabled.default, '0');
     assert.equal(byName.child_name.default, '孩子');
