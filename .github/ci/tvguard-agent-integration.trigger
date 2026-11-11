@@ -6,3 +6,4 @@ reason=Re-run after BusyBox postinst contract and billing-hint executable permis
 # r18: repair daemon fixture formatting
 # r18: final LuCI upgrade default regression
 # r19 child-only viewing, uncapped quota and Bark copy regression
+# r20: concise Bark digest, zero-day silence, live on-demand test and standalone main IPK
