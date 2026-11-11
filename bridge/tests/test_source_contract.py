@@ -8,6 +8,7 @@ soak = (p / 'root/usr/libexec/tvguard-agent-bridge-soak').read_text()
 ipk = (p / '../scripts/build-agent-bridge-ipk.sh').resolve().read_text()
 postinst = (p / 'ipkg/postinst').read_text()
 pair = (p / 'root/usr/libexec/tvguard-agent-bridge-pair').read_text()
+billing = (p / 'root/usr/libexec/tvguard-agent-billing-hint').read_text()
 
 assert '/var/run/tvguard-agent-bridge' in cgi
 assert 'tvguard.main.ip' in cgi
@@ -77,3 +78,15 @@ assert '/etc/' not in fusion
 assert '>>' not in fusion
 
 print('bridge v0.2.8 generic-context / isolation / freshness / pairing checks PASS')
+
+
+# Formal billing bridge is deliberately narrow: it may only grant free time
+# for explicit system/app home states. It never mutates core accounting.
+assert 'free system_home' in billing
+assert 'free app_home' in billing
+assert 'playing|paused|unknown' in billing
+assert 'charge $1' in billing
+assert 'USED_S' not in billing
+assert 'BILLING_STATE' not in billing
+assert 'iptables' not in billing
+assert '/etc/' not in billing
