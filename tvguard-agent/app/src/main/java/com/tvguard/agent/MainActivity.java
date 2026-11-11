@@ -56,7 +56,7 @@ public final class MainActivity extends Activity {
         panel.setOrientation(LinearLayout.VERTICAL);
         panel.setPadding(36, 30, 36, 30);
         scroller.addView(panel);
-        addText(panel, "TVGuard 助手 · 0.2.6", 27, 0xFFFFFFFF);
+        addText(panel, "TVGuard 助手 · 0.2.6-r2", 27, 0xFFFFFFFF);
         addText(panel, "Android 6 视频 App 页面观察验证版", 17, 0xFFB8C9D5);
         toggle = new Button(this);
         toggle.setAllCaps(false);
@@ -179,7 +179,7 @@ public final class MainActivity extends Activity {
                 : "未确认正常采样（请查看状态与权限）";
         if (healthSummary != null) healthSummary.setText(
                 "监测状态：" + state.state + " · " + freshness +
-                " · 开机恢复：" + (RecoveryScheduler.isScheduled(this) ? "已安排" : "未安排"));
+                " · 系统恢复：" + (RecoveryScheduler.isScheduled(this) ? "已安排" : "未安排"));
         toggle.setText(enabled ? "停止监测" : "开始监测");
         long ack = BridgeClient.ackAt();
         bridgeStatus.setText("N1：" + BridgeClient.state() +
