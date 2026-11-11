@@ -11,14 +11,23 @@ DIR="$("$DATA" root)"
 STATE="$DIR/state"
 SENT="$DIR/daily-report.sent"
 RETRY=/var/run/tvguard-daily-report.retry
-[ "${1:-tick}" = tick ] || exit 2
+action="${1:-tick}"
+case "$action" in tick|test) :;; *) exit 2;; esac
 
-[ "$(uci -q get tvguard.main.bark_enabled 2>/dev/null || echo 0)" = 1 ] || exit 0
+# A deliberate test may work before enabling scheduled delivery, provided the
+# server and key have already been saved in UCI.
+if [ "$action" = tick ]; then
+    [ "$(uci -q get tvguard.main.bark_enabled 2>/dev/null || echo 0)" = 1 ] || exit 0
+fi
 server="$(uci -q get tvguard.main.bark_server 2>/dev/null || echo '')"
 key="$(uci -q get tvguard.main.bark_key 2>/dev/null || echo '')"
 name="$(uci -q get tvguard.main.child_name 2>/dev/null || echo '孩子')"
 schedule="$(uci -q get tvguard.main.bark_daily_time 2>/dev/null || echo 00:05)"
-[ -n "$server" ] && [ -n "$key" ] || exit 0
+if [ -z "$server" ] || [ -z "$key" ]; then
+    [ "$action" = tick ] && exit 0
+    echo '请先保存 Bark 服务器和推送 ID，再测试。' >&2
+    exit 2
+fi
 
 case "$server" in https://*|http://*) :;; *) exit 0;; esac
 case "$server" in */) server="${server%/}";; esac
@@ -32,28 +41,61 @@ case "$schedule" in
     *) exit 0;;
 esac
 
-local_minutes="$(date '+%H %M' | awk '{print $1*60+$2}')"
-scheduled_minutes="$(printf '%s\n' "$schedule" | awk -F: '{print $1*60+$2}')"
-# Catch up after router downtime if the selected time has already passed.
-[ "$local_minutes" -ge "$scheduled_minutes" ] || exit 0
-[ -r "$STATE" ] || exit 0
+if [ ! -r "$STATE" ]; then
+    [ "$action" = tick ] && exit 0
+    echo '还没有可用的电视计时数据，未发送测试通知。' >&2
+    exit 2
+fi
 
-# Read two safe fields; NEVER source the report worker's state or UCI values.
-report_date="$(sed -n 's/^PREV_DATE=//p' "$STATE" | head -n 1)"
-seconds="$(sed -n 's/^PREV_WATCH_S=//p' "$STATE" | head -n 1)"
+# Read only root-written numeric/date fields; never source state.
+if [ "$action" = test ]; then
+    report_date="$(sed -n 's/^TODAY=//p' "$STATE" | head -n 1)"
+    seconds="$(sed -n 's/^USED_S=//p' "$STATE" | head -n 1)"
+else
+    local_minutes="$(date '+%H %M' | awk '{print $1*60+$2}')"
+    scheduled_minutes="$(printf '%s\n' "$schedule" | awk -F: '{print $1*60+$2}')"
+    # Catch up after router downtime if the selected time has passed.
+    [ "$local_minutes" -ge "$scheduled_minutes" ] || exit 0
+    report_date="$(sed -n 's/^PREV_DATE=//p' "$STATE" | head -n 1)"
+    seconds="$(sed -n 's/^PREV_WATCH_S=//p' "$STATE" | head -n 1)"
+fi
 today="$(date +%Y-%m-%d)"
 case "$report_date" in
     [0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]) :;;
     *) exit 0;;
 esac
-[ "$report_date" != "$today" ] || exit 0
-case "$seconds" in ''|*[!0-9]*) exit 0;; esac
-[ "$(cat "$SENT" 2>/dev/null || :)" != "$report_date" ] || exit 0
-now_epoch="$(date +%s)"
-next_retry="$(cat "$RETRY" 2>/dev/null || echo 0)"
-case "$next_retry" in ''|*[!0-9]*) next_retry=0;; esac
-[ "$now_epoch" -ge "$next_retry" ] || exit 0
-command -v curl >/dev/null 2>&1 || exit 0
+if [ "$action" = test ]; then
+    [ "$report_date" = "$today" ] || {
+        echo '计时日期尚未更新，请刷新页面后重试。' >&2
+        exit 2
+    }
+else
+    [ "$report_date" != "$today" ] || exit 0
+fi
+case "$seconds" in
+    ''|*[!0-9]*)
+        [ "$action" = tick ] && exit 0
+        echo '当天累计计时不可用，请稍后重试。' >&2
+        exit 2 ;;
+esac
+# No observed child-mode time: never send a zero-usage digest or test.
+if [ "$seconds" -eq 0 ]; then
+    [ "$action" = tick ] && exit 0
+    echo '今天还没有儿童模式下的观看记录，未发送测试推送。' >&2
+    exit 3
+fi
+if [ "$action" = tick ]; then
+    [ "$(cat "$SENT" 2>/dev/null || :)" != "$report_date" ] || exit 0
+    now_epoch="$(date +%s)"
+    next_retry="$(cat "$RETRY" 2>/dev/null || echo 0)"
+    case "$next_retry" in ''|*[!0-9]*) next_retry=0;; esac
+    [ "$now_epoch" -ge "$next_retry" ] || exit 0
+fi
+if ! command -v curl >/dev/null 2>&1; then
+    [ "$action" = tick ] && exit 0
+    echo '路由器缺少 curl，请安装后再测试。' >&2
+    exit 2
+fi
 
 name="$(printf '%s' "$name" | tr '\r\n' '  ' | cut -c 1-96)"
 [ -n "$name" ] || name='孩子'
@@ -73,13 +115,13 @@ else
 fi
 day_label="$(printf '%s\n' "$report_date" | awk -F- '{printf "%d月%d日", $2, $3}')"
 title="${name}的电视观看小结"
-if [ "$seconds" -eq 0 ]; then
-    body="${day_label}，儿童模式下没有记录到${name}的电视观看时间。"
+if [ "$action" = test ]; then
+    title="${title}（测试）"
+    clock="$(date +%H:%M)"
+    body="截至${day_label} ${clock}，${name}在儿童模式下累计看了${viewing}电视。"
 else
-    body="${day_label}，${name}在儿童模式下累计看了${viewing}电视。"
+    body="${day_label}，${name}全天累计看了${viewing}电视。"
 fi
-body="${body}
-家长模式不算在内。时间按目前的联网计时规则估算，可能有些误差。"
 response="$(mktemp /var/run/tvguard-bark.XXXXXX)" || exit 1
 trap 'rm -f "$response"' EXIT HUP INT TERM
 
@@ -91,13 +133,21 @@ if curl --silent --show-error --fail --connect-timeout 4 --max-time 8 \
         --data-urlencode "group=TV Guard" \
         "$server/push" > "$response" 2>/dev/null &&
    grep -Eq '"code"[[:space:]]*:[[:space:]]*200([,}[:space:]]|$)' "$response"; then
-    temp="${SENT}.$$"
-    printf '%s\n' "$report_date" > "$temp"
-    chmod 600 "$temp"
-    mv -f "$temp" "$SENT"
-    rm -f "$RETRY"
-    logger -t tvguard "daily Bark report delivered for $report_date"
+    if [ "$action" = test ]; then
+        printf '测试推送已发送：%s，儿童模式累计%s。\n' "$today" "$viewing"
+    else
+        temp="${SENT}.$"
+        printf '%s\n' "$report_date" > "$temp"
+        chmod 600 "$temp"
+        mv -f "$temp" "$SENT"
+        rm -f "$RETRY"
+        logger -t tvguard "daily Bark report delivered for $report_date"
+    fi
 else
+    if [ "$action" = test ]; then
+        echo 'Bark 测试推送失败，请检查服务器地址、推送 ID 和 N1 网络连接。' >&2
+        exit 1
+    fi
     printf '%s\n' "$((now_epoch + 300))" > "$RETRY"
     logger -t tvguard "daily Bark report failed; retry after 300s"
 fi
