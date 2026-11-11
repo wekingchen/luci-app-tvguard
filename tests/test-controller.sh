@@ -82,6 +82,19 @@ EOSOAK
 chmod +x "$TMP/soak"
 export TVGUARD_TEST_SOAK=none
 
+cat > "$TMP/agent-billing" <<'EOAGENTBILL'
+#!/bin/sh
+case "${TVGUARD_TEST_AGENT_BILLING:-charge}" in
+    system_home) echo 'free system_home' ;;
+    app_home) echo 'free app_home' ;;
+    paused) echo 'charge paused' ;;
+    playing) echo 'charge playing' ;;
+    *) echo 'charge unknown' ;;
+esac
+EOAGENTBILL
+chmod +x "$TMP/agent-billing"
+export TVGUARD_TEST_AGENT_BILLING=charge
+
 cat > "$TMP/data" <<'EODATA'
 #!/bin/sh
 mode="${TVGUARD_TEST_DATA_MODE:-persistent}"
@@ -153,6 +166,7 @@ mapping={
     'ADAPTIVE=/usr/libexec/tvguard-adaptive': 'ADAPTIVE='+root+'/adaptive',
     'LEARN=/usr/libexec/tvguard-learn': 'LEARN='+root+'/learn',
     'SOAK=/usr/libexec/tvguard-soak': 'SOAK='+root+'/soak',
+    'AGENT_BILLING=/usr/libexec/tvguard-agent-billing-hint': 'AGENT_BILLING='+root+'/agent-billing',
     'TX_IDLE_BILLING_AUTHORITY=0': 'TX_IDLE_BILLING_AUTHORITY="${TVGUARD_TEST_TX_IDLE_AUTHORITY:-0}"',
     'DATA=/usr/libexec/tvguard-data': 'DATA='+root+'/data',
     'RUN=/var/run/tvguard.state': 'RUN='+root+'/run/runtime',
@@ -495,6 +509,78 @@ delta_p0_shadow=$((after_p0_shadow-before_p0_shadow))
 [ "$delta_p0_shadow" -ge 9 ] && [ "$delta_p0_shadow" -le 11 ]
 check 'assert s["shadow_label"]=="system_home" and s["adaptive_state"]=="unready", s'
 check 'assert s["billing_state"]=="charge" and s["idle_reason"]=="none", s'
+
+# Conservative Agent-assisted formal billing: ONLY explicit homes are free.
+# All other bridge states, including paused, remain chargeable.
+export TVGUARD_TEST_TX_IDLE_AUTHORITY=0
+export TVGUARD_TEST_ADAPTIVE=ambiguous
+export TVGUARD_TEST_SHADOW=unknown
+
+# Explicit system_home: active network traffic is present, but child time does not increase.
+export TVGUARD_TEST_AGENT_BILLING=system_home
+python3 - "$TMP/run/runtime" <<'PY'
+from pathlib import Path
+import sys,time
+p=Path(sys.argv[1])
+lines=p.read_text().splitlines()
+now=int(time.time())
+p.write_text('\n'.join(
+    'LAST_EPOCH='+str(now-10) if line.startswith('LAST_EPOCH=') else line
+    for line in lines
+)+'\n')
+PY
+set -- $(cat "$TMP/sample")
+echo "$(($1 + 400)) $(($2 + 80000)) $(($3 + 40)) $(($4 + 8000)) $(($5 + 360)) $(($6 + 72000))" > "$TMP/sample"
+before_home="$(sh "$CTL" status | python3 -c 'import json,sys; print(json.load(sys.stdin)["used_seconds"])')"
+sh "$CTL" tick
+status
+after_home="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["used_seconds"])' "$TMP/status.json")"
+[ "$after_home" = "$before_home" ]
+check 'assert s["activity"]=="active" and s["billing_state"]=="idle_verified" and s["idle_reason"]=="system_home", s'
+
+# Explicit app_home: same narrow exemption.
+export TVGUARD_TEST_AGENT_BILLING=app_home
+python3 - "$TMP/run/runtime" <<'PY'
+from pathlib import Path
+import sys,time
+p=Path(sys.argv[1])
+lines=p.read_text().splitlines()
+now=int(time.time())
+p.write_text('\n'.join(
+    'LAST_EPOCH='+str(now-10) if line.startswith('LAST_EPOCH=') else line
+    for line in lines
+)+'\n')
+PY
+set -- $(cat "$TMP/sample")
+echo "$(($1 + 300)) $(($2 + 60000)) $(($3 + 30)) $(($4 + 6000)) $(($5 + 270)) $(($6 + 54000))" > "$TMP/sample"
+sh "$CTL" tick
+status
+after_app_home="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["used_seconds"])' "$TMP/status.json")"
+[ "$after_app_home" = "$after_home" ]
+check 'assert s["billing_state"]=="idle_verified" and s["idle_reason"]=="app_home", s'
+
+# Even a bridge-confirmed paused state MUST charge under the simplified policy.
+export TVGUARD_TEST_AGENT_BILLING=paused
+python3 - "$TMP/run/runtime" <<'PY'
+from pathlib import Path
+import sys,time
+p=Path(sys.argv[1])
+lines=p.read_text().splitlines()
+now=int(time.time())
+p.write_text('\n'.join(
+    'LAST_EPOCH='+str(now-10) if line.startswith('LAST_EPOCH=') else line
+    for line in lines
+)+'\n')
+PY
+set -- $(cat "$TMP/sample")
+echo "$(($1 + 200)) $(($2 + 40000)) $(($3 + 20)) $(($4 + 4000)) $(($5 + 180)) $(($6 + 36000))" > "$TMP/sample"
+sh "$CTL" tick
+status
+after_paused="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["used_seconds"])' "$TMP/status.json")"
+delta_paused=$((after_paused-after_app_home))
+[ "$delta_paused" -ge 9 ] && [ "$delta_paused" -le 11 ]
+check 'assert s["billing_state"]=="charge" and s["idle_reason"]=="none", s'
+export TVGUARD_TEST_AGENT_BILLING=charge
 
 # Keep the previous smart-idle state machine covered as dormant code. Tests may
 # opt it back in, but production r12 has the gate hardcoded off.
