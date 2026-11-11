@@ -52,7 +52,7 @@ with tempfile.TemporaryDirectory(prefix="tvguard-fusion-matrix-") as folder:
     pps_a = [26,3,23,4,24,2,18,10,16,15,11,35,3,25,2,41,2,41,2,39,3,32,22,39,17]
     for i, pps in enumerate(pps_a, 2):
         state, candidate, streak = run(
-            i, 900 + i * 10, PLAYER, 1, pps, "idle",
+            i, 950 + i * 10, PLAYER, 1, pps, "idle",
             "idle", "stable_low", "idle_overlap", 60)
         assert state == "unknown", (i, pps, state, candidate, streak)
         assert candidate == "learned_media_idle_overlap_unresolved"
@@ -65,7 +65,7 @@ with tempfile.TemporaryDirectory(prefix="tvguard-fusion-matrix-") as folder:
     pps_b = [69,163,116,59,76,87,75,84,70,148,48,77,104,167,105,120,114,75,64,67,40,73,46,41,72,52,69,88,134,55]
     for i, pps in enumerate(pps_b, 2):
         state, candidate, streak = run(
-            i, 2000 + i * 10, PLAYER, 1, pps, "unknown",
+            i, 2050 + i * 10, PLAYER, 1, pps, "unknown",
             "ambiguous", "overlap", "none", 0)
         assert state == "unknown", (i, pps, state, candidate, streak)
         assert candidate in (
@@ -90,11 +90,14 @@ with tempfile.TemporaryDirectory(prefix="tvguard-fusion-matrix-") as folder:
     # then later become paused using only generic temporal evidence.
     reset()
     learn(4000)
-    for i in (2, 3):
-        assert run(i, 4000 + i * 10, PLAYER, 0, 96, "unknown",
+    assert run(2, 4020, PLAYER, 0, 96, "unknown",
+               "active", "active_votes", "high_ratio_pause", 95)[:2] == (
+        "unknown", "recent_play_burst_guard")
+    for i, epoch in ((3, 4060), (4, 4070)):
+        assert run(i, epoch, PLAYER, 0, 96, "unknown",
                    "active", "active_votes", "high_ratio_pause", 95)[:2] == (
             "unknown", "pause_candidate_learned_context")
-    assert run(4, 4040, PLAYER, 0, 96, "unknown",
+    assert run(5, 4080, PLAYER, 0, 96, "unknown",
                "active", "active_votes", "high_ratio_pause", 95)[:2] == (
         "paused", "paused_confirmed_learned_context")
 
