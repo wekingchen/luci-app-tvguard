@@ -140,7 +140,7 @@ return view.extend({
 
         o = report.option(form.Button, '_bark_test', '发送测试推送');
         o.inputstyle = 'apply';
-        o.description = '请先保存并应用 Bark 服务器和至少一个推送 ID。点击后立即采样，并同时推送给已填写的设备；零记录不发送。不会占用或取消每天的正式日报。';
+        o.description = '请先保存并应用 Bark 服务器和至少一个推送 ID。点击后立即采样，把截至此刻的儿童模式累计观看时长同时推送给已填写的设备；零记录不发送。不会占用或取消每天的正式日报。';
         o.onclick = function() {
             return fs.exec('/usr/libexec/tvguardctl', ['bark-test']).then(function(r) {
                 if (r.code)
