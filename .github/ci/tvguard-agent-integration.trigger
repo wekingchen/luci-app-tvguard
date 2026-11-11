@@ -4,3 +4,4 @@ reason=Re-run after BusyBox postinst contract and billing-hint executable permis
 # r18 daily viewing summary + Bark dispatch test
 # r18 review: fix runtime regression and scope guard
 # r18: repair daemon fixture formatting
+# r18: final LuCI upgrade default regression
