@@ -50,3 +50,5 @@ assert 'iptables' not in fusion
 assert '/etc/' not in fusion
 assert '>>' not in fusion
 print('bridge v0.2.7 isolation / fusion / freshness / pairing checks PASS')
+
+assert 'galaxy_nonplayer_activity_unresolved' in fusion
