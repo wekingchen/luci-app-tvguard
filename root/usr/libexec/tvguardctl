@@ -12,6 +12,7 @@ SHADOW=/usr/libexec/tvguard-shadow
 ADAPTIVE=/usr/libexec/tvguard-adaptive
 LEARN=/usr/libexec/tvguard-learn
 SOAK=/usr/libexec/tvguard-soak
+AGENT_BILLING=/usr/libexec/tvguard-agent-billing-hint
 BUILD_ID_FILE=/usr/share/tvguard/build-id
 # P0 safety gate: TX-only idle classifiers remain diagnostic until low-bitrate
 # playback has passed dedicated cross-bitrate/cross-app false-idle validation.
@@ -644,13 +645,37 @@ tick() {
         ACTIVITY=silent
     fi
 
-    # Adaptive/Shadow still classify traffic for diagnostics and Shadow Soak.
-    # P0 low-bitrate safety: TX-only "idle" is not proof that playback stopped.
-    # While billing authority is disabled, every non-silent child network
-    # window remains chargeable regardless of Adaptive/Shadow label.
+    # Conservative formal billing:
+    # - true network silence remains free as before;
+    # - an optional fresh Agent bridge may grant free time ONLY for an explicit
+    #   system_home or app_home confirmation;
+    # - playing, paused, unknown, ambiguous, stale/missing Agent and malformed
+    #   hints are all chargeable while network activity is present.
+    #
+    # Adaptive/Shadow pause signals remain diagnostic-only. In particular,
+    # "paused" has NO free-time authority.
+    HOME_FREE_REASON=none
+    if [ "$ACTIVITY" = active ] && [ "$dt" -gt 0 ] && [ -x "$AGENT_BILLING" ]; then
+        home_hint="$("$AGENT_BILLING" "$NOW" "$PPS" "$SHADOW_LABEL" \
+            "$ADAPTIVE_STATE" "$ADAPTIVE_SCORE" "$ADAPTIVE_REASON" \
+            "$ADAPTIVE_PAUSE_HINT" "$ADAPTIVE_PAUSE_SCORE" "$ADAPTIVE_ACTIVE_FLOOR" \
+            2>/dev/null || echo 'charge unknown')"
+        set -- $home_hint
+        if [ "$#" -eq 2 ] && [ "$1" = free ]; then
+            case "$2" in
+                system_home|app_home) HOME_FREE_REASON="$2" ;;
+            esac
+        fi
+    fi
+
     if [ "$ACTIVITY" = silent ]; then
         BILLING_STATE=idle_silent
         IDLE_REASON=silent
+        IDLE_STREAK_S=0
+        IDLE_GRACE_S=0
+    elif [ "$HOME_FREE_REASON" != none ]; then
+        BILLING_STATE=idle_verified
+        IDLE_REASON="$HOME_FREE_REASON"
         IDLE_STREAK_S=0
         IDLE_GRACE_S=0
     elif [ "$dt" -gt 0 ] && [ "$TX_IDLE_BILLING_AUTHORITY" != 1 ]; then
