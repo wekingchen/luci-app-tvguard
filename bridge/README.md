@@ -1,10 +1,10 @@
-# TVGuard Agent + N1 Bridge · 双端联动 0.2.7（实验影子版）
+# TVGuard Agent + N1 Bridge · 双端联动 0.2.8（通用上下文影子版）
 
 ## 为何不把旧的 TVGuard 全量 IPK 重打包？
 
 用户 N1 真机已经使用 `v0.1.13-r15-temporal-state-migration`。当前仓库 main 为更早 v0.1.12，公开 `feat/v0.1.13-smart-billing` 也没有 r15 的所有固化内容。**不可用旧源码生成的 luci-app-tvguard 覆盖真机。**
 
-本方案交付 **独立、仅影子观察的 `tvguard-agent-bridge_0.2.7-1_all.ipk`**。它仅安装独立 CGI、只读融合状态脚本和一次生成的配对密钥；不覆盖 `tvguardctl`、`tvguardd`、LuCI、iptables、防火墙、代理、配额和奖励，也不重启相关服务。
+本方案交付 **独立、仅影子观察的 `tvguard-agent-bridge_0.2.8-1_all.ipk`**。它仅安装独立 CGI、只读融合状态脚本和一次生成的配对密钥；不覆盖 `tvguardctl`、`tvguardd`、LuCI、iptables、防火墙、代理、配额和奖励，也不重启相关服务。
 
 ## 链路与安全
 
@@ -19,7 +19,7 @@ Agent → N1 的 OpenWrt uhttpd `/cgi-bin/tvguard-agent`（POST，固定最小�
 
 ## N1 操作（无需修改原 IPK）
 
-1. 单独安装 companion IPK：`opkg install /tmp/tvguard-agent-bridge_0.2.7-1_all.ipk`。不要使用旧版主仓生成的 `luci-app-tvguard` 替换 r15。
+1. 单独安装 companion IPK：`opkg install /tmp/tvguard-agent-bridge_0.2.8-1_all.ipk`。不要使用旧版主仓生成的 `luci-app-tvguard` 替换 r15。
 2. 确保 N1 当前 uhttpd 在 LAN 监听，且已启用 CGI prefix `/cgi-bin`。
 3. 查看一次性 token：`/usr/libexec/tvguard-agent-bridge-report pairing`。
 4. 记下 N1 的 LAN IP。电视 Agent UI 填写 `http://N1_LAN_IP/cgi-bin/tvguard-agent` 与配对码，保存后启动监测。
@@ -155,3 +155,44 @@ v0.2.7 安装后先只观察银河奇异果：
 - 其他详情、搜索、分类等未验证 Activity → `unknown / galaxy_nonplayer_activity_unresolved`
 
 这是单向保守化：宁可暂时 unknown，也不把未验证页面错误当成首页。
+
+
+## v0.2.8 · 通用媒体上下文学习（取代按 App 写规则）
+
+v0.2.7 中为快速验证真机证据，曾出现 Galaxy / Tencent / Mango 的保守专用分支。
+这些分支只作为历史验证阶段保留在文档，不再代表当前架构。**v0.2.8 的 fusion
+源码禁止出现任何视频 App 包名或品牌专用 candidate。**
+
+当前统一规则：
+
+1. Agent 只提供当前 package / Activity / audio / screen，不判断“这是不是视频 App”；
+2. N1 原 Adaptive Engine 继续提供 PPS、shadow、pause_hint、P50/P90、active_floor；
+3. 当任意前台 package/activity 第一次出现明确强播放证据时，fusion 在 RAM 中把它记为
+   **learned media context**；
+4. 之后同一个上下文出现连续 strong pause evidence，才允许进入 paused；
+5. 同一个已学习媒体 package 切到不同 Activity，若持续低流量 + audio off，则归入
+   app-side non-playing UI（对外仍映射为 app_home）；
+6. learned media context 内出现 stable_low / idle_overlap 永远不能单独判 paused，
+   保护 576p/720p 低码率连续播放；
+7. 从未出现过强播放证据的 package，即使 pause_hint 很高，也不能获得 paused/app_home
+   这种免计候选；
+8. Agent 重启只清 hysteresis，不清 N1 RAM 中已经由强播放证据学到的媒体上下文。
+
+因此优酷、咪咕、小米视频或未来新增视频 App 不需要增加 package 分支。首次出现明确播放时，
+系统会自动学习它的媒体上下文；人工样本用于验证“共性模型是否成立”，而不是维护 App 白名单。
+
+### 通用性 CI
+
+测试使用匿名包名 `com.example.*`，但喂入已经从真机采到的低码率流量形态：
+
+- 576p UDP-heavy burst 序列；
+- 576p TCP-heavy 中低 PPS 序列；
+- shared Activity 先强播放、后暂停；
+- learned package 不同 Activity 的非播放界面；
+- never-learned package 的高 pause_hint。
+
+CI 还明确禁止 fusion 源码出现
+`com.gitvdemo.video`、`com.ktcp.video`、`com.hunantv.license`、
+`com.youku.tv` 等视频 App 包名。
+
+v0.2.8 仍为 `billing_effect=none`。通用模型真机通过前，不接管 USED_S。
