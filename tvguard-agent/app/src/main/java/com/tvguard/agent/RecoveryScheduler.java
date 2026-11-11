@@ -76,9 +76,15 @@ final class RecoveryScheduler {
         if (scheduler == null) return false;
 
         boolean persisted = schedulePersistedFallback(context, scheduler);
-        boolean fast = hasFastJob(scheduler)
+        return persisted && ensureFastScheduled(context);
+    }
+
+    static boolean ensureFastScheduled(Context context) {
+        if (!MonitorService.isEnabled(context)) return false;
+        JobScheduler scheduler = scheduler(context);
+        if (scheduler == null) return false;
+        return hasFastJob(scheduler)
                 || scheduleFast(context, scheduler, FAST_JOB_ID_A);
-        return persisted && fast;
     }
 
     static boolean scheduleNextFast(Context context, int currentJobId) {
