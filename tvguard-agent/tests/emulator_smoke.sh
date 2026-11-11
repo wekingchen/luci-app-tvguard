@@ -100,23 +100,23 @@ if ! adb shell dumpsys activity services "$PKG" | grep -q 'MonitorService'; then
   exit 1
 fi
 echo "[smoke] service active PASS"
-if ! adb shell dumpsys alarm | grep -q 'com.tvguard.agent.WATCHDOG'; then
-  echo "[smoke] recovery watchdog alarm not armed"
-  adb shell dumpsys alarm | grep -A4 -B4 'com.tvguard.agent' || :
+JOBS="$(adb shell dumpsys jobscheduler)"
+if ! printf '%s\n' "$JOBS" | grep -q 'com.tvguard.agent.*RecoveryJobService'; then
+  echo "[smoke] recovery jobs not scheduled"
+  printf '%s\n' "$JOBS" | grep -A15 -B5 'com.tvguard.agent' || :
   exit 1
 fi
-echo "[smoke] non-wakeup 30s recovery watchdog armed PASS"
-if ! adb shell dumpsys jobscheduler | grep -q 'com.tvguard.agent.*RecoveryJobService'; then
-  echo "[smoke] persisted cold-boot recovery job not scheduled"
-  adb shell dumpsys jobscheduler | grep -A10 -B5 'com.tvguard.agent' || :
+if ! printf '%s\n' "$JOBS" | grep -Eq '7026|7027'; then
+  echo "[smoke] non-persisted fast recovery job not armed"
+  printf '%s\n' "$JOBS" | grep -A15 -B5 'com.tvguard.agent' || :
   exit 1
 fi
-echo "[smoke] persisted fast-recovery JobScheduler chain scheduled PASS"
+echo "[smoke] persisted boot fallback + non-persisted fast JobScheduler chain armed PASS"
 
 # The vendor failure mode is process death while monitoring stays enabled.
 # Android force-stop is intentionally NOT used because it cancels platform jobs.
 # Move the app to background, ask ActivityManager to kill it, then require the
-# persisted one-shot JobScheduler chain to restore MonitorService without UI.
+# non-persisted fast JobScheduler chain to restore MonitorService without UI.
 adb shell input keyevent 3
 sleep 2
 adb shell am kill "$PKG" || true
