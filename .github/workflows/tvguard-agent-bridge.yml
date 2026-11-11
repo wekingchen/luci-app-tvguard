@@ -34,7 +34,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          for file in bridge/root/www/cgi-bin/tvguard-agent bridge/root/usr/libexec/tvguard-agent-bridge-report bridge/root/usr/libexec/tvguard-agent-bridge-soak bridge/root/usr/libexec/tvguard-agent-bridge-pair bridge/root/etc/init.d/tvguard-agent-bridge bridge/ipkg/postinst bridge/ipkg/prerm scripts/build-agent-bridge-ipk.sh; do
+          for file in bridge/root/www/cgi-bin/tvguard-agent bridge/root/usr/libexec/tvguard-agent-bridge-report bridge/root/usr/libexec/tvguard-agent-bridge-soak bridge/root/usr/libexec/tvguard-agent-bridge-pair bridge/root/usr/libexec/tvguard-agent-fusion bridge/root/etc/init.d/tvguard-agent-bridge bridge/ipkg/postinst bridge/ipkg/prerm scripts/build-agent-bridge-ipk.sh; do
             dash -n "$file"
           done
           python3 bridge/tests/test_source_contract.py
@@ -49,13 +49,13 @@ jobs:
       - name: Package standalone OpenWrt companion IPK
         run: |
           sh scripts/build-agent-bridge-ipk.sh
-          tar -tzf dist/tvguard-agent-bridge_0.2.4-1_all.ipk | grep -q './data.tar.gz'
-          tar -xOzf dist/tvguard-agent-bridge_0.2.4-1_all.ipk ./data.tar.gz | tar -tzf - | grep -q './www/cgi-bin/tvguard-agent'
-          tar -xOzf dist/tvguard-agent-bridge_0.2.4-1_all.ipk ./control.tar.gz | tar -tzf - > /tmp/bridge-control-list
+          tar -tzf dist/tvguard-agent-bridge_0.2.7-1_all.ipk | grep -q './data.tar.gz'
+          tar -xOzf dist/tvguard-agent-bridge_0.2.7-1_all.ipk ./data.tar.gz | tar -tzf - | grep -q './www/cgi-bin/tvguard-agent'
+          tar -xOzf dist/tvguard-agent-bridge_0.2.7-1_all.ipk ./control.tar.gz | tar -tzf - > /tmp/bridge-control-list
           ! grep -q 'conffiles$' /tmp/bridge-control-list
-          tar -xOzf dist/tvguard-agent-bridge_0.2.4-1_all.ipk ./control.tar.gz | tar -xOzf - ./control | grep -q 'Version: 0.2.4-1'
+          tar -xOzf dist/tvguard-agent-bridge_0.2.7-1_all.ipk ./control.tar.gz | tar -xOzf - ./control | grep -q 'Version: 0.2.7-1'
       - uses: actions/upload-artifact@v4
         with:
-          name: tvguard-agent-bridge-0.2.4-ipk
-          path: dist/tvguard-agent-bridge_0.2.4-1_all.ipk
+          name: tvguard-agent-bridge-0.2.7-ipk
+          path: dist/tvguard-agent-bridge_0.2.7-1_all.ipk
           retention-days: 7
