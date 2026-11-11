@@ -63,32 +63,37 @@ with tempfile.TemporaryDirectory(prefix="tvguard-fusion-") as folder:
 
     # The same learned context may enter pause only after three NEW strong
     # pause-hint reports. Activity name contains no Player/Video keyword.
-    assert run(2, 210, pkg=APP_A, activity=PLAYER_A) == (
+    # A fresh strong-play sample gets a short bootstrap guard so bursty
+    # low-bitrate valleys cannot immediately become pause. After the guard
+    # expires, genuine sustained pause evidence can still confirm.
+    assert run(2, 220, pkg=APP_A, activity=PLAYER_A) == (
+        "unknown", "recent_play_burst_guard", 0)
+    assert run(3, 250, pkg=APP_A, activity=PLAYER_A) == (
         "unknown", "pause_candidate_learned_context", 1)
-    assert run(3, 220, pkg=APP_A, activity=PLAYER_A) == (
+    assert run(4, 260, pkg=APP_A, activity=PLAYER_A) == (
         "unknown", "pause_candidate_learned_context", 2)
-    assert run(4, 230, pkg=APP_A, activity=PLAYER_A) == (
+    assert run(5, 270, pkg=APP_A, activity=PLAYER_A) == (
         "paused", "paused_confirmed_learned_context", 3)
 
     # Duplicate reads cannot manufacture another temporal vote.
-    assert run(4, 230, pkg=APP_A, activity=PLAYER_A) == (
+    assert run(5, 270, pkg=APP_A, activity=PLAYER_A) == (
         "paused", "paused_confirmed_learned_context", 3)
 
     # One missing hint is held; a second releases pause.
-    assert run(5, 240, pkg=APP_A, activity=PLAYER_A,
+    assert run(6, 280, pkg=APP_A, activity=PLAYER_A,
                pause_hint="none", pause_score=0) == (
         "paused", "paused_temporal_hold", 3)
-    assert run(6, 250, pkg=APP_A, activity=PLAYER_A,
+    assert run(7, 290, pkg=APP_A, activity=PLAYER_A,
                pause_hint="none", pause_score=0) == (
         "unknown", "learned_media_context_unresolved", 0)
 
     # Explicit playback evidence exits pause immediately and refreshes the
     # learned context.
-    run(7, 260, pkg=APP_A, activity=PLAYER_A,
+    run(8, 310, pkg=APP_A, activity=PLAYER_A,
         pause_hint="bursty_pause", pause_score=75)
-    run(8, 270, pkg=APP_A, activity=PLAYER_A,
+    run(9, 320, pkg=APP_A, activity=PLAYER_A,
         pause_hint="bursty_pause", pause_score=75)
-    assert run(9, 280, pkg=APP_A, activity=PLAYER_A,
+    assert run(10, 330, pkg=APP_A, activity=PLAYER_A,
                pps=180, shadow="unknown",
                adaptive_state="active", adaptive_score=100,
                adaptive_reason="clear_current",
@@ -105,7 +110,7 @@ with tempfile.TemporaryDirectory(prefix="tvguard-fusion-") as folder:
         pause_hint="none", pause_score=0, active_floor=100)
     for i, pps in enumerate((9, 12, 8, 11, 10, 14, 7), 2):
         state, candidate, streak = run(
-            i, 300 + i * 10, pkg=APP_B, activity=PLAYER_B,
+            i, 350 + i * 10, pkg=APP_B, activity=PLAYER_B,
             audio=1, pps=pps, shadow="idle",
             adaptive_state="idle", adaptive_score=95,
             adaptive_reason="stable_low",
@@ -160,10 +165,10 @@ with tempfile.TemporaryDirectory(prefix="tvguard-fusion-") as folder:
         pps=160, shadow="unknown", adaptive_state="active",
         adaptive_score=100, adaptive_reason="clear_current",
         pause_hint="none", pause_score=0, active_floor=100)
-    run(31, 710, pkg=APP_A, activity=PLAYER_A)
-    run(32, 720, pkg=APP_A, activity=PLAYER_A)
-    assert run(33, 730, pkg=APP_A, activity=PLAYER_A)[0] == "paused"
-    assert run(1, 740, pkg=APP_A, activity=PLAYER_A) == (
+    run(31, 760, pkg=APP_A, activity=PLAYER_A)
+    run(32, 770, pkg=APP_A, activity=PLAYER_A)
+    assert run(33, 780, pkg=APP_A, activity=PLAYER_A)[0] == "paused"
+    assert run(1, 790, pkg=APP_A, activity=PLAYER_A) == (
         "unknown", "agent_process_restart_context_reset", 0)
 
 print("v0.2.8 generic fusion: learned media context + universal hysteresis PASS")
