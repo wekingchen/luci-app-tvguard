@@ -32,6 +32,57 @@ case "${1:-status}" in
     pairing)
         if [ -r "$KEY_FILE" ]; then cat "$KEY_FILE"; else echo 'not-paired'; fi
         exit 0 ;;
+    summary)
+        if [ ! -s "$RAM/soak-v3.csv" ]; then
+            printf 'schema=v3\nrows=0\nfresh_reports=0\nrepeated_rows=0\nstale_rows=0\ncombined_playing=0\ncombined_paused=0\ncombined_app_home=0\ncombined_system_home=0\ncombined_unknown=0\npause_warming=0\npause_confirmed=0\npause_hold=0\nidle_overlap_unresolved=0\ntencent_shared_unresolved=0\nagent_restart_reset=0\nbilling_effect=none\n'
+            exit 0
+        fi
+        awk -F, '
+            NF==22 {
+                rows++
+                candidate=$18
+                fresh=$22+0
+                if (candidate=="repeated_report_not_new_evidence") repeated++
+                if (candidate=="agent_stale") stale++
+                if (fresh==1) {
+                    fresh_n++
+                    state=$17
+                    if (state=="playing") playing++
+                    else if (state=="paused") paused++
+                    else if (state=="app_home") apphome++
+                    else if (state=="system_home") syshome++
+                    else unknown++
+
+                    if (candidate=="pause_candidate_warming") warming++
+                    else if (candidate=="paused_confirmed_temporal") confirmed++
+                    else if (candidate=="paused_temporal_hold") hold++
+                    else if (candidate=="player_idle_overlap_unresolved") idleoverlap++
+                    else if (candidate=="tencent_shared_activity_unresolved") tencent++
+                    else if (candidate=="agent_process_restart_context_reset") restart++
+                }
+                last_epoch=$1
+            }
+            END {
+                print "schema=v3"
+                print "rows=" rows+0
+                print "fresh_reports=" fresh_n+0
+                print "repeated_rows=" repeated+0
+                print "stale_rows=" stale+0
+                print "combined_playing=" playing+0
+                print "combined_paused=" paused+0
+                print "combined_app_home=" apphome+0
+                print "combined_system_home=" syshome+0
+                print "combined_unknown=" unknown+0
+                print "pause_warming=" warming+0
+                print "pause_confirmed=" confirmed+0
+                print "pause_hold=" hold+0
+                print "idle_overlap_unresolved=" idleoverlap+0
+                print "tencent_shared_unresolved=" tencent+0
+                print "agent_restart_reset=" restart+0
+                print "last_sample_epoch=" last_epoch+0
+                print "billing_effect=none"
+            }' "$RAM/soak-v3.csv"
+        exit 0 ;;
     history)
         if [ -r "$RAM/soak-v3.csv" ]; then
             printf '#schema=v3 epoch,age,package,activity,audio,screen,pps,network_shadow,adaptive_state,adaptive_score,adaptive_reason,pause_hint,pause_score,p50,p90,active_floor,combined_state,candidate,fusion_streak,report_seq,received_epoch,is_new_report\n'
@@ -47,7 +98,7 @@ case "${1:-status}" in
         fi
         exit 0 ;;
     status) : ;;
-    *) echo 'usage: tvguard-agent-bridge-report [doctor|status|history|pairing]' >&2; exit 2 ;;
+    *) echo 'usage: tvguard-agent-bridge-report [doctor|status|summary|history|pairing]' >&2; exit 2 ;;
 esac
 
 [ -r "$LATEST" ] || {
