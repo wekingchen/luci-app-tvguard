@@ -292,6 +292,7 @@ echo '1500 240000 170 27000 1280 193000' > "$TMP/sample"
 sh "$CTL" tick
 status
 check 'assert s["used_seconds"] >= 9 and s["used_seconds"] <= 11, s'
+check 'assert s["watch_seconds"] >= s["used_seconds"] and s["previous_day_date"] == "none", s'
 check 'assert s["pps"] > 0 and s["tcp_pps"] > 0 and s["udp_pps"] > 0, s'
 check 'assert s["traffic_class"] in ("high_traffic","medium_traffic","low_traffic")'
 check 'assert s["calibration_label"] == "playing" and s["calibration_app"] == "tencent" and s["calibration_session"] != "none"'
