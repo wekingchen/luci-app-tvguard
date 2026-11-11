@@ -38,8 +38,13 @@ jobs:
     uses: ./.github/workflows/ci.yml
 
   android6-agent:
+    if: github.event_name != 'pull_request'
     uses: ./.github/workflows/tvguard-agent.yml
     secrets: inherit
+
+  android6-agent-pr:
+    if: github.event_name == 'pull_request'
+    uses: ./.github/workflows/tvguard-agent.yml
 
   n1-bridge:
     uses: ./.github/workflows/tvguard-agent-bridge.yml
