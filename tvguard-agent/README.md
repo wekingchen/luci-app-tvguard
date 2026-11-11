@@ -127,12 +127,13 @@ Service 的自动重启；当进程已经死亡时，30 秒 Alarm broadcast 也�
   `become forceground` 尝试。
 - `WatchdogReceiver` 保留为进程仍存活时的辅助恢复，但 Service 已运行时不再每 30 秒重复
   `startService()`。
-- `RecoveryScheduler` 从 v0.2.5 的 15 分钟 periodic Job 改为 **20 秒最短延迟 /
-  30 秒 deadline 的 persisted one-shot Job 链**；7025/7026 两个 Job ID 交替续约，
-  避免当前 Job 执行时用同一 ID 覆盖自己。
-- `RecoveryJobService` 每次运行先安排下一次系统 Job，再检查并按需恢复
-  `MonitorService`。即使整个 Agent 进程被 ROM 杀掉，下一次恢复点仍保存在
-  Android JobScheduler / system_server。
+- `RecoveryScheduler` 保留 **15 分钟 persisted periodic Job（7025）** 作为跨重启兜底；
+  同时新增 **20 秒最短延迟 / 30 秒 deadline 的 non-persisted one-shot 快速链**，
+  使用 7026/7027 两个 Job ID 交替续约。快速链只保存在 system_server 内存，不会每
+  20–30 秒改写持久 JobStore。
+- `RecoveryJobService` 的快速任务每次运行先安排下一次内存恢复点，再检查并按需恢复
+  `MonitorService`；15 分钟持久任务只在重启后快速链缺失时重新种下它。即使整个
+  Agent 进程被 ROM 杀掉，下一次快速恢复点仍由 Android JobScheduler/system_server 持有。
 - 仍不写运行日志、数据库、流量历史或离线队列；N1 bridge 继续 shadow-only，
   Agent 缺席时不得改变原 Adaptive Engine 的独立计时行为。
 
