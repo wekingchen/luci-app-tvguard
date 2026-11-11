@@ -127,16 +127,17 @@ Service 的自动重启；当进程已经死亡时，30 秒 Alarm broadcast 也�
   `become forceground` 尝试。
 - `WatchdogReceiver` 保留为进程仍存活时的辅助恢复，但 Service 已运行时不再每 30 秒重复
   `startService()`。
-- `RecoveryScheduler` 保留 **15 分钟 persisted periodic Job（7025）** 作为跨重启兜底；
-  同时新增 **20 秒最短延迟 / 30 秒 deadline 的 non-persisted one-shot 快速链**，
-  使用 7026/7027 两个 Job ID 交替续约。快速链只保存在 system_server 内存，不会每
-  20–30 秒改写持久 JobStore。
-- `RecoveryJobService` 的快速任务每次运行先安排下一次内存恢复点，再检查并按需恢复
-  `MonitorService`；15 分钟持久任务只在重启后快速链缺失时重新种下它。即使整个
-  Agent 进程被 ROM 杀掉，下一次快速恢复点仍由 Android JobScheduler/system_server 持有。
+- 30 秒非唤醒 watchdog 不再使用 `PendingIntent.getBroadcast()`，而改成
+  **`PendingIntent.getService()` 直接指向 `MonitorService`**。真机日志已经证明 MiTV
+  会拒绝“死进程由 broadcast 拉起”，因此直接 Service PendingIntent 才是本轮真正要验证的
+  快速恢复路径。
+- `RecoveryScheduler` 继续保留 **15 分钟 persisted periodic Job（7025）**，仅作为
+  BOOT_COMPLETED 被厂商压制、Alarm 链在重启后丢失时的低频兜底，不参与 30 秒运行时保活。
+- 不引入 20–30 秒 JobScheduler 自续约链，避免旧 Android 上高频 `schedule()` 的额外成本，
+  也避免频繁持久 JobStore 写入。
 - 仍不写运行日志、数据库、流量历史或离线队列；N1 bridge 继续 shadow-only，
   Agent 缺席时不得改变原 Adaptive Engine 的独立计时行为。
 
 真机目标不是宣称“永不被杀”，而是把普通 ROM 后台回收造成的 stale 空窗从 v0.2.5
 实测最坏约 54 秒压缩到约 30 秒量级。实际时延仍必须在 MiTV4-ANSM0 上重新验收；
-JobScheduler deadline 也可能受到设备休眠或厂商系统调度影响。
+如果厂商同样压制直接 Service PendingIntent，则会退回 15 分钟 JobScheduler 兜底，不能提前宣称已解决。
