@@ -8,3 +8,5 @@ reason=Re-run after BusyBox postinst contract and billing-hint executable permis
 # r19 child-only viewing, uncapped quota and Bark copy regression
 # r20: concise Bark digest, zero-day silence, live on-demand test and standalone main IPK
 # r20 final: reject malformed Bark configurations in manual test
+
+# r21: rename time-rules tab to settings; support two Bark recipients with per-device retry
