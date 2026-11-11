@@ -10,3 +10,5 @@ reason=Re-run after BusyBox postinst contract and billing-hint executable permis
 # r20 final: reject malformed Bark configurations in manual test
 
 # r21: rename time-rules tab to settings; support two Bark recipients with per-device retry
+
+# r21 fix: preserve live-test wording and allow menu rename in integration boundary
