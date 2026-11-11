@@ -29,7 +29,7 @@ public final class MonitorService extends Service {
     private HandlerThread reportWorker;
     private Handler reportHandler;
     private long lastScanEnd;
-    private final VideoActivityHistory recentActivity = new VideoActivityHistory();
+    private final ForegroundActivityHistory recentActivity = new ForegroundActivityHistory();
 
     public static final class Snapshot {
         public final String state;
@@ -39,16 +39,14 @@ public final class MonitorService extends Service {
         public final String lastOtherClass;
         public final long changedMs;
         public final long sampledMs;
-        public final VideoActivityHistory.Event recentVideo;
-        public final VideoActivityHistory.Event recentNonLauncher;
-        public final VideoActivityHistory.Event[] timeline;
+        public final ForegroundActivityHistory.Event recentNonLauncher;
+        public final ForegroundActivityHistory.Event[] timeline;
 
         Snapshot(String state, String currentPackage, String currentClass,
                  String lastOtherPackage, String lastOtherClass,
                  long changedMs, long sampledMs,
-                 VideoActivityHistory.Event recentVideo,
-                 VideoActivityHistory.Event recentNonLauncher,
-                 VideoActivityHistory.Event[] timeline) {
+                 ForegroundActivityHistory.Event recentNonLauncher,
+                 ForegroundActivityHistory.Event[] timeline) {
             this.state = state;
             this.currentPackage = currentPackage;
             this.currentClass = currentClass;
@@ -56,14 +54,13 @@ public final class MonitorService extends Service {
             this.lastOtherClass = lastOtherClass;
             this.changedMs = changedMs;
             this.sampledMs = sampledMs;
-            this.recentVideo = recentVideo;
             this.recentNonLauncher = recentNonLauncher;
             this.timeline = timeline.clone();
         }
 
         static Snapshot empty(String state) {
-            return new Snapshot(state, "", "", "", "", 0L, 0L, null, null,
-                    new VideoActivityHistory.Event[0]);
+            return new Snapshot(state, "", "", "", "", 0L, 0L, null,
+                    new ForegroundActivityHistory.Event[0]);
         }
     }
 
@@ -148,7 +145,7 @@ public final class MonitorService extends Service {
                 // Never mark a failed query as a successful new sample.
                 latest = new Snapshot("读取失败：" + failure.getClass().getSimpleName(),
                         "", "", "", "", 0L, before.sampledMs,
-                        null, null, new VideoActivityHistory.Event[0]);
+                        null, new ForegroundActivityHistory.Event[0]);
                 recentActivity.clear();
                 lastScanEnd = 0L;
             }
@@ -258,7 +255,7 @@ public final class MonitorService extends Service {
             // A partial event window is not valid proof of foreground state.
             recentActivity.clear();
             latest = new Snapshot("事件超限，前台待确认", "", "", "", "", 0L, now,
-                    null, null, new VideoActivityHistory.Event[0]);
+                    null, new ForegroundActivityHistory.Event[0]);
             return;
         }
         String state = reducer.currentPackage.length() == 0
@@ -267,7 +264,6 @@ public final class MonitorService extends Service {
                 reducer.currentPackage, reducer.currentClass,
                 reducer.lastOtherPackage, reducer.lastOtherClass,
                 reducer.changedMs, now,
-                recentActivity.lastVideo(),
                 recentActivity.lastNonLauncher(),
                 recentActivity.lastEvents(6));
     }
