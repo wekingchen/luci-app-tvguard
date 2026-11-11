@@ -15,8 +15,8 @@ android {
         applicationId 'com.tvguard.agent'
         minSdk 23
         targetSdk 23
-        versionCode 9
-        versionName '0.2.6-r2'
+        versionCode 10
+        versionName '0.2.8'
     }
 
     signingConfigs {
