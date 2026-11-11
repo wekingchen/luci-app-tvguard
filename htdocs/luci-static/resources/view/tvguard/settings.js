@@ -36,8 +36,8 @@ return view.extend({
     render: function() {
         var m = new form.Map(
             'tvguard',
-            'TV Guard · 时间规则',
-            '这里仅配置日常时间规则。正式网络控制和实验回程观测属于高风险功能，不在普通设置页提供开关。'
+            'TV Guard · 设置',
+            '这里配置日常时间规则与通知。正式网络控制和实验回程观测属于高风险功能，不在普通设置页提供开关。'
         );
 
         var quota = m.section(form.NamedSection, 'main', 'tvguard', '每日额度');
@@ -119,11 +119,17 @@ return view.extend({
         o.validate = validateServer;
         o.description = '官方服务器或自建 Bark 服务根地址。公网推荐 HTTPS；HTTP 会明文传输推送 ID。';
 
-        o = report.option(form.Value, 'bark_key', 'Bark 推送 ID');
+        o = report.option(form.Value, 'bark_key', 'Bark 推送 ID 1');
         o.password = true;
         o.rmempty = true;
         o.validate = validateKey;
-        o.description = 'Bark App 提供的设备 Key；不会通过状态接口或操作记录输出。';
+        o.description = '第一台接收设备的 Bark Key。最多支持两台设备；至少填写一个推送 ID。不会通过状态接口或操作记录输出。';
+
+        o = report.option(form.Value, 'bark_key2', 'Bark 推送 ID 2（可选）');
+        o.password = true;
+        o.rmempty = true;
+        o.validate = validateKey;
+        o.description = '第二台接收设备的 Bark Key，例如爸爸和妈妈各一台。留空时只推送给 ID 1；与 ID 1 相同时自动只发送一次。';
 
         o = report.option(form.Value, 'bark_daily_time', '每日推送时间');
         o.rmempty = false;
@@ -134,7 +140,7 @@ return view.extend({
 
         o = report.option(form.Button, '_bark_test', '发送测试推送');
         o.inputstyle = 'apply';
-        o.description = '请先保存并应用 Bark 服务器和推送 ID。点击后立即采样，推送截至此刻的儿童模式累计观看时长；零记录不发送。不会占用或取消每天的正式日报。';
+        o.description = '请先保存并应用 Bark 服务器和至少一个推送 ID。点击后立即采样，并同时推送给已填写的设备；零记录不发送。不会占用或取消每天的正式日报。';
         o.onclick = function() {
             return fs.exec('/usr/libexec/tvguardctl', ['bark-test']).then(function(r) {
                 if (r.code)
