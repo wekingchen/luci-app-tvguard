@@ -55,7 +55,7 @@ assert "SharedPreferences.Editor" in service
 assert "editor.commit()" in service
 main_activity = (src / "java/com/tvguard/agent/MainActivity.java").read_text()
 editor = (src / "java/com/tvguard/agent/TvAddressEditor.java").read_text()
-assert "TVGuard 助手 · 0.2.4" in main_activity
+assert "TVGuard 助手 · 0.2.5" in main_activity
 watchdog = (src / "java/com/tvguard/agent/WatchdogReceiver.java").read_text()
 assert "INTERVAL_MS = 30000L" in watchdog
 assert "AlarmManager.ELAPSED_REALTIME" in watchdog
@@ -64,6 +64,23 @@ assert "context.startService(new Intent(context, MonitorService.class))" in watc
 assert "WatchdogReceiver.schedule(this)" in service
 assert "WatchdogReceiver.cancel(context)" in service
 assert '<receiver android:name=".WatchdogReceiver" android:exported="false" />' in manifest
+assert '<service' in manifest and 'RecoveryJobService' in manifest
+assert 'android.permission.BIND_JOB_SERVICE' in manifest
+assert 'android:exported="true"' in manifest
+recovery_scheduler = (src / "java/com/tvguard/agent/RecoveryScheduler.java").read_text()
+recovery_job = (src / "java/com/tvguard/agent/RecoveryJobService.java").read_text()
+boot_receiver = (src / "java/com/tvguard/agent/BootReceiver.java").read_text()
+assert "JOB_ID = 7025" in recovery_scheduler
+assert "PERIOD_MS = 15L * 60L * 1000L" in recovery_scheduler
+assert ".setPersisted(true)" in recovery_scheduler
+assert ".setPeriodic(PERIOD_MS)" in recovery_scheduler
+assert "RecoveryScheduler.ensureScheduled(context)" in service
+assert "RecoveryScheduler.cancel(context)" in service
+assert "RecoveryScheduler.ensureScheduled(this)" in service
+assert "RecoveryScheduler.ensureScheduled(context)" in boot_receiver
+assert "Intent.ACTION_MY_PACKAGE_REPLACED" in boot_receiver
+assert "RecoveryJobService" in recovery_job
+assert "startService(new Intent(this, MonitorService.class))" in recovery_job
 assert "192.168.101.99" in bridge_client
 assert "PAIR1" in bridge_client
 assert "TOKEN1|" in bridge_client
