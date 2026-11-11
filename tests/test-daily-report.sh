@@ -13,7 +13,7 @@ case "$3" in
     tvguard.main.bark_enabled) echo "${TVG_ENABLED:-1}" ;;
     tvguard.main.bark_server) echo "${TVG_SERVER:-https://api.day.app}" ;;
     tvguard.main.bark_key) echo "${TVG_KEY1:-abcDEF12345}" ;;
-    tvguard.main.bark_key2) echo "${TVG_KEY2:-xyzSecond678}" ;;
+    tvguard.main.bark_key2) echo "${TVG_KEY2-xyzSecond678}" ;;
     tvguard.main.child_name) echo '小明' ;;
     tvguard.main.bark_daily_time) echo "${TVG_WHEN:-00:05}" ;;
     *) exit 1 ;;
