@@ -854,4 +854,56 @@ status
 check 'assert s["mode"]=="parent" and s["parent_until"]==0, s'
 grep -qx 'MODE=parent' "$TMP/state/state"
 
+# The global daily viewing estimate grows in parent mode without using quota.
+export TVGUARD_TEST_AGENT_BILLING=charge
+set -- $(sh "$CTL" status | python3 -c 'import json,sys; s=json.load(sys.stdin);print(s["used_seconds"],s["watch_seconds"])')
+old_child="$1"; old_watch="$2"
+python3 - "$TMP/run/runtime" <<'PY'
+from pathlib import Path
+import sys,time
+p=Path(sys.argv[1])
+lines=p.read_text().splitlines()
+p.write_text('\n'.join('LAST_EPOCH='+str(int(time.time())-10) if x.startswith('LAST_EPOCH=') else x for x in lines)+'\n')
+PY
+set -- $(cat "$TMP/sample")
+echo "$(($1+500)) $(($2+100000)) $(($3+250)) $(($4+50000)) $(($5+250)) $(($6+50000))" > "$TMP/sample"
+sh "$CTL" tick
+set -- $(sh "$CTL" status | python3 -c 'import json,sys; s=json.load(sys.stdin);print(s["used_seconds"],s["watch_seconds"])')
+[ "$1" -eq "$old_child" ]
+[ "$2" -ge "$((old_watch+9))" ] && [ "$2" -le "$((old_watch+11))" ]
+
+# The current Agent home exemption applies to the independent counter too.
+old_watch="$2"
+export TVGUARD_TEST_AGENT_BILLING=app_home
+python3 - "$TMP/run/runtime" <<'PY'
+from pathlib import Path
+import sys,time
+p=Path(sys.argv[1])
+lines=p.read_text().splitlines()
+p.write_text('\n'.join('LAST_EPOCH='+str(int(time.time())-10) if x.startswith('LAST_EPOCH=') else x for x in lines)+'\n')
+PY
+set -- $(cat "$TMP/sample")
+echo "$(($1+500)) $(($2+100000)) $(($3+250)) $(($4+50000)) $(($5+250)) $(($6+50000))" > "$TMP/sample"
+sh "$CTL" tick
+status
+check 'assert s["billing_state"]=="idle_verified" and s["idle_reason"]=="app_home",s'
+[ "$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["watch_seconds"])' "$TMP/status.json")" -eq "$old_watch" ]
+
+# Day boundary preserves the finished day and resets only today's aggregate.
+python3 - "$TMP/run/runtime" <<'PY'
+from pathlib import Path
+import sys
+p=Path(sys.argv[1])
+lines=p.read_text().splitlines()
+out=[]
+for x in lines:
+    if x.startswith('TODAY='): x='TODAY=2026-11-10'
+    if x.startswith('WATCH_S='): x='WATCH_S=1234'
+    out.append(x)
+p.write_text('\n'.join(out)+'\n')
+PY
+sh "$CTL" sync
+status
+check 'assert s["watch_seconds"]==0 and s["previous_day_date"]=="2026-11-10" and s["previous_day_seconds"]==1234,s'
+
 echo "PASS: modes, billing, telemetry, calibration, data-root switching and two-key enforcement safety"
