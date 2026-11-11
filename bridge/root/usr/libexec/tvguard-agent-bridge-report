@@ -1,5 +1,5 @@
 #!/bin/sh
-# User-facing N1-only v0.2.7 shadow fusion. Read-only for core TVGuard.
+# User-facing N1-only v0.2.8 generic shadow fusion. Read-only for core TVGuard.
 # Temporal fusion state lives only in /var/run and NEVER edits quota or gate.
 set -eu
 PATH=/usr/sbin:/usr/bin:/sbin:/bin
