@@ -143,3 +143,15 @@ v0.2.7 安装后先只观察银河奇异果：
 ```
 
 它只能作为“自然运行观察摘要”，不能替代有明确 App / 清晰度 / 暂停时点的人工真机验收。
+
+
+### 0.2.7-2 保守收紧：银河首页只认已验证 Activity
+
+真机目前只验证了 `com.gala.video.app.epg.HomeActivity` 是银河奇异果首页。
+因此 0.2.7-2 不再把 `com.gitvdemo.video` 包内所有“非 PlayerActivity”一概标成 `app_home`：
+
+- 精确 `HomeActivity` → `app_home`
+- `PlayerActivity` → 进入播放/暂停融合
+- 其他详情、搜索、分类等未验证 Activity → `unknown / galaxy_nonplayer_activity_unresolved`
+
+这是单向保守化：宁可暂时 unknown，也不把未验证页面错误当成首页。
