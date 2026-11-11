@@ -1,5 +1,6 @@
 #!/bin/sh
-# TVGuard v0.2.7 Agent/N1 shadow fusion.
+# TVGuard v0.2.8 generic Agent/N1 temporal fusion.
+# No video-app package names or per-app decision branches are allowed here.
 # RAM-only observer: never edits quota, billing state, firewall or persistent data.
 set -eu
 PATH=/usr/sbin:/usr/bin:/sbin:/bin
@@ -48,8 +49,6 @@ locked=0
 if mkdir "$LOCK" 2>/dev/null; then
     locked=1
 else
-    # report + soak can collide occasionally. One bounded retry avoids corrupting
-    # temporal state without turning this helper into a daemon or disk writer.
     sleep 1
     if mkdir "$LOCK" 2>/dev/null; then locked=1; fi
 fi
@@ -57,24 +56,36 @@ fi
 cleanup() { rmdir "$LOCK" 2>/dev/null || :; }
 trap cleanup EXIT HUP INT TERM
 
+# schema v2:
+# schema|last_sig|last_seq|pause_streak|pause_miss|latched|
+# learned_media_pkg|learned_media_activity|home_streak|last_pkg|last_activity
 schema=0
 last_sig=''
 last_seq=0
 pause_streak=0
 pause_miss=0
 latched=none
+media_pkg=''
+media_activity=''
+home_streak=0
+last_pkg=''
+last_activity=''
 extra=''
 if [ -r "$STATE" ]; then
     oldIFS="$IFS"
     IFS='|'
-    read -r schema last_sig last_seq pause_streak pause_miss latched extra < "$STATE" || :
+    read -r schema last_sig last_seq pause_streak pause_miss latched \
+        media_pkg media_activity home_streak last_pkg last_activity extra < "$STATE" || :
     IFS="$oldIFS"
-    if [ "$schema" != 1 ]; then
+    if [ "$schema" != 2 ]; then
         last_sig=''; last_seq=0; pause_streak=0; pause_miss=0; latched=none
+        media_pkg=''; media_activity=''; home_streak=0
+        last_pkg=''; last_activity=''
     fi
     case "$last_seq" in ''|*[!0-9]*) last_seq=0 ;; esac
     case "$pause_streak" in ''|*[!0-9]*) pause_streak=0 ;; esac
     case "$pause_miss" in ''|*[!0-9]*) pause_miss=0 ;; esac
+    case "$home_streak" in ''|*[!0-9]*) home_streak=0 ;; esac
     case "$latched" in none|paused) : ;; *) latched=none ;; esac
 fi
 
@@ -86,179 +97,205 @@ if [ "$fresh" -eq 1 ] && [ "$last_seq" -gt 0 ] && [ "$seq" -lt "$last_seq" ]; th
     restart=1
     pause_streak=0
     pause_miss=0
+    home_streak=0
     latched=none
 fi
 
-is_player=0
-case "$activity" in
-    *Player*|*player*|*VideoActivity*|*Playback*) is_player=1 ;;
+context_changed=0
+if [ "$pkg" != "$last_pkg" ] || [ "$activity" != "$last_activity" ]; then
+    context_changed=1
+    pause_streak=0
+    pause_miss=0
+    home_streak=0
+    latched=none
+fi
+
+is_launcher=0
+case "$pkg" in
+    com.mitv.tvhome|com.mitv.home|com.android.tvlauncher|com.google.android.tvlauncher|\
+    com.google.android.apps.tv.launcherx|com.android.launcher|com.android.launcher3|com.miui.tvhome)
+        is_launcher=1 ;;
 esac
+
+strong_play=0
+if [ "$shadow" = playing ]; then
+    strong_play=1
+elif [ "$adaptive_state" = active ] &&
+     { [ "$adaptive_reason" = clear_current ] ||
+       { [ "$active_floor" -gt 0 ] && [ "$pps" -ge "$active_floor" ]; }; }; then
+    strong_play=1
+fi
+
+pause_evidence=0
+if [ "$pause_hint" = high_ratio_pause ] && [ "$pause_score" -ge 90 ]; then
+    pause_evidence=1
+elif [ "$pause_hint" = bursty_pause ] && [ "$pause_score" -ge 75 ]; then
+    pause_evidence=1
+fi
+[ "$strong_play" -eq 0 ] || pause_evidence=0
+
+low_nonplaying=0
+if [ "$audio" -eq 0 ] &&
+   { [ "$shadow" = idle ] ||
+     { [ "$adaptive_state" = idle ] && [ "$adaptive_reason" = stable_low ]; }; }; then
+    low_nonplaying=1
+fi
+
+known_media_context=0
+known_media_package=0
+if [ -n "$media_pkg" ] && [ "$pkg" = "$media_pkg" ]; then
+    known_media_package=1
+    if [ -n "$media_activity" ] && [ "$activity" = "$media_activity" ]; then
+        known_media_context=1
+    fi
+fi
 
 combined=unknown
 candidate=unknown
 
-# Screen-off is not one of the four requested UI/video states.
 if [ "$screen" -eq 0 ]; then
     combined=unknown
     candidate=sleep_candidate
     pause_streak=0
     pause_miss=0
+    home_streak=0
     latched=none
 
-# System launcher is directly observable from Agent foreground context.
-elif [ "$pkg" = com.mitv.tvhome ] ||
-     [ "$pkg" = com.android.tvlauncher ] ||
-     [ "$pkg" = com.google.android.tvlauncher ]; then
+elif [ "$is_launcher" -eq 1 ]; then
     combined=system_home
     candidate=system_home_confirmed
     pause_streak=0
     pause_miss=0
+    home_streak=0
     latched=none
 
-# Galaxy/iQIYI has been verified on the real TV: HomeActivity and
-# PlayerActivity are distinct. v0.2.7 therefore scopes pause authority here.
-elif [ "$pkg" = com.gitvdemo.video ]; then
-    if [ "$is_player" -ne 1 ]; then
-        pause_streak=0
-        pause_miss=0
-        latched=none
-        case "$activity" in
-            com.gala.video.app.epg.HomeActivity)
-                combined=app_home
-                candidate=app_home_confirmed_galaxy ;;
-            *)
-                # Only the exact HomeActivity observed on this TV is allowed to
-                # claim app_home. Detail/search/category pages stay unresolved.
-                combined=unknown
-                candidate=galaxy_nonplayer_activity_unresolved ;;
-        esac
-    else
-        strong_play=0
-        if [ "$shadow" = playing ]; then
-            strong_play=1
-        elif [ "$adaptive_state" = active ] &&
-             { [ "$adaptive_reason" = clear_current ] ||
-               { [ "$active_floor" -gt 0 ] && [ "$pps" -ge "$active_floor" ]; }; }; then
-            # active_votes / active_median alone are intentionally not enough:
-            # real paused samples can retain old active votes.
-            strong_play=1
-        fi
+elif [ "$pkg" = unknown ] || [ "$activity" = unknown ] ||
+     [ -z "$pkg" ] || [ -z "$activity" ]; then
+    combined=unknown
+    candidate=foreground_context_unknown
+    pause_streak=0
+    pause_miss=0
+    home_streak=0
+    latched=none
 
-        pause_evidence=0
-        if [ "$pause_hint" = high_ratio_pause ] && [ "$pause_score" -ge 90 ]; then
-            pause_evidence=1
-        elif [ "$pause_hint" = bursty_pause ] && [ "$pause_score" -ge 75 ]; then
-            pause_evidence=1
-        fi
-        [ "$strong_play" -eq 0 ] || pause_evidence=0
+elif [ "$strong_play" -eq 1 ]; then
+    # Generic self-learning rule: current package/activity becomes a learned
+    # media context only after N1 itself has strong playback evidence.
+    media_pkg="$pkg"
+    media_activity="$activity"
+    known_media_package=1
+    known_media_context=1
+    combined=playing
+    candidate=playing_confirmed_context_learned
+    pause_streak=0
+    pause_miss=0
+    home_streak=0
+    latched=none
 
-        if [ "$strong_play" -eq 1 ]; then
-            # Resume exits pause immediately; no symmetric 3-window delay.
-            combined=playing
-            candidate=playing_confirmed_network
+elif [ "$known_media_context" -eq 1 ]; then
+    home_streak=0
+    if [ "$pause_evidence" -eq 1 ]; then
+        if [ "$fresh" -eq 1 ]; then
+            pause_streak=$((pause_streak + 1))
+            pause_miss=0
+        fi
+        if [ "$latched" = paused ] || [ "$pause_streak" -ge 3 ]; then
+            latched=paused
+            combined=paused
+            candidate=paused_confirmed_learned_context
+        else
+            combined=unknown
+            candidate=pause_candidate_learned_context
+        fi
+    elif [ "$latched" = paused ]; then
+        if [ "$fresh" -eq 1 ]; then pause_miss=$((pause_miss + 1)); fi
+        if [ "$pause_miss" -le 1 ]; then
+            combined=paused
+            candidate=paused_temporal_hold
+        else
+            latched=none
             pause_streak=0
             pause_miss=0
-            latched=none
-        elif [ "$pause_evidence" -eq 1 ]; then
-            if [ "$fresh" -eq 1 ]; then
-                pause_streak=$((pause_streak + 1))
-                pause_miss=0
-            fi
-            if [ "$latched" = paused ] || [ "$pause_streak" -ge 3 ]; then
-                latched=paused
-                combined=paused
-                candidate=paused_confirmed_temporal
-            else
-                combined=unknown
-                candidate=pause_candidate_warming
-            fi
+            combined=unknown
+            candidate=learned_media_context_unresolved
+        fi
+    else
+        if [ "$fresh" -eq 1 ]; then
+            pause_streak=0
+            pause_miss=0
+        fi
+        combined=unknown
+        if [ "$pause_hint" = idle_overlap ]; then
+            # P0 invariant: stable low traffic inside a learned playback
+            # context is NOT enough to grant paused/free time.
+            candidate=learned_media_idle_overlap_unresolved
+        elif [ "$audio" -eq 1 ]; then
+            candidate=learned_media_context_audio_hint_on
         else
-            if [ "$latched" = paused ]; then
-                if [ "$fresh" -eq 1 ]; then pause_miss=$((pause_miss + 1)); fi
-                if [ "$pause_miss" -le 1 ]; then
-                    combined=paused
-                    candidate=paused_temporal_hold
-                else
-                    latched=none
-                    pause_streak=0
-                    pause_miss=0
-                    combined=unknown
-                    candidate=player_context_unresolved
-                fi
-            else
-                if [ "$fresh" -eq 1 ]; then
-                    pause_streak=0
-                    pause_miss=0
-                fi
-                combined=unknown
-                if [ "$pause_hint" = idle_overlap ]; then
-                    # Critical P0 guard: low-rate playback overlaps this hint.
-                    # idle_overlap can never enter paused by itself.
-                    candidate=player_idle_overlap_unresolved
-                elif [ "$audio" -eq 1 ]; then
-                    candidate=player_context_audio_hint_on
-                else
-                    candidate=player_context_audio_hint_off
-                fi
-            fi
+            candidate=learned_media_context_audio_hint_off
         fi
     fi
 
-# Tencent real-device evidence shows HomeSingleTaskActivity during both real
-# playback and pause. Never turn this shared Activity into App-home or pause
-# without a separate validated player-context discriminator.
-elif [ "$pkg" = com.ktcp.video ]; then
+elif [ "$known_media_package" -eq 1 ]; then
+    # Same app package, but a different Activity from the context that was
+    # actually proven to play. This is the generic app-side non-playing path.
     pause_streak=0
     pause_miss=0
     latched=none
-    if [ "$is_player" -eq 1 ] &&
-       { [ "$shadow" = playing ] ||
-         { [ "$adaptive_state" = active ] && [ "$adaptive_reason" = clear_current ]; }; }; then
-        combined=playing
-        candidate=playing_confirmed_network_unvalidated_tencent_activity
+    if [ "$low_nonplaying" -eq 1 ]; then
+        if [ "$fresh" -eq 1 ]; then home_streak=$((home_streak + 1)); fi
+        if [ "$home_streak" -ge 3 ]; then
+            combined=app_home
+            candidate=app_nonplaying_confirmed
+        else
+            combined=unknown
+            candidate=app_nonplaying_warming
+        fi
     else
+        if [ "$fresh" -eq 1 ]; then home_streak=0; fi
         combined=unknown
-        candidate=tencent_shared_activity_unresolved
+        if [ "$pause_evidence" -eq 1 ]; then
+            candidate=unlearned_context_pause_hint_ignored
+        else
+            candidate=known_media_app_other_context
+        fi
     fi
 
-# Other video packages stay conservative until their Activity semantics are
-# validated on this exact TV. Strong network playback may be reported, but
-# no free-time state is inferred from an unvalidated Activity.
-elif [ "$pkg" = org.smarttube.stable ] || [ "$pkg" = com.hunantv.license ]; then
-    pause_streak=0
-    pause_miss=0
-    latched=none
-    if [ "$shadow" = playing ] ||
-       { [ "$adaptive_state" = active ] && [ "$adaptive_reason" = clear_current ]; }; then
-        combined=playing
-        candidate=playing_confirmed_network_unvalidated_activity
-    else
-        combined=unknown
-        candidate=video_app_context_unresolved
-    fi
 else
+    # Before this package has ever produced strong playback evidence, do not
+    # guess that it is a video app merely from its name or Activity spelling.
     pause_streak=0
     pause_miss=0
+    home_streak=0
     latched=none
     combined=unknown
-    candidate=unknown
+    if [ "$pause_evidence" -eq 1 ]; then
+        candidate=unlearned_package_pause_hint_ignored
+    else
+        candidate=unlearned_foreground_context
+    fi
 fi
 
 if [ "$restart" -eq 1 ]; then
-    # Keep a directly observable home state, but never carry OR immediately
-    # rebuild player temporal confidence from the first post-restart report.
+    # First report after Agent recreation is context recovery only. Keep the
+    # N1-learned media context in RAM, but do not count this report toward
+    # pause/home hysteresis.
     pause_streak=0
     pause_miss=0
+    home_streak=0
     latched=none
     case "$combined" in
-        system_home|app_home) : ;;
+        system_home) : ;;
+        playing) candidate=playing_confirmed_context_recovered ;;
         *) combined=unknown; candidate=agent_process_restart_context_reset ;;
     esac
 fi
 
 if [ "$fresh" -eq 1 ]; then
     tmp="$STATE.$$"
-    printf '1|%s|%s|%s|%s|%s\n'         "$sig" "$seq" "$pause_streak" "$pause_miss" "$latched" > "$tmp"
+    printf '2|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s\n' \
+        "$sig" "$seq" "$pause_streak" "$pause_miss" "$latched" \
+        "$media_pkg" "$media_activity" "$home_streak" "$pkg" "$activity" > "$tmp"
     chmod 600 "$tmp"
     mv -f "$tmp" "$STATE"
 fi
