@@ -1,22 +1,24 @@
 #!/bin/sh
-# Bounded RAM-only shadow v2 ring. No quota, firewall or persistence writes.
-# Distinguishes new TV reports from repeated N1 samples of the same report.
+# Bounded RAM-only v0.2.7 fusion ring. No quota, firewall or persistence writes.
+# Distinguishes new TV reports from repeated N1 reads of the same report.
 set -eu
 PATH=/usr/sbin:/usr/bin:/sbin:/bin
 export PATH
 RAM=/var/run/tvguard-agent-bridge
-DATA="$RAM/soak-v2.csv"
+DATA="$RAM/soak-v3.csv"
 last_signature=''
 last_seq=''
+
 if [ -s "$DATA" ]; then
     last_line="$(tail -n 1 "$DATA" 2>/dev/null || :)"
-    last_seq="$(printf '%s\n' "$last_line" | awk -F, '{print $10}')"
-    last_recv="$(printf '%s\n' "$last_line" | awk -F, '{print $11}')"
+    last_seq="$(printf '%s\n' "$last_line" | awk -F, '{print $20}')"
+    last_recv="$(printf '%s\n' "$last_line" | awk -F, '{print $21}')"
     case "$last_seq:$last_recv" in
         *[!0-9:]*|:|*:) last_seq='' ;;
         *) last_signature="$last_seq:$last_recv" ;;
     esac
 fi
+
 trap 'exit 0' TERM INT
 
 while :; do
@@ -40,6 +42,7 @@ while :; do
                 *[!0-9:]*|:*|*:) : ;;
                 *) if [ "$fresh" -eq 1 ] && [ "$current_seq" -lt "$last_seq" ]; then restart=1; fi ;;
             esac
+
             fields="$(printf '%s\n' "$status" | awk -F= -v fresh="$fresh" -v restart="$restart" '
                 $1=="agent" {a=$2}
                 $1=="age_seconds" {age=$2}
@@ -49,18 +52,40 @@ while :; do
                 $1=="screen_on" {sc=$2}
                 $1=="network_pps" {pps=$2}
                 $1=="network_shadow" {sh=$2}
+                $1=="adaptive_state" {ast=$2}
+                $1=="adaptive_score" {asc=$2}
+                $1=="adaptive_reason" {ar=$2}
+                $1=="pause_hint" {ph=$2}
+                $1=="pause_score" {ps=$2}
+                $1=="adaptive_p50" {p50=$2}
+                $1=="adaptive_p90" {p90=$2}
+                $1=="adaptive_active_floor" {af=$2}
+                $1=="combined_state" {cs=$2}
                 $1=="combined_candidate" {can=$2}
+                $1=="fusion_pause_streak" {fs=$2}
                 $1=="report_seq" || $1=="last_report_seq" {seq=$2}
                 $1=="received_epoch" || $1=="last_received_epoch" {recv=$2}
                 END {
                     if (a=="online") {
                         if (fresh != 1) can="repeated_report_not_new_evidence"
                         else if (restart == 1) can="agent_process_restart_suspected"
-                        printf "%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s",
-                            age,p,c,au,sc,pps,sh,can,seq,recv,fresh
                     } else if (a=="stale") {
-                        printf "%s,unknown,unknown,unknown,unknown,unknown,unknown,agent_stale,%s,%s,0",
-                            age,seq,recv
+                        p=c=au=sc=pps=sh=ast=ar=ph=cs="unknown"
+                        asc=ps=p50=p90=af=fs=0
+                        can="agent_stale"
+                        fresh=0
+                    } else {
+                        exit
+                    }
+
+                    v[1]=age; v[2]=p; v[3]=c; v[4]=au; v[5]=sc
+                    v[6]=pps; v[7]=sh; v[8]=ast; v[9]=asc; v[10]=ar
+                    v[11]=ph; v[12]=ps; v[13]=p50; v[14]=p90; v[15]=af
+                    v[16]=cs; v[17]=can; v[18]=fs; v[19]=seq
+                    v[20]=recv; v[21]=fresh
+                    for (i=1;i<=21;i++) {
+                        if (i>1) printf ","
+                        printf "%s", v[i]
                     }
                 }
             ')"
@@ -72,8 +97,8 @@ while :; do
                 fi
                 lines="$(wc -l < "$DATA")"
                 if [ "$lines" -gt 180 ]; then
-                    tail -n 120 "$DATA" > "$RAM/soak-v2.tmp"
-                    mv -f "$RAM/soak-v2.tmp" "$DATA"
+                    tail -n 120 "$DATA" > "$RAM/soak-v3.tmp"
+                    mv -f "$RAM/soak-v3.tmp" "$DATA"
                 fi
             fi
         fi
