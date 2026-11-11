@@ -159,7 +159,7 @@ load_state() {
     fi
     case "$WATCH_S" in ''|*[!0-9]*) WATCH_S=0;; esac
     case "$PREV_WATCH_S" in ''|*[!0-9]*) PREV_WATCH_S=0;; esac
-    case "$PREV_DATE" in none|????-??-??) :;; *) PREV_DATE=none;; esac
+    case "$PREV_DATE" in none|[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]) :;; *) PREV_DATE=none;; esac
     case "$MODE" in child|parent|locked) :;; *) MODE=locked;; esac
     case "$BILLING_STATE" in charge|idle_verified|idle_grace|idle_silent) :;; *) BILLING_STATE=charge;; esac
     case "$IDLE_REASON" in none|system_home|idle|paused|app_home|adaptive|silent) :;; *) IDLE_REASON=none;; esac
