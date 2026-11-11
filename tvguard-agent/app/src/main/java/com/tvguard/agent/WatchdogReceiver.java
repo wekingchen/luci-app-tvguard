@@ -47,7 +47,12 @@ public final class WatchdogReceiver extends BroadcastReceiver {
             cancel(context);
             return;
         }
-        context.startService(new Intent(context, MonitorService.class));
+        // On this MiTV ROM a dead process is not recreated for this broadcast.
+        // When the process is already alive, avoid restarting an already-running
+        // service every 30 seconds; JobScheduler owns process-death recovery.
+        if (!MonitorService.isRunning()) {
+            context.startService(new Intent(context, MonitorService.class));
+        }
         schedule(context);
     }
 }
