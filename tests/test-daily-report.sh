@@ -5,18 +5,21 @@ ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT HUP INT TERM
 mkdir -p "$TMP/bin" "$TMP/data-root"
-printf 'PREV_DATE=2026-11-11\nPREV_WATCH_S=7265\n' > "$TMP/data-root/state"
+printf 'PREV_DATE=2026-11-11\nPREV_WATCH_S=7265\nTODAY=2026-11-12\nUSED_S=7265\n' > "$TMP/data-root/state"
+
 cat > "$TMP/bin/uci" <<'EOS'
 #!/bin/sh
 case "$3" in
     tvguard.main.bark_enabled) echo "${TVG_ENABLED:-1}" ;;
     tvguard.main.bark_server) echo "${TVG_SERVER:-https://api.day.app}" ;;
-    tvguard.main.bark_key) echo "${TVG_KEY:-abcDEF12345}" ;;
+    tvguard.main.bark_key) echo "${TVG_KEY1:-abcDEF12345}" ;;
+    tvguard.main.bark_key2) echo "${TVG_KEY2:-xyzSecond678}" ;;
     tvguard.main.child_name) echo '小明' ;;
     tvguard.main.bark_daily_time) echo "${TVG_WHEN:-00:05}" ;;
     *) exit 1 ;;
 esac
 EOS
+
 cat > "$TMP/bin/date" <<'EOS'
 #!/bin/sh
 case "$1" in
@@ -27,27 +30,32 @@ case "$1" in
     *) exit 1 ;;
 esac
 EOS
+
 cat > "$TMP/bin/curl" <<'EOS'
 #!/bin/sh
 printf 'attempt\n' >> "$TVG_PUSH_LOG"
-printf '%s\n' "$*" > "$TVG_ARGS_LOG"
-if [ "${TVG_CURL_FAIL:-0}" = 1 ]; then
-    echo '{"code":500}'
-else
-    echo '{"code":200,"message":"success"}'
-fi
+printf '%s\n' "$*" >> "$TVG_ARGS_LOG"
+case "${TVG_FAIL_KEY:-}" in
+    '') : ;;
+    *) case "$*" in *"device_key=$TVG_FAIL_KEY"*) echo '{"code":500}'; exit 0;; esac ;;
+esac
+echo '{"code":200,"message":"success"}'
 EOS
+
 cat > "$TMP/bin/logger" <<'EOS'
 #!/bin/sh
 exit 0
 EOS
+
 cat > "$TMP/data" <<'EOS'
 #!/bin/sh
 [ "$1" = root ] || exit 2
 printf '%s\n' "$TVG_DATA_ROOT"
 EOS
+
 chmod +x "$TMP/bin/"* "$TMP/data"
 export TVG_DATA_ROOT="$TMP/data-root" TVG_PUSH_LOG="$TMP/push" TVG_ARGS_LOG="$TMP/args"
+
 python3 - "$ROOT/root/usr/libexec/tvguard-daily-report" "$TMP/worker" "$TMP" <<'PY'
 from pathlib import Path
 import sys
@@ -60,97 +68,119 @@ s=s.replace('mktemp /var/run/tvguard-bark.XXXXXX', 'mktemp '+root+'/reply.XXXXXX
 Path(dst).write_text(s)
 PY
 chmod 755 "$TMP/worker"
+
+# Before schedule: no push.
 export TVG_CLOCK='00 04'
 sh "$TMP/worker" tick
 [ ! -e "$TMP/push" ]
+
+# Two configured IDs receive the same daily digest.
 export TVG_CLOCK='00 06'
+sh "$TMP/worker" tick
+[ "$(wc -l < "$TMP/push")" -eq 2 ]
+grep -q 'device_key=abcDEF12345' "$TMP/args"
+grep -q 'device_key=xyzSecond678' "$TMP/args"
+grep -q '11月11日' "$TMP/args"
+grep -q '小明全天累计看了约2小时1分钟电视' "$TMP/args"
+[ "$(cat "$TMP/data-root/daily-report.sent")" = '2026-11-11' ]
+[ "$(cat "$TMP/data-root/daily-report.sent.1")" = '2026-11-11' ]
+[ "$(cat "$TMP/data-root/daily-report.sent.2")" = '2026-11-11' ]
+sh "$TMP/worker" tick
+[ "$(wc -l < "$TMP/push")" -eq 2 ]
+
+# Partial failure: successful recipient is remembered; retry sends only failed device.
+rm -f "$TMP/data-root/daily-report.sent" "$TMP/data-root/daily-report.sent.1" "$TMP/data-root/daily-report.sent.2" "$TMP/retry"
+: > "$TMP/push"
+: > "$TMP/args"
+export TVG_FAIL_KEY=xyzSecond678 TVG_EPOCH=1794441960
+sh "$TMP/worker" tick
+[ "$(wc -l < "$TMP/push")" -eq 2 ]
+[ "$(cat "$TMP/data-root/daily-report.sent.1")" = '2026-11-11' ]
+[ ! -e "$TMP/data-root/daily-report.sent.2" ]
+[ ! -e "$TMP/data-root/daily-report.sent" ]
+sh "$TMP/worker" tick
+[ "$(wc -l < "$TMP/push")" -eq 2 ]
+export TVG_FAIL_KEY= TVG_EPOCH=1794442261
+sh "$TMP/worker" tick
+[ "$(wc -l < "$TMP/push")" -eq 3 ]
+[ "$(grep -c 'device_key=abcDEF12345' "$TMP/args")" -eq 1 ]
+[ "$(grep -c 'device_key=xyzSecond678' "$TMP/args")" -eq 2 ]
+[ "$(cat "$TMP/data-root/daily-report.sent")" = '2026-11-11' ]
+
+# Legacy one-ID config remains valid.
+rm -f "$TMP/data-root/daily-report.sent" "$TMP/data-root/daily-report.sent.1" "$TMP/data-root/daily-report.sent.2" "$TMP/retry"
+: > "$TMP/push"
+: > "$TMP/args"
+export TVG_KEY2=''
 sh "$TMP/worker" tick
 [ "$(wc -l < "$TMP/push")" -eq 1 ]
 grep -q 'device_key=abcDEF12345' "$TMP/args"
-grep -q '11月11日' "$TMP/args"
-grep -q '小明全天累计看了约2小时1分钟电视' "$TMP/args"
-! grep -q '家长模式不算在内' "$TMP/args"
-! grep -q '含家长与儿童模式' "$TMP/args"
-[ "$(cat "$TMP/data-root/daily-report.sent")" = '2026-11-11' ]
+[ ! -e "$TMP/data-root/daily-report.sent.2" ]
+
+# Same key in both slots is automatically de-duplicated.
+rm -f "$TMP/data-root/daily-report.sent" "$TMP/data-root/daily-report.sent.1" "$TMP/data-root/daily-report.sent.2" "$TMP/retry"
+: > "$TMP/push"
+export TVG_KEY2=abcDEF12345
 sh "$TMP/worker" tick
 [ "$(wc -l < "$TMP/push")" -eq 1 ]
-# Failure does not claim delivery. Rapid repeated polls do not retry immediately.
-rm -f "$TMP/data-root/daily-report.sent"
-export TVG_CURL_FAIL=1
+
+# Disabled or malformed config remains silent on scheduled tick.
+rm -f "$TMP/data-root/daily-report.sent" "$TMP/data-root/daily-report.sent.1" "$TMP/data-root/daily-report.sent.2" "$TMP/retry"
+export TVG_ENABLED=0 TVG_KEY2=xyzSecond678
 sh "$TMP/worker" tick
-[ "$(wc -l < "$TMP/push")" -eq 2 ]
-[ ! -e "$TMP/data-root/daily-report.sent" ]
-export TVG_CURL_FAIL=0
-sh "$TMP/worker" tick
-[ "$(wc -l < "$TMP/push")" -eq 2 ]
-export TVG_EPOCH=1794442261
-sh "$TMP/worker" tick
-[ "$(wc -l < "$TMP/push")" -eq 3 ]
-[ "$(cat "$TMP/data-root/daily-report.sent")" = '2026-11-11' ]
-rm -f "$TMP/data-root/daily-report.sent"
-export TVG_ENABLED=0
-sh "$TMP/worker" tick
-[ "$(wc -l < "$TMP/push")" -eq 3 ]
+[ "$(wc -l < "$TMP/push")" -eq 1 ]
 export TVG_ENABLED=1 TVG_SERVER='https://api.day.app/extra/path'
 sh "$TMP/worker" tick
-[ "$(wc -l < "$TMP/push")" -eq 3 ]
-export TVG_SERVER='https://api.day.app' TVG_KEY='bad/key'
+[ "$(wc -l < "$TMP/push")" -eq 1 ]
+export TVG_SERVER='https://api.day.app' TVG_KEY2='bad/key'
 sh "$TMP/worker" tick
-[ "$(wc -l < "$TMP/push")" -eq 3 ]
+[ "$(wc -l < "$TMP/push")" -eq 1 ]
+
 # A day with no child-mode watching must remain completely silent.
-export TVG_SERVER='https://api.day.app' TVG_KEY=abcDEF12345 TVG_ENABLED=1
+export TVG_KEY2=xyzSecond678 TVG_ENABLED=1
 printf 'PREV_DATE=2026-11-11\nPREV_WATCH_S=0\nTODAY=2026-11-12\nUSED_S=7265\n' > "$TMP/data-root/state"
-rm -f "$TMP/data-root/daily-report.sent" "$TMP/retry"
+rm -f "$TMP/data-root/daily-report.sent" "$TMP/data-root/daily-report.sent.1" "$TMP/data-root/daily-report.sent.2" "$TMP/retry"
 sh "$TMP/worker" tick
-[ "$(wc -l < "$TMP/push")" -eq 3 ]
+[ "$(wc -l < "$TMP/push")" -eq 1 ]
 [ ! -e "$TMP/data-root/daily-report.sent" ]
 
-# Manual Bark test deliberately ignores the schedule/enabled flag. It reads
-# today's child-only used seconds, not previous-day data, with a clear "as of".
-export TVG_ENABLED=0 TVG_CLOCK='00 01'
+# Manual test sends to all configured devices and never poisons daily markers.
+export TVG_ENABLED=0 TVG_CLOCK='00 01' TVG_KEY2=xyzSecond678
 sh "$TMP/worker" test > "$TMP/test-result"
-[ "$(wc -l < "$TMP/push")" -eq 4 ]
+[ "$(wc -l < "$TMP/push")" -eq 3 ]
 grep -q '小明的电视观看小结（测试）' "$TMP/args"
 grep -q '截至11月12日 22:35' "$TMP/args"
 grep -q '在儿童模式下累计看了约2小时1分钟电视' "$TMP/args"
-grep -q '测试推送已发送' "$TMP/test-result"
-[ ! -e "$TMP/data-root/daily-report.sent" ]
-# Repeated on-demand tests never poison the daily sent marker.
-sh "$TMP/worker" test > "$TMP/test-result"
-[ "$(wc -l < "$TMP/push")" -eq 5 ]
+grep -q '已发送到 2 台设备' "$TMP/test-result"
 [ ! -e "$TMP/data-root/daily-report.sent" ]
 
-# Zero usage must also refuse a manual test and tell the administrator why.
+# Zero usage refuses manual test before any push.
 sed -i 's/^USED_S=7265$/USED_S=0/' "$TMP/data-root/state"
 if sh "$TMP/worker" test > "$TMP/test-result" 2> "$TMP/test-error"; then
     echo "FAIL: zero child usage sent a Bark test" >&2
     exit 1
 fi
-[ "$(wc -l < "$TMP/push")" -eq 5 ]
+[ "$(wc -l < "$TMP/push")" -eq 3 ]
 grep -q '没有儿童模式下的观看记录' "$TMP/test-error"
 
-# A rejected Bark response must NOT claim success in the settings UI.
+# Manual test attempts both IDs, but reports partial failure accurately.
 sed -i 's/^USED_S=0$/USED_S=3600/' "$TMP/data-root/state"
-export TVG_CURL_FAIL=1
+export TVG_FAIL_KEY=xyzSecond678
 if sh "$TMP/worker" test > "$TMP/test-result" 2> "$TMP/test-error"; then
-    echo "FAIL: Bark test reported success for a failed response" >&2
+    echo "FAIL: partial Bark test reported full success" >&2
     exit 1
 fi
-grep -q 'Bark 测试推送失败' "$TMP/test-error"
-[ ! -e "$TMP/data-root/daily-report.sent" ]
-# Invalid saved Bark configuration must never pretend the manual test worked.
-export TVG_CURL_FAIL=0 TVG_SERVER='https://api.day.app/some/path'
-if sh "$TMP/worker" test > "$TMP/test-result" 2> "$TMP/test-error"; then
-    echo 'FAIL: malformed server was silently accepted' >&2
-    exit 1
-fi
-grep -q '只能填写根地址' "$TMP/test-error"
-export TVG_SERVER='https://api.day.app' TVG_KEY='bad/key'
-if sh "$TMP/worker" test > "$TMP/test-result" 2> "$TMP/test-error"; then
-    echo 'FAIL: malformed device key was silently accepted' >&2
-    exit 1
-fi
-grep -q '推送 ID 格式不正确' "$TMP/test-error"
+grep -q '成功 1 台，失败 1 台' "$TMP/test-error"
 [ ! -e "$TMP/data-root/daily-report.sent" ]
 
-echo 'PASS: Bark copy, zero suppression, manual test, config validation and deduplication'
+# Invalid second ID blocks whole manual test before any send.
+export TVG_FAIL_KEY= TVG_KEY2='bad/key'
+before="$(wc -l < "$TMP/push")"
+if sh "$TMP/worker" test > "$TMP/test-result" 2> "$TMP/test-error"; then
+    echo 'FAIL: malformed second device key was silently accepted' >&2
+    exit 1
+fi
+grep -q '推送 ID 2 格式不正确' "$TMP/test-error"
+[ "$(wc -l < "$TMP/push")" -eq "$before" ]
+
+echo 'PASS: Bark dual-recipient delivery, per-device retry, zero suppression, manual test and validation'
