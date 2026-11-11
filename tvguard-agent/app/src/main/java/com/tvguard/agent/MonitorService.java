@@ -1,8 +1,6 @@
 package com.tvguard.agent;
 
 import android.app.AppOpsManager;
-import android.app.Notification;
-import android.app.PendingIntent;
 import android.media.AudioManager;
 import android.os.PowerManager;
 import android.app.Service;
@@ -23,9 +21,9 @@ import android.os.Process;
 public final class MonitorService extends Service {
     private static final long SAMPLE_INTERVAL_MS = 5000L;
     private static final long REPORT_INTERVAL_MS = 10000L;
-    private static final int NOTIFICATION_ID = 1001;
     private static final int MAX_EVENTS_PER_POLL = 4096;
     private static volatile Snapshot latest = Snapshot.empty("未启动");
+    private static volatile boolean running;
     private HandlerThread worker;
     private Handler handler;
     private HandlerThread reportWorker;
@@ -73,6 +71,10 @@ public final class MonitorService extends Service {
         return latest;
     }
 
+    static boolean isRunning() {
+        return running;
+    }
+
     public static boolean isEnabled(Context context) {
         return context.getSharedPreferences("control", Context.MODE_PRIVATE)
                 .getBoolean("enabled", false);
@@ -107,6 +109,7 @@ public final class MonitorService extends Service {
     @Override
     public void onCreate() {
         super.onCreate();
+        running = true;
         worker = new HandlerThread("tvguard-observe", Process.THREAD_PRIORITY_BACKGROUND);
         worker.start();
         handler = new Handler(worker.getLooper());
@@ -126,21 +129,9 @@ public final class MonitorService extends Service {
             stopSelf();
             return START_NOT_STICKY;
         }
-        // The user explicitly enabled monitoring. A standard visible foreground
-        // notification lowers background eviction risk without hidden keep-alive.
-        // Android/vendor policy can still terminate the process.
-        Intent openApp = new Intent(this, MainActivity.class);
-        PendingIntent open = PendingIntent.getActivity(this, 0, openApp,
-                PendingIntent.FLAG_UPDATE_CURRENT);
-        Notification notification = new Notification.Builder(this)
-                .setSmallIcon(android.R.drawable.ic_menu_info_details)
-                .setContentTitle("TVGuard 助手")
-                .setContentText("前台应用监测中 · 无运行日志")
-                .setContentIntent(open)
-                .setOngoing(true)
-                .setPriority(Notification.PRIORITY_MIN)
-                .build();
-        startForeground(NOTIFICATION_ID, notification);
+        // MiTV Android 6 explicitly rejects promotion of this third-party
+        // service to foreground. Recovery is therefore owned by JobScheduler,
+        // not by repeated foreground-service promotion attempts.
         WatchdogReceiver.schedule(this);
         RecoveryScheduler.ensureScheduled(this);
         return START_STICKY;
@@ -286,7 +277,7 @@ public final class MonitorService extends Service {
 
     @Override
     public void onDestroy() {
-        stopForeground(true);
+        running = false;
         if (handler != null) {
             handler.removeCallbacksAndMessages(null);
             handler = null;
