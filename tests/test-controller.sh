@@ -853,6 +853,8 @@ export TVGUARD_TEST_DATA_MODE=persistent
 status
 check 'assert s["mode"]=="parent" and s["parent_until"]==0, s'
 grep -qx 'MODE=parent' "$TMP/state/state"
+# status only reads durable state; recreate the active runtime before editing.
+sh "$CTL" sync
 
 # The global daily viewing estimate grows in parent mode without using quota.
 export TVGUARD_TEST_AGENT_BILLING=charge
