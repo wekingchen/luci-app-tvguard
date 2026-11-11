@@ -30,11 +30,12 @@ for forbidden in ("com.gitvdemo.video", "com.ktcp.video", "com.hunantv.license",
                   "com.bilibili.tv"):
     assert forbidden not in history
 assert "isVideoPackage" not in history
-assert "不维护视频 App 白名单" in main_activity
 assert "startForeground(" not in service
 assert "stopForeground(" not in service
 assert "static boolean isRunning()" in service
 main_activity = (src / "java/com/tvguard/agent/MainActivity.java").read_text()
+assert "不维护视频 App 白名单" in main_activity
+assert "isVideoPackage" not in main_activity
 assert "if (MonitorService.isEnabled(this))" in main_activity
 assert "startService(new Intent(this, MonitorService.class))" in main_activity
 assert '事件超限，前台待确认' in service
