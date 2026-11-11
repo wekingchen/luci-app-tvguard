@@ -56,9 +56,16 @@ fi
 cleanup() { rmdir "$LOCK" 2>/dev/null || :; }
 trap cleanup EXIT HUP INT TERM
 
-# schema v2:
+# schema v3:
 # schema|last_sig|last_seq|pause_streak|pause_miss|latched|
-# learned_media_pkg|learned_media_activity|home_streak|last_pkg|last_activity
+# learned_media_pkg|learned_media_activity|home_streak|last_pkg|last_activity|
+# last_strong_seen|burst_gap_max|burst_hits
+#
+# burst_* is generic temporal evidence. It learns the cadence of repeated
+# strong-play confirmations in the SAME foreground context. Low-bitrate
+# streaming commonly alternates long low-PPS valleys with periodic download
+# bursts; those valleys must not become "paused" merely because an old pause
+# prototype also looks bursty.
 schema=0
 last_sig=''
 last_seq=0
@@ -70,22 +77,30 @@ media_activity=''
 home_streak=0
 last_pkg=''
 last_activity=''
+last_strong_seen=0
+burst_gap_max=0
+burst_hits=0
 extra=''
 if [ -r "$STATE" ]; then
     oldIFS="$IFS"
     IFS='|'
     read -r schema last_sig last_seq pause_streak pause_miss latched \
-        media_pkg media_activity home_streak last_pkg last_activity extra < "$STATE" || :
+        media_pkg media_activity home_streak last_pkg last_activity \
+        last_strong_seen burst_gap_max burst_hits extra < "$STATE" || :
     IFS="$oldIFS"
-    if [ "$schema" != 2 ]; then
+    if [ "$schema" != 3 ]; then
         last_sig=''; last_seq=0; pause_streak=0; pause_miss=0; latched=none
         media_pkg=''; media_activity=''; home_streak=0
         last_pkg=''; last_activity=''
+        last_strong_seen=0; burst_gap_max=0; burst_hits=0
     fi
     case "$last_seq" in ''|*[!0-9]*) last_seq=0 ;; esac
     case "$pause_streak" in ''|*[!0-9]*) pause_streak=0 ;; esac
     case "$pause_miss" in ''|*[!0-9]*) pause_miss=0 ;; esac
     case "$home_streak" in ''|*[!0-9]*) home_streak=0 ;; esac
+    case "$last_strong_seen" in ''|*[!0-9]*) last_strong_seen=0 ;; esac
+    case "$burst_gap_max" in ''|*[!0-9]*) burst_gap_max=0 ;; esac
+    case "$burst_hits" in ''|*[!0-9]*) burst_hits=0 ;; esac
     case "$latched" in none|paused) : ;; *) latched=none ;; esac
 fi
 
@@ -108,6 +123,11 @@ if [ "$pkg" != "$last_pkg" ] || [ "$activity" != "$last_activity" ]; then
     pause_miss=0
     home_streak=0
     latched=none
+    # Burst cadence belongs to one exact foreground context. Never transfer it
+    # to another Activity/package.
+    last_strong_seen=0
+    burst_gap_max=0
+    burst_hits=0
 fi
 
 is_launcher=0
@@ -150,6 +170,26 @@ if [ -n "$media_pkg" ] && [ "$pkg" = "$media_pkg" ]; then
     fi
 fi
 
+# Generic low-bitrate burst guard.
+#
+# Bootstrap: after one unequivocal play sample, suppress pause votes for 45 s.
+# Once repeated strong-play samples establish a cadence (gap 10..90 s), learn
+# the largest observed gap and guard for gap+20 s, bounded to 45..90 s.
+# This intentionally biases toward P0: unknown/charged is safer than granting
+# paused/free time to real low-bitrate playback. It is shadow-only today.
+burst_guard=0
+burst_guard_window=45
+if [ "$burst_hits" -ge 2 ] && [ "$burst_gap_max" -gt 0 ]; then
+    burst_guard_window=$((burst_gap_max + 20))
+    [ "$burst_guard_window" -ge 45 ] || burst_guard_window=45
+    [ "$burst_guard_window" -le 90 ] || burst_guard_window=90
+fi
+if [ "$known_media_context" -eq 1 ] && [ "$last_strong_seen" -gt 0 ] &&
+   [ "$now" -ge "$last_strong_seen" ] &&
+   [ $((now - last_strong_seen)) -le "$burst_guard_window" ]; then
+    burst_guard=1
+fi
+
 combined=unknown
 candidate=unknown
 
@@ -181,6 +221,22 @@ elif [ "$pkg" = unknown ] || [ "$activity" = unknown ] ||
 elif [ "$strong_play" -eq 1 ]; then
     # Generic self-learning rule: current package/activity becomes a learned
     # media context only after N1 itself has strong playback evidence.
+    if [ "$known_media_context" -eq 1 ] && [ "$last_strong_seen" -gt 0 ] &&
+       [ "$now" -gt "$last_strong_seen" ]; then
+        gap=$((now - last_strong_seen))
+        if [ "$gap" -ge 10 ] && [ "$gap" -le 90 ]; then
+            burst_hits=$((burst_hits + 1))
+            [ "$gap" -le "$burst_gap_max" ] || burst_gap_max="$gap"
+        else
+            burst_hits=1
+            burst_gap_max=0
+        fi
+    else
+        burst_hits=1
+        burst_gap_max=0
+    fi
+    last_strong_seen="$now"
+
     media_pkg="$pkg"
     media_activity="$activity"
     known_media_package=1
@@ -194,7 +250,18 @@ elif [ "$strong_play" -eq 1 ]; then
 
 elif [ "$known_media_context" -eq 1 ]; then
     home_streak=0
-    if [ "$pause_evidence" -eq 1 ]; then
+
+    if [ "$burst_guard" -eq 1 ]; then
+        # Critical P0 rule: pause prototypes are allowed to overlap a periodic
+        # low-bitrate download valley. Recent repeated strong-play evidence wins
+        # until the learned burst cadence has actually been missed.
+        combined=unknown
+        candidate=recent_play_burst_guard
+        pause_streak=0
+        pause_miss=0
+        latched=none
+
+    elif [ "$pause_evidence" -eq 1 ]; then
         if [ "$fresh" -eq 1 ]; then
             pause_streak=$((pause_streak + 1))
             pause_miss=0
@@ -207,6 +274,7 @@ elif [ "$known_media_context" -eq 1 ]; then
             combined=unknown
             candidate=pause_candidate_learned_context
         fi
+
     elif [ "$latched" = paused ]; then
         if [ "$fresh" -eq 1 ]; then pause_miss=$((pause_miss + 1)); fi
         if [ "$pause_miss" -le 1 ]; then
@@ -219,6 +287,7 @@ elif [ "$known_media_context" -eq 1 ]; then
             combined=unknown
             candidate=learned_media_context_unresolved
         fi
+
     else
         if [ "$fresh" -eq 1 ]; then
             pause_streak=0
@@ -226,8 +295,6 @@ elif [ "$known_media_context" -eq 1 ]; then
         fi
         combined=unknown
         if [ "$pause_hint" = idle_overlap ]; then
-            # P0 invariant: stable low traffic inside a learned playback
-            # context is NOT enough to grant paused/free time.
             candidate=learned_media_idle_overlap_unresolved
         elif [ "$audio" -eq 1 ]; then
             candidate=learned_media_context_audio_hint_on
@@ -237,8 +304,6 @@ elif [ "$known_media_context" -eq 1 ]; then
     fi
 
 elif [ "$known_media_package" -eq 1 ]; then
-    # Same app package, but a different Activity from the context that was
-    # actually proven to play. This is the generic app-side non-playing path.
     pause_streak=0
     pause_miss=0
     latched=none
@@ -262,8 +327,6 @@ elif [ "$known_media_package" -eq 1 ]; then
     fi
 
 else
-    # Before this package has ever produced strong playback evidence, do not
-    # guess that it is a video app merely from its name or Activity spelling.
     pause_streak=0
     pause_miss=0
     home_streak=0
@@ -277,9 +340,6 @@ else
 fi
 
 if [ "$restart" -eq 1 ]; then
-    # First report after Agent recreation is context recovery only. Keep the
-    # N1-learned media context in RAM, but do not count this report toward
-    # pause/home hysteresis.
     pause_streak=0
     pause_miss=0
     home_streak=0
@@ -293,9 +353,10 @@ fi
 
 if [ "$fresh" -eq 1 ]; then
     tmp="$STATE.$$"
-    printf '2|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s\n' \
+    printf '3|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s\n' \
         "$sig" "$seq" "$pause_streak" "$pause_miss" "$latched" \
-        "$media_pkg" "$media_activity" "$home_streak" "$pkg" "$activity" > "$tmp"
+        "$media_pkg" "$media_activity" "$home_streak" "$pkg" "$activity" \
+        "$last_strong_seen" "$burst_gap_max" "$burst_hits" > "$tmp"
     chmod 600 "$tmp"
     mv -f "$tmp" "$STATE"
 fi
