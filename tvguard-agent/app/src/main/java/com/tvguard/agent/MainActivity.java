@@ -57,7 +57,7 @@ public final class MainActivity extends Activity {
         panel.setPadding(36, 30, 36, 30);
         scroller.addView(panel);
         addText(panel, "TVGuard 助手 · 0.2.8", 27, 0xFFFFFFFF);
-        addText(panel, "Android 6 视频 App 页面观察验证版", 17, 0xFFB8C9D5);
+        addText(panel, "Android 6 前台上下文观察验证版", 17, 0xFFB8C9D5);
         toggle = new Button(this);
         toggle.setAllCaps(false);
         toggle.setTextSize(18);
