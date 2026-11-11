@@ -13,6 +13,8 @@ assert 'agent-bridge.key' in cgi
 assert '>>' not in cgi  # ingress keeps only the atomic latest report
 assert 'USED_S' not in cgi and 'iptables' not in cgi
 assert 'billing_effect=none' in report
+assert 'summary)' in report and 'fresh_reports=' in report
+assert 'combined_paused=' in report and 'billing_effect=none' in report
 assert 'luci-app-tvguard' not in ipk
 postinst=(p/'ipkg/postinst').read_text()
 assert 'od -An' not in postinst
