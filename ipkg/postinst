@@ -1,7 +1,7 @@
 #!/bin/sh
 [ -n "$IPKG_INSTROOT" ] && exit 0
 
-for path in /etc/init.d/tvguard /usr/libexec/tvguardctl /usr/libexec/tvguardd /usr/libexec/tvguard-status /usr/libexec/tvguard-fw /usr/libexec/tvguard-firewall-include /usr/libexec/tvguard-isolation-audit /usr/libexec/tvguard-compat-check /usr/libexec/tvguard-shadow /usr/libexec/tvguard-learn /usr/libexec/tvguard-adaptive /usr/libexec/tvguard-retention /usr/libexec/tvguard-data; do
+for path in /etc/init.d/tvguard /usr/libexec/tvguardctl /usr/libexec/tvguardd /usr/libexec/tvguard-status /usr/libexec/tvguard-fw /usr/libexec/tvguard-firewall-include /usr/libexec/tvguard-isolation-audit /usr/libexec/tvguard-compat-check /usr/libexec/tvguard-shadow /usr/libexec/tvguard-learn /usr/libexec/tvguard-adaptive /usr/libexec/tvguard-retention /usr/libexec/tvguard-data /usr/libexec/tvguard-daily-report; do
     chmod 755 "$path" 2>/dev/null || :
 done
 
