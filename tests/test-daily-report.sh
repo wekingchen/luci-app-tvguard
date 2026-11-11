@@ -23,6 +23,7 @@ case "$1" in
     '+%H %M') echo "${TVG_CLOCK:-00 06}" ;;
     +%Y-%m-%d) echo '2026-11-12' ;;
     +%s) echo "${TVG_EPOCH:-1794441960}" ;;
+    +%H:%M) echo '22:35' ;;
     *) exit 1 ;;
 esac
 EOS
@@ -67,8 +68,8 @@ sh "$TMP/worker" tick
 [ "$(wc -l < "$TMP/push")" -eq 1 ]
 grep -q 'device_key=abcDEF12345' "$TMP/args"
 grep -q '11月11日' "$TMP/args"
-grep -q '儿童模式下累计看了约2小时1分钟电视' "$TMP/args"
-grep -q '家长模式不算在内' "$TMP/args"
+grep -q '小明全天累计看了约2小时1分钟电视' "$TMP/args"
+! grep -q '家长模式不算在内' "$TMP/args"
 ! grep -q '含家长与儿童模式' "$TMP/args"
 [ "$(cat "$TMP/data-root/daily-report.sent")" = '2026-11-11' ]
 sh "$TMP/worker" tick
@@ -96,4 +97,45 @@ sh "$TMP/worker" tick
 export TVG_SERVER='https://api.day.app' TVG_KEY='bad/key'
 sh "$TMP/worker" tick
 [ "$(wc -l < "$TMP/push")" -eq 3 ]
-echo 'PASS: previous-day Bark delivery, retry, deduplication, schedule and input guards'
+# A day with no child-mode watching must remain completely silent.
+export TVG_SERVER='https://api.day.app' TVG_KEY=abcDEF12345 TVG_ENABLED=1
+printf 'PREV_DATE=2026-11-11\nPREV_WATCH_S=0\nTODAY=2026-11-12\nUSED_S=7265\n' > "$TMP/data-root/state"
+rm -f "$TMP/data-root/daily-report.sent" "$TMP/retry"
+sh "$TMP/worker" tick
+[ "$(wc -l < "$TMP/push")" -eq 3 ]
+[ ! -e "$TMP/data-root/daily-report.sent" ]
+
+# Manual Bark test deliberately ignores the schedule/enabled flag. It reads
+# today's child-only used seconds, not previous-day data, with a clear "as of".
+export TVG_ENABLED=0 TVG_CLOCK='00 01'
+sh "$TMP/worker" test > "$TMP/test-result"
+[ "$(wc -l < "$TMP/push")" -eq 4 ]
+grep -q '小明的电视观看小结（测试）' "$TMP/args"
+grep -q '截至11月12日 22:35' "$TMP/args"
+grep -q '在儿童模式下累计看了约2小时1分钟电视' "$TMP/args"
+grep -q '测试推送已发送' "$TMP/test-result"
+[ ! -e "$TMP/data-root/daily-report.sent" ]
+# Repeated on-demand tests never poison the daily sent marker.
+sh "$TMP/worker" test > "$TMP/test-result"
+[ "$(wc -l < "$TMP/push")" -eq 5 ]
+[ ! -e "$TMP/data-root/daily-report.sent" ]
+
+# Zero usage must also refuse a manual test and tell the administrator why.
+sed -i 's/^USED_S=7265$/USED_S=0/' "$TMP/data-root/state"
+if sh "$TMP/worker" test > "$TMP/test-result" 2> "$TMP/test-error"; then
+    echo "FAIL: zero child usage sent a Bark test" >&2
+    exit 1
+fi
+[ "$(wc -l < "$TMP/push")" -eq 5 ]
+grep -q '没有儿童模式下的观看记录' "$TMP/test-error"
+
+# A rejected Bark response must NOT claim success in the settings UI.
+sed -i 's/^USED_S=0$/USED_S=3600/' "$TMP/data-root/state"
+export TVG_CURL_FAIL=1
+if sh "$TMP/worker" test > "$TMP/test-result" 2> "$TMP/test-error"; then
+    echo "FAIL: Bark test reported success for a failed response" >&2
+    exit 1
+fi
+grep -q 'Bark 测试推送失败' "$TMP/test-error"
+[ ! -e "$TMP/data-root/daily-report.sent" ]
+echo 'PASS: concise Bark daily, zero suppression, latest test sample, retries and deduplication'
