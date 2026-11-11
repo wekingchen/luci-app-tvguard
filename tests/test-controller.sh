@@ -292,7 +292,7 @@ echo '1500 240000 170 27000 1280 193000' > "$TMP/sample"
 sh "$CTL" tick
 status
 check 'assert s["used_seconds"] >= 9 and s["used_seconds"] <= 11, s'
-check 'assert s["watch_seconds"] >= s["used_seconds"] and s["previous_day_date"] == "none", s'
+check 'assert s["watch_seconds"] == s["used_seconds"] and s["previous_day_date"] == "none", s'
 check 'assert s["pps"] > 0 and s["tcp_pps"] > 0 and s["udp_pps"] > 0, s'
 check 'assert s["traffic_class"] in ("high_traffic","medium_traffic","low_traffic")'
 check 'assert s["calibration_label"] == "playing" and s["calibration_app"] == "tencent" and s["calibration_session"] != "none"'
@@ -856,7 +856,7 @@ grep -qx 'MODE=parent' "$TMP/state/state"
 # status only reads durable state; recreate the active runtime before editing.
 sh "$CTL" sync
 
-# The global daily viewing estimate grows in parent mode without using quota.
+# Parent mode must leave child viewing and child quota unchanged.
 export TVGUARD_TEST_AGENT_BILLING=charge
 set -- $(sh "$CTL" status | python3 -c 'import json,sys; s=json.load(sys.stdin);print(s["used_seconds"],s["watch_seconds"])')
 old_child="$1"; old_watch="$2"
@@ -872,9 +872,9 @@ echo "$(($1+500)) $(($2+100000)) $(($3+250)) $(($4+50000)) $(($5+250)) $(($6+500
 sh "$CTL" tick
 set -- $(sh "$CTL" status | python3 -c 'import json,sys; s=json.load(sys.stdin);print(s["used_seconds"],s["watch_seconds"])')
 [ "$1" -eq "$old_child" ]
-[ "$2" -ge "$((old_watch+9))" ] && [ "$2" -le "$((old_watch+11))" ]
+[ "$2" -eq "$old_watch" ]
 
-# The current Agent home exemption applies to the independent counter too.
+# The current Agent home exemption applies to the child-mode counter too.
 old_watch="$2"
 export TVGUARD_TEST_AGENT_BILLING=app_home
 python3 - "$TMP/run/runtime" <<'PY'
@@ -891,7 +891,31 @@ status
 check 'assert s["billing_state"]=="idle_verified" and s["idle_reason"]=="app_home",s'
 [ "$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["watch_seconds"])' "$TMP/status.json")" -eq "$old_watch" ]
 
-# Day boundary preserves the finished day and resets only today's aggregate.
+# Observation mode: keep counting when child usage already exceeds quota.
+sh "$CTL" mode child
+export TVGUARD_TEST_AGENT_BILLING=charge
+quota="$(sh "$CTL" status | python3 -c 'import json,sys;print(json.load(sys.stdin)["quota_seconds"])')"
+python3 - "$TMP/run/runtime" "$quota" <<'PY'
+from pathlib import Path
+import sys,time
+p=Path(sys.argv[1])
+quota=int(sys.argv[2])
+lines=p.read_text().splitlines()
+out=[]
+for x in lines:
+    if x.startswith('LAST_EPOCH='): x='LAST_EPOCH='+str(int(time.time())-10)
+    if x.startswith('USED_S='): x='USED_S='+str(quota+120)
+    if x.startswith('WATCH_S='): x='WATCH_S='+str(quota+120)
+    out.append(x)
+p.write_text('\n'.join(out)+'\n')
+PY
+set -- $(cat "$TMP/sample")
+echo "$(($1+500)) $(($2+100000)) $(($3+250)) $(($4+50000)) $(($5+250)) $(($6+50000))" > "$TMP/sample"
+sh "$CTL" tick
+status
+check 'assert s["enforce"]==0 and s["used_seconds"]>s["quota_seconds"] and s["watch_seconds"]==s["used_seconds"],s'
+
+# Day boundary archives only child-mode viewing and resets today's total.
 python3 - "$TMP/run/runtime" <<'PY'
 from pathlib import Path
 import sys
@@ -901,6 +925,7 @@ out=[]
 for x in lines:
     if x.startswith('TODAY='): x='TODAY=2026-11-10'
     if x.startswith('WATCH_S='): x='WATCH_S=1234'
+    if x.startswith('USED_S='): x='USED_S=1234'
     out.append(x)
 p.write_text('\n'.join(out)+'\n')
 PY
@@ -908,4 +933,24 @@ sh "$CTL" sync
 status
 check 'assert s["watch_seconds"]==0 and s["previous_day_date"]=="2026-11-10" and s["previous_day_seconds"]==1234,s'
 
-echo "PASS: modes, billing, telemetry, calibration, data-root switching and two-key enforcement safety"
+# Older r18 all-mode summaries must not be mistaken for child-only viewing.
+python3 - "$TMP/run/runtime" <<'PY'
+from pathlib import Path
+import sys
+p=Path(sys.argv[1])
+lines=p.read_text().splitlines()
+out=[]
+for x in lines:
+    if x.startswith('WATCH_SCOPE='): x='WATCH_SCOPE=legacy'
+    if x.startswith('WATCH_S='): x='WATCH_S=9999'
+    if x.startswith('USED_S='): x='USED_S=125'
+    if x.startswith('PREV_DATE='): x='PREV_DATE=2026-11-09'
+    if x.startswith('PREV_WATCH_S='): x='PREV_WATCH_S=9999'
+    out.append(x)
+p.write_text('\n'.join(out)+'\n')
+PY
+sh "$CTL" sync
+status
+check 'assert s["watch_seconds"]==125 and s["used_seconds"]==125 and s["previous_day_date"]=="none" and s["previous_day_seconds"]==0,s'
+
+echo "PASS: child-only watching, over-quota observation, rollover, migration and enforcement safety"
