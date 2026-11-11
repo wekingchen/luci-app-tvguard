@@ -15,9 +15,9 @@
 
 ## 安装 / 验证
 
-到 GitHub Actions 的 TVGuard Agent Android 6 build 工作流下载 Debug APK。首次在电视开启 ADB 并连接（当前电视 IP 以实际为准），Windows 平台执行：
+到 GitHub Actions 的 TVGuard Agent Android 6 build 工作流下载固定 Release 签名 APK。首次安装旧 Debug 签名切换到永久 Release 签名时可能需要卸载一次；从永久签名版开始后续均使用 `adb install -r` 覆盖。首次在电视开启 ADB 并连接（当前电视 IP 以实际为准），Windows 平台执行：
 
-    adb install -r tvguard-agent-app-debug.apk
+    adb install -r app-release.apk
     adb shell appops set com.tvguard.agent GET_USAGE_STATS allow
     adb shell appops get com.tvguard.agent GET_USAGE_STATS
 
@@ -114,30 +114,32 @@ v0.2.5 使用两条互相独立的恢复链：
 如果厂商连 persisted JobScheduler 也压制，Agent 仍可能冷开机后离线；此时 N1 原 Adaptive Engine 继续独立工作并按网络证据计时，不把 Agent 缺席当成免计时条件。Android force-stop 仍按平台规则取消后台恢复，需要用户再次打开 App，这个边界保持不变。
 
 
-## v0.2.6 · 小米后台杀进程后的快速系统恢复
+## v0.2.6 / r2 · 小米后台杀进程后的快速系统恢复
 
-v0.2.5 真机日志确认：MiTV Android 6 ROM 会主动执行 `try to kill` 结束
-`com.tvguard.agent`，并明确拒绝 `MonitorService` 升级为 foreground，也拒绝普通
-Service 的自动重启；当进程已经死亡时，30 秒 Alarm broadcast 也可能被 ROM 直接忽略。
-与此同时，`RecoveryJobService` 已被真机证明能够由 system_server 重新创建 Agent 进程。
+真机日志已经把三条路径区分清楚：
 
-因此 v0.2.6 不再把 foreground promotion 或 Alarm 当成主保活路径：
+- MiTV ROM 会主动 `kill background` 结束 `com.tvguard.agent`，并拒绝普通 Service 自动重启；
+- 30 秒 Alarm 的 Broadcast 路径被拒绝；
+- v0.2.6 的 `PendingIntent.getService()` 也在真机明确出现
+  `ignore start service ... from alarm pending intent`，因此 AlarmManager 不能承担快速恢复；
+- `RecoveryJobService` 能由 system_server 重新创建整个 Agent 进程，是真机唯一已验证可靠的恢复入口。
 
-- `MonitorService` 不再调用 `startForeground()`，避免 ROM 每次 watchdog 触发时产生无效的
-  `become forceground` 尝试。
-- `WatchdogReceiver` 保留为进程仍存活时的辅助恢复，但 Service 已运行时不再每 30 秒重复
-  `startService()`。
-- 30 秒非唤醒 watchdog 不再使用 `PendingIntent.getBroadcast()`，而改成
-  **`PendingIntent.getService()` 直接指向 `MonitorService`**。真机日志已经证明 MiTV
-  会拒绝“死进程由 broadcast 拉起”，因此直接 Service PendingIntent 才是本轮真正要验证的
-  快速恢复路径。
-- `RecoveryScheduler` 继续保留 **15 分钟 persisted periodic Job（7025）**，仅作为
-  BOOT_COMPLETED 被厂商压制、Alarm 链在重启后丢失时的低频兜底，不参与 30 秒运行时保活。
-- 不引入 20–30 秒 JobScheduler 自续约链，避免旧 Android 上高频 `schedule()` 的额外成本，
-  也避免频繁持久 JobStore 写入。
-- 仍不写运行日志、数据库、流量历史或离线队列；N1 bridge 继续 shadow-only，
-  Agent 缺席时不得改变原 Adaptive Engine 的独立计时行为。
+因此 r2 最终采用两层 JobScheduler：
 
-真机目标不是宣称“永不被杀”，而是把普通 ROM 后台回收造成的 stale 空窗从 v0.2.5
-实测最坏约 54 秒压缩到约 30 秒量级。实际时延仍必须在 MiTV4-ANSM0 上重新验收；
-如果厂商同样压制直接 Service PendingIntent，则会退回 15 分钟 JobScheduler 兜底，不能提前宣称已解决。
+- **快速恢复：** 7026 / 7027 两个 `setPersisted(false)` one-shot Job 交替续约，
+  `setMinimumLatency(20s)` + `setOverrideDeadline(30s)`。每次 Job 运行时先安排另一个
+  Job ID，再检查 `MonitorService`，避免当前 Job 用同 ID 覆盖自己。
+- **跨重启兜底：** 7025 保持 15 分钟 `setPersisted(true)` periodic Job，只负责设备重启后
+  BOOT_COMPLETED 被厂商压制时重新种下快速链。
+- **AlarmManager watchdog 已彻底移除。**
+
+存储约束仍保持：Android AOSP 的 JobStore 只有 `JobInfo.isPersisted()==true` 才触发
+JobStore 写盘，因此 20–30 秒 fast Job 链不会成为每轮一次的持久磁盘写入；电视端仍不创建
+运行日志、SQLite、缓存、流量历史或离线队列。15 分钟 persisted fallback 是唯一持久系统 Job。
+
+固定 Release 签名继续使用 v0.2.6 已建立的永久证书；r2 提升 `versionCode=9`，可直接
+`adb install -r` 覆盖永久签名的 v0.2.6。
+
+上线判定仍以 MiTV4-ANSM0 真机为准：模拟器要求后台 `am kill` 后不打开 UI，45 秒内由
+JobScheduler 恢复 `MonitorService`；真机还必须再次验证 stale 空窗是否稳定压缩到约
+30–45 秒。通过前不进入 v0.2.7 的 paused 状态融合。
