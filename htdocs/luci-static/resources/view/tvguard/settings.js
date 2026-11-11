@@ -101,6 +101,7 @@ return view.extend({
         o = report.option(form.Value, 'child_name', '孩子称呼');
         o.rmempty = false;
         o.placeholder = '孩子';
+        o.default = '孩子';
         o.validate = validateChildName;
         o.description = '仅用于推送标题，例如“小明的电视观看日报”。';
 
@@ -112,6 +113,7 @@ return view.extend({
         o = report.option(form.Value, 'bark_server', 'Bark 服务器地址');
         o.rmempty = false;
         o.placeholder = 'https://api.day.app';
+        o.default = 'https://api.day.app';
         o.validate = validateServer;
         o.description = '官方服务器或自建 Bark 服务根地址。公网推荐 HTTPS；HTTP 会明文传输推送 ID。';
 
@@ -124,6 +126,7 @@ return view.extend({
         o = report.option(form.Value, 'bark_daily_time', '每日推送时间');
         o.rmempty = false;
         o.placeholder = '00:05';
+        o.default = '00:05';
         o.validate = validateTime;
         o.description = 'N1 路由器本地时间，默认次日 00:05 发送昨天的完整观看估算。';
 
