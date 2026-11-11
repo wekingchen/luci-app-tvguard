@@ -84,8 +84,13 @@ public final class MonitorService extends Service {
                         .edit().putBoolean("enabled", enabled);
         boolean saved = editor.commit(); // One tiny write only on explicit user action.
         if (saved) {
-            if (enabled) WatchdogReceiver.schedule(context);
-            else WatchdogReceiver.cancel(context);
+            if (enabled) {
+                WatchdogReceiver.schedule(context);
+                RecoveryScheduler.ensureScheduled(context);
+            } else {
+                WatchdogReceiver.cancel(context);
+                RecoveryScheduler.cancel(context);
+            }
         }
         return saved;
     }
@@ -137,6 +142,7 @@ public final class MonitorService extends Service {
                 .build();
         startForeground(NOTIFICATION_ID, notification);
         WatchdogReceiver.schedule(this);
+        RecoveryScheduler.ensureScheduled(this);
         return START_STICKY;
     }
 
