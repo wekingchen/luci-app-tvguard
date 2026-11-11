@@ -1,4 +1,4 @@
-# TVGuard Agent 0.1.2 · 小米 Android 6 验证版
+# TVGuard Agent · 小米 Android 6 验证版
 
 目标电视：MiTV4-ANSM0 / xmen / Android 6.0.1 / API 23。
 
@@ -112,3 +112,30 @@ v0.2.5 使用两条互相独立的恢复链：
 - UI 首屏显示“开机恢复：已安排/未安排”，便于无需 ADB 判断持久恢复任务是否存在。
 
 如果厂商连 persisted JobScheduler 也压制，Agent 仍可能冷开机后离线；此时 N1 原 Adaptive Engine 继续独立工作并按网络证据计时，不把 Agent 缺席当成免计时条件。Android force-stop 仍按平台规则取消后台恢复，需要用户再次打开 App，这个边界保持不变。
+
+
+## v0.2.6 · 小米后台杀进程后的快速系统恢复
+
+v0.2.5 真机日志确认：MiTV Android 6 ROM 会主动执行 `try to kill` 结束
+`com.tvguard.agent`，并明确拒绝 `MonitorService` 升级为 foreground，也拒绝普通
+Service 的自动重启；当进程已经死亡时，30 秒 Alarm broadcast 也可能被 ROM 直接忽略。
+与此同时，`RecoveryJobService` 已被真机证明能够由 system_server 重新创建 Agent 进程。
+
+因此 v0.2.6 不再把 foreground promotion 或 Alarm 当成主保活路径：
+
+- `MonitorService` 不再调用 `startForeground()`，避免 ROM 每次 watchdog 触发时产生无效的
+  `become forceground` 尝试。
+- `WatchdogReceiver` 保留为进程仍存活时的辅助恢复，但 Service 已运行时不再每 30 秒重复
+  `startService()`。
+- `RecoveryScheduler` 从 v0.2.5 的 15 分钟 periodic Job 改为 **20 秒最短延迟 /
+  30 秒 deadline 的 persisted one-shot Job 链**；7025/7026 两个 Job ID 交替续约，
+  避免当前 Job 执行时用同一 ID 覆盖自己。
+- `RecoveryJobService` 每次运行先安排下一次系统 Job，再检查并按需恢复
+  `MonitorService`。即使整个 Agent 进程被 ROM 杀掉，下一次恢复点仍保存在
+  Android JobScheduler / system_server。
+- 仍不写运行日志、数据库、流量历史或离线队列；N1 bridge 继续 shadow-only，
+  Agent 缺席时不得改变原 Adaptive Engine 的独立计时行为。
+
+真机目标不是宣称“永不被杀”，而是把普通 ROM 后台回收造成的 stale 空窗从 v0.2.5
+实测最坏约 54 秒压缩到约 30 秒量级。实际时延仍必须在 MiTV4-ANSM0 上重新验收；
+JobScheduler deadline 也可能受到设备休眠或厂商系统调度影响。
