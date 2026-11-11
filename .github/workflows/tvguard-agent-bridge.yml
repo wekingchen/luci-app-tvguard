@@ -44,7 +44,7 @@ jobs:
         run: python3 bridge/tests/test_pairing.py
       - name: Run testable bridge HTTP ingress contract
         run: python3 bridge/tests/test_http_bridge.py
-      - name: Verify v0.2.7 temporal fusion and low-bitrate safety
+      - name: Verify v0.2.8 generic learned-context fusion
         run: python3 bridge/tests/test_fusion.py
       - name: Lock low-bitrate and shared-Activity regression matrix
         run: python3 bridge/tests/test_fusion_matrix.py
@@ -55,13 +55,13 @@ jobs:
       - name: Package standalone OpenWrt companion IPK
         run: |
           sh scripts/build-agent-bridge-ipk.sh
-          tar -tzf dist/tvguard-agent-bridge_0.2.7-2_all.ipk | grep -q './data.tar.gz'
-          tar -xOzf dist/tvguard-agent-bridge_0.2.7-2_all.ipk ./data.tar.gz | tar -tzf - | grep -q './www/cgi-bin/tvguard-agent'
-          tar -xOzf dist/tvguard-agent-bridge_0.2.7-2_all.ipk ./control.tar.gz | tar -tzf - > /tmp/bridge-control-list
+          tar -tzf dist/tvguard-agent-bridge_0.2.8-1_all.ipk | grep -q './data.tar.gz'
+          tar -xOzf dist/tvguard-agent-bridge_0.2.8-1_all.ipk ./data.tar.gz | tar -tzf - | grep -q './www/cgi-bin/tvguard-agent'
+          tar -xOzf dist/tvguard-agent-bridge_0.2.8-1_all.ipk ./control.tar.gz | tar -tzf - > /tmp/bridge-control-list
           ! grep -q 'conffiles$' /tmp/bridge-control-list
-          tar -xOzf dist/tvguard-agent-bridge_0.2.7-2_all.ipk ./control.tar.gz | tar -xOzf - ./control | grep -q 'Version: 0.2.7-2'
+          tar -xOzf dist/tvguard-agent-bridge_0.2.8-1_all.ipk ./control.tar.gz | tar -xOzf - ./control | grep -q 'Version: 0.2.8-1'
       - uses: actions/upload-artifact@v4
         with:
-          name: tvguard-agent-bridge-0.2.7-r2-ipk
-          path: dist/tvguard-agent-bridge_0.2.7-2_all.ipk
+          name: tvguard-agent-bridge-0.2.8-ipk
+          path: dist/tvguard-agent-bridge_0.2.8-1_all.ipk
           retention-days: 7
