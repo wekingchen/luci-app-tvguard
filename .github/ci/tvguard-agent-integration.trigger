@@ -1,3 +1,3 @@
 tvguard-agent integration gate trigger
-version=0.2.7-paused-temporal-fusion-r2
-reason=Run fusion regression after BusyBox install fixture and workflow coverage fix
+version=0.2.7-paused-temporal-fusion-r3
+reason=Do not count the first post-Agent-restart report as pause temporal evidence
