@@ -1,5 +1,5 @@
 #!/bin/sh
-# Bounded RAM-only v0.2.7 fusion ring. No quota, firewall or persistence writes.
+# Bounded RAM-only v0.2.8 generic fusion ring. No quota, firewall or persistence writes.
 # Distinguishes new TV reports from repeated N1 reads of the same report.
 set -eu
 PATH=/usr/sbin:/usr/bin:/sbin:/bin
