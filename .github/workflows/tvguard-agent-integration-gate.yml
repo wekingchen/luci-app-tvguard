@@ -39,6 +39,7 @@ jobs:
 
   android6-agent:
     uses: ./.github/workflows/tvguard-agent.yml
+    secrets: inherit
 
   n1-bridge:
     uses: ./.github/workflows/tvguard-agent-bridge.yml
