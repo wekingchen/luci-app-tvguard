@@ -1,5 +1,5 @@
 TVGuard Agent integration gate trigger
-batch: v0.2.4-final-green
-requested_at: 2026-11-10T23:12:00+08:00
-reason: final delivery gate after complete allowlist audit; Android6 watchdog and core already green
+batch: v0.2.5-cold-boot-persisted-job
+requested_at: 2026-11-11T10:30:00+08:00
+reason: validate persisted JobScheduler cold-boot fallback + boot receiver + existing watchdog + core isolation
 owner: assistant
