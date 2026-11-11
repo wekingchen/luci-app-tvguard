@@ -66,7 +66,10 @@ export TVG_CLOCK='00 06'
 sh "$TMP/worker" tick
 [ "$(wc -l < "$TMP/push")" -eq 1 ]
 grep -q 'device_key=abcDEF12345' "$TMP/args"
-grep -q '2026-11-11' "$TMP/args"
+grep -q '11月11日' "$TMP/args"
+grep -q '儿童模式下累计看了约2小时1分钟电视' "$TMP/args"
+grep -q '家长模式不算在内' "$TMP/args"
+! grep -q '含家长与儿童模式' "$TMP/args"
 [ "$(cat "$TMP/data-root/daily-report.sent")" = '2026-11-11' ]
 sh "$TMP/worker" tick
 [ "$(wc -l < "$TMP/push")" -eq 1 ]
