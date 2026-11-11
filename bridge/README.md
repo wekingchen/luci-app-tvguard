@@ -196,3 +196,42 @@ CI 还明确禁止 fusion 源码出现
 `com.youku.tv` 等视频 App 包名。
 
 v0.2.8 仍为 `billing_effect=none`。通用模型真机通过前，不接管 USED_S。
+
+
+## v0.2.8-r2 · 576p 周期突发保护（P0）
+
+2026-11-11 真机在**芒果 576p 正常连续播放**时，v0.2.8-1 多次错误进入
+`paused_confirmed_learned_context`。这不是芒果专有问题，而是低码率流媒体的共同形态：
+
+- 大部分窗口只有约 18–80 PPS；
+- 每隔约 30–60 秒出现一次 125–346 PPS 的明确播放突发；
+- 旧 pause prototype 会把低谷识别成 `high_ratio_pause` / `bursty_pause`；
+- 旧 fusion 连续 3 个 pause hint 就授予 paused，于是形成
+  `paused → playing → paused → playing` 的假振荡。
+
+r2 不增加 App 特判，而是在同一 learned media context 内学习**强播放突发节奏**：
+
+1. 首次明确 strong-play 后，先给 45 秒 bootstrap guard；
+2. 若随后再次出现 strong-play，且间隔 10–90 秒，则把该间隔学习为 burst cadence；
+3. 保存同一上下文内已观察到的最大 burst gap；
+4. guard window = `max_gap + 20s`，下限 45 秒，上限 90 秒；
+5. guard 内的 `high_ratio_pause` / `bursty_pause` 不累计 pause streak，
+   输出 `recent_play_burst_guard`；
+6. 真正超过已学习突发周期仍没有新 strong-play 后，暂停证据才重新获得累计资格；
+7. Activity/package 一旦变化，burst cadence 立即清零，不跨上下文继承。
+
+该策略明确偏向 P0：宁可短时间保持 unknown/继续正式计时，也不能把真实 576p 播放误判为 paused/free。
+当前 bridge 仍为 `billing_effect=none`，所以这只是 Shadow 修复，不直接改变 USED_S。
+
+### 真实回归样本
+
+新增 `test_real_576p_burst_guard.py`，使用用户明确标注为“正常播放”的真实连续序列，
+但将 package/activity 匿名化。序列覆盖：
+
+- 18/20/22/25/31 PPS 等低谷；
+- 125/174/180/198/220/226/305/346 PPS 周期突发；
+- `high_ratio_pause=95`；
+- `bursty_pause=75`；
+- `active_votes` / `clear_current` / `overlap` 交替。
+
+整段 trace 的硬门禁是：**不得出现任何 `combined_state=paused`。**
