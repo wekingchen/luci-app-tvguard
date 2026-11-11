@@ -1,9 +1,5 @@
 #!/usr/bin/env python3
-"""Run the actual RAM-only shadow v2 collector through new/repeated/stale reports.
-
-No router paths are touched; timing is shortened for CI.
-"""
-import os
+"""Run the actual RAM-only v3 collector through new/repeated/stale reports."""
 import subprocess
 import tempfile
 import time
@@ -12,7 +8,7 @@ from pathlib import Path
 root = Path(__file__).resolve().parents[1]
 source = (root / "root/usr/libexec/tvguard-agent-bridge-soak").read_text()
 
-with tempfile.TemporaryDirectory(prefix="tvguard-soak-v2-") as folder:
+with tempfile.TemporaryDirectory(prefix="tvguard-soak-v3-") as folder:
     d = Path(folder)
     latest = d / "latest"
     latest.write_text("synthetic\n")
@@ -26,22 +22,36 @@ with tempfile.TemporaryDirectory(prefix="tvguard-soak-v2-") as folder:
             f"report_seq={seq}\n"
             "package=com.gitvdemo.video\n"
             "activity=com.gala.video.app.player.PlayerActivity\n"
-            "audio_active=0\n"
+            "audio_active=1\n"
             "screen_on=1\n"
-            "network_pps=476\n"
-            "network_shadow=unknown\n"
-            "combined_candidate=player_state_unresolved_audio_hint_off\n"
+            "network_pps=24\n"
+            "network_shadow=idle\n"
+            "adaptive_state=ambiguous\n"
+            "adaptive_score=50\n"
+            "adaptive_reason=overlap\n"
+            "pause_hint=bursty_pause\n"
+            "pause_score=75\n"
+            "adaptive_p50=11\n"
+            "adaptive_p90=112\n"
+            "adaptive_active_floor=138\n"
+            "combined_state=unknown\n"
+            "combined_candidate=pause_candidate_warming\n"
+            "fusion_pause_streak=2\n"
             "billing_effect=none\n"
         )
+
     def stale(seq, received):
         return (
             "agent=stale\nage_seconds=69\n"
             f"last_received_epoch={received}\n"
             f"last_report_seq={seq}\n"
-            "activity=unknown\nbilling_effect=none\n"
+            "activity=unknown\n"
+            "combined_state=unknown\n"
+            "combined_candidate=agent_stale\n"
+            "fusion_pause_streak=0\n"
+            "billing_effect=none\n"
         )
 
-    # Replace only runtime dependencies with fixed synthetic inputs.
     script = (source.replace("RAM=/var/run/tvguard-agent-bridge", f"RAM={d}")
              .replace("/usr/libexec/tvguard-agent-bridge-report status",
                       f"cat {status_file}")
@@ -66,16 +76,18 @@ with tempfile.TemporaryDirectory(prefix="tvguard-soak-v2-") as folder:
         except subprocess.TimeoutExpired:
             proc.kill()
             proc.communicate(timeout=3)
-    data = d / "soak-v2.csv"
+
+    data = d / "soak-v3.csv"
     assert data.exists(), "no synthetic RAM sample saved"
     rows = [r.split(",") for r in data.read_text().splitlines()]
-    assert all(len(r) == 12 for r in rows), rows
-    assert any(r[9] == "7" and r[11] == "1" for r in rows), rows
-    assert any(r[8] == "repeated_report_not_new_evidence"
-               and r[9] == "7" and r[11] == "0" for r in rows), rows
-    assert any(r[9] == "8" and r[11] == "1" for r in rows), rows
-    assert any(r[8] == "agent_stale" and r[11] == "0" for r in rows), rows
-    assert any(r[8] == "agent_process_restart_suspected"
-               and r[9] == "1" and r[11] == "1" for r in rows), rows
+    assert all(len(r) == 22 for r in rows), rows
+    assert any(r[19] == "7" and r[21] == "1" for r in rows), rows
+    assert any(r[17] == "repeated_report_not_new_evidence"
+               and r[19] == "7" and r[21] == "0" for r in rows), rows
+    assert any(r[19] == "8" and r[21] == "1" for r in rows), rows
+    assert any(r[17] == "agent_stale" and r[21] == "0" for r in rows), rows
+    assert any(r[17] == "agent_process_restart_suspected"
+               and r[19] == "1" and r[21] == "1" for r in rows), rows
     assert len(rows) < 180
-print("RAM shadow v2: fresh vs repeat vs stale report handling PASS")
+
+print("RAM shadow v3: fusion evidence + fresh/repeat/stale handling PASS")
