@@ -332,3 +332,13 @@ r17 的正式规则收敛为：
 - Adaptive pause hints、burst guard、pause streak 继续只做 Shadow 研究，不具备免计时授权。
 
 实现上由独立 `tvguard-agent-billing-hint` 输出唯一窄接口：`free system_home`、`free app_home` 或 `charge <state>`。它不读取/修改 USED_S、BILLING_STATE、iptables、UCI；核心 `tvguardctl` 是唯一正式计时写入方。
+
+
+## r21 设置页与双 Bark 接收设备（2026-11-11）
+
+- LuCI 顶部页签“时间规则”改名为“设置”，页面标题同步为“TV Guard · 设置”。
+- 保留原有 `bark_key` 作为第 1 个推送 ID，新增可选 `bark_key2`，最多同时向两台 Bark 设备发送同一份日报/测试消息。
+- 两个 ID 相同会自动去重，只发送一次；只填写任意一个 ID 也可正常工作。
+- 定时日报按设备分别保存当天送达标记。一台成功、一台失败时，5 分钟后只重试失败设备，避免成功设备收到重复日报。
+- 手动测试会向所有已填写设备发送，并明确返回“成功/失败设备数”；测试不会写入正式日报去重标记。
+- 两个 Bark ID 都不会通过状态接口或操作记录输出。
