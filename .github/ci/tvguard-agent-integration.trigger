@@ -1,3 +1,3 @@
 tvguard-agent integration gate trigger
-version=0.2.6-r2-jobscheduler-fast-recovery
-reason=MiTV ignores Alarm PendingIntent; use non-persisted fast JobScheduler chain plus persisted boot fallback
+version=0.2.7-paused-temporal-fusion
+reason=Galaxy PlayerActivity plus N1 pause hints with RAM-only hysteresis; billing remains untouched
