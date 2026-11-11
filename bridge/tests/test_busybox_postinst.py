@@ -25,9 +25,10 @@ with tempfile.TemporaryDirectory(prefix="tvguard-install-test-") as directory:
     report = sandbox / "usr/libexec/tvguard-agent-bridge-report"
     soak = sandbox / "usr/libexec/tvguard-agent-bridge-soak"
     pair = sandbox / "usr/libexec/tvguard-agent-bridge-pair"
+    billing = sandbox / "usr/libexec/tvguard-agent-billing-hint"
     fusion = sandbox / "usr/libexec/tvguard-agent-fusion"
     service_log = sandbox / "service.log"
-    for path in (service, cgi, report, soak, pair, fusion):
+    for path in (service, cgi, report, soak, pair, billing, fusion):
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text("#!/bin/sh\n")
         path.chmod(0o755)
@@ -39,6 +40,7 @@ with tempfile.TemporaryDirectory(prefix="tvguard-install-test-") as directory:
         ("/usr/libexec/tvguard-agent-bridge-report", str(report)),
         ("/usr/libexec/tvguard-agent-bridge-soak", str(soak)),
         ("/usr/libexec/tvguard-agent-bridge-pair", str(pair)),
+        ("/usr/libexec/tvguard-agent-billing-hint", str(billing)),
         ("/usr/libexec/tvguard-agent-fusion", str(fusion)),
         ("/etc/init.d/tvguard-agent-bridge", str(service)),
         ("/tmp/tvguard-agent-seed.", str(sandbox / "seed.")),
@@ -64,7 +66,7 @@ with tempfile.TemporaryDirectory(prefix="tvguard-install-test-") as directory:
         p = subprocess.run(["/bin/dash", str(installer)], env=env,
                            text=True, capture_output=True, timeout=15)
         assert p.returncode == 0, (p.stdout, p.stderr)
-        assert "configured (shadow-only)" in p.stdout
+        assert "home-only billing hint available" in p.stdout
 
     # 0.2.0 failed install could create a newline-only key.
     key.write_text("\n")
