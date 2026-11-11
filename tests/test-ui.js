@@ -11,7 +11,7 @@ let reloads = 0;
 let state = {
     mode: 'child', activity: 'active', firewall_state: 'allowed',
     date: '2026-11-08', enforce: 0, armed: 0, blocked: 0,
-    used_seconds: 123, quota_seconds: 7200, remaining_seconds: 7077,
+    used_seconds: 123, watch_seconds: 900, previous_day_date: '2026-11-07', previous_day_seconds: 600, quota_seconds: 7200, remaining_seconds: 7077,
     bonus_seconds: 0, bonus_undo_available: 0, bonus_limit_seconds: 7200,
     policy_reason: 'none', pps: 8, tcp_pps: 1, udp_pps: 7,
     bytes_per_second: 2900, traffic_class: 'low_traffic',
