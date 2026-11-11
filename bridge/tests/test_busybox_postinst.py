@@ -25,8 +25,9 @@ with tempfile.TemporaryDirectory(prefix="tvguard-install-test-") as directory:
     report = sandbox / "usr/libexec/tvguard-agent-bridge-report"
     soak = sandbox / "usr/libexec/tvguard-agent-bridge-soak"
     pair = sandbox / "usr/libexec/tvguard-agent-bridge-pair"
+    fusion = sandbox / "usr/libexec/tvguard-agent-fusion"
     service_log = sandbox / "service.log"
-    for path in (service, cgi, report, soak, pair):
+    for path in (service, cgi, report, soak, pair, fusion):
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text("#!/bin/sh\n")
         path.chmod(0o755)
@@ -38,6 +39,7 @@ with tempfile.TemporaryDirectory(prefix="tvguard-install-test-") as directory:
         ("/usr/libexec/tvguard-agent-bridge-report", str(report)),
         ("/usr/libexec/tvguard-agent-bridge-soak", str(soak)),
         ("/usr/libexec/tvguard-agent-bridge-pair", str(pair)),
+        ("/usr/libexec/tvguard-agent-fusion", str(fusion)),
         ("/etc/init.d/tvguard-agent-bridge", str(service)),
         ("/tmp/tvguard-agent-seed.", str(sandbox / "seed.")),
     ]
