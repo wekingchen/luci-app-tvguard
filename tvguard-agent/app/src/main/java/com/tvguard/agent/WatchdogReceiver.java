@@ -8,11 +8,12 @@ import android.content.Intent;
 import android.os.SystemClock;
 
 /**
- * Low-frequency recovery alarm for vendor background process eviction.
+ * Runtime recovery alarm for vendor background process eviction.
  *
- * Uses ELAPSED_REALTIME (non-wakeup), so a sleeping TV is not woken.
- * Android force-stop cancels alarms by platform design and still requires
- * an explicit user launch before monitoring can resume.
+ * The alarm PendingIntent targets MonitorService directly instead of a
+ * BroadcastReceiver. MiTV real-device logs showed that a dead third-party
+ * process was explicitly not recreated for the broadcast path. ELAPSED_REALTIME
+ * remains non-wakeup, so a sleeping TV is not woken.
  */
 public final class WatchdogReceiver extends BroadcastReceiver {
     static final long INTERVAL_MS = 30000L;
@@ -20,9 +21,9 @@ public final class WatchdogReceiver extends BroadcastReceiver {
     private static final int REQUEST_CODE = 7024;
 
     private static PendingIntent pending(Context context) {
-        Intent intent = new Intent(context, WatchdogReceiver.class);
+        Intent intent = new Intent(context, MonitorService.class);
         intent.setAction(ACTION);
-        return PendingIntent.getBroadcast(context, REQUEST_CODE, intent,
+        return PendingIntent.getService(context, REQUEST_CODE, intent,
                 PendingIntent.FLAG_UPDATE_CURRENT);
     }
 
@@ -47,9 +48,8 @@ public final class WatchdogReceiver extends BroadcastReceiver {
             cancel(context);
             return;
         }
-        // On this MiTV ROM a dead process is not recreated for this broadcast.
-        // When the process is already alive, avoid restarting an already-running
-        // service every 30 seconds; JobScheduler owns process-death recovery.
+        // Kept only as a defensive receiver path; AlarmManager itself now
+        // targets MonitorService directly and does not depend on this callback.
         if (!MonitorService.isRunning()) {
             context.startService(new Intent(context, MonitorService.class));
         }
