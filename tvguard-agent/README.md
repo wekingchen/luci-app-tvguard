@@ -101,3 +101,14 @@
 监测开启时新增 Android AlarmManager 30 秒低频 watchdog。使用 **ELAPSED_REALTIME 非唤醒闹钟**：电视待机时不会主动唤醒设备；电视正在观看、系统处于唤醒状态时，如果进程被普通后台回收，闹钟会重新启动前台 MonitorService。显式关闭监测会取消 watchdog。Android 的 force-stop 会按系统规则取消闹钟，因此 force-stop 后仍需用户重新打开 App。
 
 无新增权限、无文件日志、数据库或离线队列；仅保留原本用户显式保存的 enabled / N1 配对设置。
+
+## v0.2.5 · 冷开机双保险恢复
+
+真机 v0.2.4 在“电视开机后从未手动打开助手”的场景下，N1 看到 `report_seq=30` 后约一小时完全无新报告；这说明运行中 Alarm watchdog 不是跨重启方案，因为 AlarmManager 闹钟会随整机重启丢失，必须由开机初始化重新建立。
+
+v0.2.5 使用两条互相独立的恢复链：
+- **快速路径：** 标准 `BOOT_COMPLETED` / `MY_PACKAGE_REPLACED` receiver，立即启动 MonitorService、重挂 30 秒非唤醒 watchdog，并确认持久 Job 已安排。
+- **兜底路径：** API 21+ 原生 JobScheduler，`setPersisted(true)` + 15 分钟低频周期任务。任务在用户明确开启监测时安排，显式关闭监测时取消；用于某些厂商固件不可靠投递第三方 BOOT_COMPLETED 的情况。它不是计时依据，也不会写视频日志、数据库或离线队列。
+- UI 首屏显示“开机恢复：已安排/未安排”，便于无需 ADB 判断持久恢复任务是否存在。
+
+如果厂商连 persisted JobScheduler 也压制，Agent 仍可能冷开机后离线；此时 N1 原 Adaptive Engine 继续独立工作并按网络证据计时，不把 Agent 缺席当成免计时条件。Android force-stop 仍按平台规则取消后台恢复，需要用户再次打开 App，这个边界保持不变。
