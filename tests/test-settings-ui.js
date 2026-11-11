@@ -63,6 +63,7 @@ const form = {
     Map: MockMap,
     NamedSection: 'NamedSection',
     Value: 'Value',
+    Flag: 'Flag',
     DummyValue: 'DummyValue'
 };
 
@@ -88,14 +89,14 @@ const page = factory(view, form, uci);
     assert.match(map.description, /高风险功能/);
     assert.deepEqual(
         map.sections.map(section => section.title),
-        ['每日额度', '可使用时段', '计时判断', '设备绑定（只读）']
+        ['每日额度', '可使用时段', '计时判断', '每日观看日报 · Bark', '设备绑定（只读）']
     );
 
     const options = map.sections.flatMap(section => section.options);
     const byName = Object.fromEntries(options.map(option => [option.name, option]));
 
     for (const name of ['weekday_minutes', 'weekend_minutes', 'max_bonus_minutes', 'allow_start',
-                        'allow_end', 'silence_seconds', 'ip', 'interface']) {
+                        'allow_end', 'silence_seconds', 'child_name', 'bark_enabled', 'bark_server', 'bark_key', 'bark_daily_time', 'ip', 'interface']) {
         assert.ok(byName[name], 'missing settings field: ' + name);
         assert.ok(byName[name].description.length > 0, 'missing description: ' + name);
     }
@@ -105,6 +106,17 @@ const page = factory(view, form, uci);
             'high-risk switch must not appear in ordinary settings: ' + forbidden);
     }
 
+    assert.equal(byName.bark_enabled.type, 'Flag');
+    assert.equal(byName.bark_enabled.default, '0');
+    assert.equal(byName.bark_key.password, true);
+    assert.equal(byName.child_name.validate('main', '小明'), true);
+    assert.notEqual(byName.child_name.validate('main', 'A\nB'), true);
+    assert.equal(byName.bark_server.validate('main', 'https://api.day.app'), true);
+    assert.notEqual(byName.bark_server.validate('main', 'https://example.com/key'), true);
+    assert.equal(byName.bark_key.validate('main', 'abcdef1234'), true);
+    assert.notEqual(byName.bark_key.validate('main', 'bad/key'), true);
+    assert.equal(byName.bark_daily_time.validate('main', '00:05'), true);
+    assert.notEqual(byName.bark_daily_time.validate('main', '24:00'), true);
     assert.equal(byName.ip.type, 'DummyValue');
     assert.equal(byName.interface.type, 'DummyValue');
 
