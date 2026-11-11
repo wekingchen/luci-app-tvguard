@@ -138,4 +138,19 @@ if sh "$TMP/worker" test > "$TMP/test-result" 2> "$TMP/test-error"; then
 fi
 grep -q 'Bark 测试推送失败' "$TMP/test-error"
 [ ! -e "$TMP/data-root/daily-report.sent" ]
-echo 'PASS: concise Bark daily, zero suppression, latest test sample, retries and deduplication'
+# Invalid saved Bark configuration must never pretend the manual test worked.
+export TVG_CURL_FAIL=0 TVG_SERVER='https://api.day.app/some/path'
+if sh "$TMP/worker" test > "$TMP/test-result" 2> "$TMP/test-error"; then
+    echo 'FAIL: malformed server was silently accepted' >&2
+    exit 1
+fi
+grep -q '只能填写根地址' "$TMP/test-error"
+export TVG_SERVER='https://api.day.app' TVG_KEY='bad/key'
+if sh "$TMP/worker" test > "$TMP/test-result" 2> "$TMP/test-error"; then
+    echo 'FAIL: malformed device key was silently accepted' >&2
+    exit 1
+fi
+grep -q '推送 ID 格式不正确' "$TMP/test-error"
+[ ! -e "$TMP/data-root/daily-report.sent" ]
+
+echo 'PASS: Bark copy, zero suppression, manual test, config validation and deduplication'
