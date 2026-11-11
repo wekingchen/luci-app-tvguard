@@ -3,6 +3,24 @@
 'require form';
 'require uci';
 
+function validateServer(section_id, value) {
+    var url = String(value || '').trim();
+    return /^https?:\/\/[^\s\/?#@]+\/?$/.test(url) ? true :
+        '请输入 Bark 服务器根地址，例如 https://api.day.app（不含推送 ID、路径或参数）';
+}
+
+function validateKey(section_id, value) {
+    var key = String(value || '');
+    return !key || /^[A-Za-z0-9_-]{6,128}$/.test(key) ? true :
+        'Bark 推送 ID 只能包含字母、数字、下划线或连字符（6–128 位）';
+}
+
+function validateChildName(section_id, value) {
+    return String(value || '').trim().length > 0 &&
+        String(value).length <= 32 && !/[\r\n]/.test(value) ? true :
+        '孩子称呼不能为空，最多 32 个字符，不允许换行';
+}
+
 function validateTime(section_id, value) {
     var m = String(value || '').match(/^([01]\d|2[0-3]):([0-5]\d)$/);
     return m ? true : '请输入 24 小时制时间，例如 08:00 或 21:30';
@@ -74,6 +92,40 @@ return view.extend({
         o.placeholder = '60';
         o.suffix = ' 秒';
         o.description = '默认 60 秒。数值越小，停止计时更快，但网络短暂停顿更容易被误判为静默；建议没有明确证据时保持默认。';
+
+        var report = m.section(form.NamedSection, 'main', 'tvguard', '每日观看日报 · Bark');
+        report.addremove = false;
+        report.anonymous = true;
+        report.description = '默认不发通知。启用并填写推送 ID 后，每天在设定时间发送前一天完整自然日的观看估算，不改变断网设置。';
+
+        o = report.option(form.Value, 'child_name', '孩子称呼');
+        o.rmempty = false;
+        o.placeholder = '孩子';
+        o.validate = validateChildName;
+        o.description = '仅用于推送标题，例如“小明的电视观看日报”。';
+
+        o = report.option(form.Flag, 'bark_enabled', '启用 Bark 每日推送');
+        o.default = '0';
+        o.rmempty = false;
+        o.description = '关闭时只在本地记录，绝不发送网络推送。';
+
+        o = report.option(form.Value, 'bark_server', 'Bark 服务器地址');
+        o.rmempty = false;
+        o.placeholder = 'https://api.day.app';
+        o.validate = validateServer;
+        o.description = '官方服务器或自建 Bark 服务根地址。公网推荐 HTTPS；HTTP 会明文传输推送 ID。';
+
+        o = report.option(form.Value, 'bark_key', 'Bark 推送 ID');
+        o.password = true;
+        o.rmempty = true;
+        o.validate = validateKey;
+        o.description = 'Bark App 提供的设备 Key；不会通过状态接口或操作记录输出。';
+
+        o = report.option(form.Value, 'bark_daily_time', '每日推送时间');
+        o.rmempty = false;
+        o.placeholder = '00:05';
+        o.validate = validateTime;
+        o.description = 'N1 路由器本地时间，默认次日 00:05 发送昨天的完整观看估算。';
 
         var device = m.section(form.NamedSection, 'main', 'tvguard', '设备绑定（只读）');
         device.addremove = false;
