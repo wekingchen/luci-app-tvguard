@@ -20,8 +20,8 @@ assert.equal(overview.title, '概览');
 assert.equal(overview.action.type, 'view');
 assert.equal(overview.action.path, 'tvguard/overview');
 
-assert.ok(settings, 'missing time rules tab');
-assert.equal(settings.title, '时间规则');
+assert.ok(settings, 'missing settings tab');
+assert.equal(settings.title, '设置');
 assert.equal(settings.action.type, 'view');
 assert.equal(settings.action.path, 'tvguard/settings');
 
@@ -30,4 +30,4 @@ assert.ok(overview.order < settings.order, 'overview must be the default first t
 const directRootView = root.action.type === 'view' && root.action.path === 'tvguard/overview';
 assert.equal(directRootView, false, 'root must redirect to first child to avoid a lone settings tab');
 
-console.log('PASS: LuCI menu exposes explicit overview/time-rules tabs with overview as default');
+console.log('PASS: LuCI menu exposes explicit overview/settings tabs with overview as default');
