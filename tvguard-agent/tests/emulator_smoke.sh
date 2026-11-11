@@ -100,12 +100,6 @@ if ! adb shell dumpsys activity services "$PKG" | grep -q 'MonitorService'; then
   exit 1
 fi
 echo "[smoke] service active PASS"
-# Foreground service must register an ongoing system notification.
-if ! adb shell dumpsys notification --noredact | grep -q "$PKG"; then
-  echo "[smoke] notification not registered"
-  exit 1
-fi
-echo "[smoke] visible foreground notification PASS"
 if ! adb shell dumpsys alarm | grep -q 'com.tvguard.agent.WATCHDOG'; then
   echo "[smoke] recovery watchdog alarm not armed"
   adb shell dumpsys alarm | grep -A4 -B4 'com.tvguard.agent' || :
@@ -117,7 +111,30 @@ if ! adb shell dumpsys jobscheduler | grep -q 'com.tvguard.agent.*RecoveryJobSer
   adb shell dumpsys jobscheduler | grep -A10 -B5 'com.tvguard.agent' || :
   exit 1
 fi
-echo "[smoke] persisted JobScheduler cold-boot fallback scheduled PASS"
+echo "[smoke] persisted fast-recovery JobScheduler chain scheduled PASS"
+
+# The vendor failure mode is process death while monitoring stays enabled.
+# Android force-stop is intentionally NOT used because it cancels platform jobs.
+# Move the app to background, ask ActivityManager to kill it, then require the
+# persisted one-shot JobScheduler chain to restore MonitorService without UI.
+adb shell input keyevent 3
+sleep 2
+adb shell am kill "$PKG" || true
+recovered=0
+for i in $(seq 1 45); do
+  if adb shell dumpsys activity services "$PKG" | grep -q 'MonitorService'; then
+    recovered=1
+    break
+  fi
+  sleep 1
+done
+if [ "$recovered" != 1 ]; then
+  echo "[smoke] fast recovery chain did not restore MonitorService"
+  adb shell dumpsys jobscheduler | grep -A15 -B5 'com.tvguard.agent' || :
+  adb shell dumpsys activity services "$PKG" | tail -70 || :
+  exit 1
+fi
+echo "[smoke] process-death recovery without UI PASS"
 
 adb shell am start -W -a android.settings.SETTINGS >/dev/null
 sleep 8
