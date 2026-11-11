@@ -1,3 +1,4 @@
 tvguard-agent integration gate trigger
 version=r17-home-only-billing-bridge-0.2.8-r3-fix1
 reason=Re-run after BusyBox postinst contract and billing-hint executable permission fix
+# r18 daily viewing summary + Bark dispatch test
