@@ -13,6 +13,7 @@ ADAPTIVE=/usr/libexec/tvguard-adaptive
 LEARN=/usr/libexec/tvguard-learn
 SOAK=/usr/libexec/tvguard-soak
 AGENT_BILLING=/usr/libexec/tvguard-agent-billing-hint
+BARK_REPORT=/usr/libexec/tvguard-daily-report
 BUILD_ID_FILE=/usr/share/tvguard/build-id
 # P0 safety gate: TX-only idle classifiers remain diagnostic until low-bitrate
 # playback has passed dedicated cross-bitrate/cross-app false-idle validation.
@@ -1090,7 +1091,7 @@ case "${1:-}" in
     learning)
         cat "$DIR/learning-last.txt" 2>/dev/null || echo "暂无学习分析"
         exit 0 ;;
-    tick|mode|bonus|enforce|sync|calibrate)
+    tick|mode|bonus|enforce|sync|calibrate|bark-test)
         lock
         load_state
         NOW="$(date +%s)"
@@ -1099,7 +1100,7 @@ case "${1:-}" in
             event recovery_lock "持久状态缺失，强制锁定直至家长确认"
         fi
         ;;
-    *) echo "usage: tvguardctl {status|brief|evidence|log|calibration|calibration-v4|learning|tick|sync|mode|bonus|calibrate|enforce}" >&2; exit 2 ;;
+    *) echo "usage: tvguardctl {status|brief|evidence|log|calibration|calibration-v4|learning|tick|sync|mode|bonus|calibrate|enforce|bark-test}" >&2; exit 2 ;;
 esac
 
 case "$1" in
@@ -1118,6 +1119,19 @@ case "$1" in
         save_runtime
         persist
         "$FW" sync
+        ;;
+    bark-test)
+        # Authorized LuCI write action: refresh the packet sample under the
+        # existing controller lock, then persist the exact child-only count
+        # BEFORE asking the report worker to read it. Never touch daily dedup.
+        hook_state="$("$FW" inspect 2>/dev/null || echo absent)"
+        case "$hook_state" in
+            allowed|blocked) : ;;
+            *) "$FW" sync ;;
+        esac
+        tick
+        persist
+        "$BARK_REPORT" test
         ;;
     mode)
         case "${2:-}" in
