@@ -56,7 +56,7 @@ public final class MainActivity extends Activity {
         panel.setOrientation(LinearLayout.VERTICAL);
         panel.setPadding(36, 30, 36, 30);
         scroller.addView(panel);
-        addText(panel, "TVGuard 助手 · 0.2.5", 27, 0xFFFFFFFF);
+        addText(panel, "TVGuard 助手 · 0.2.6", 27, 0xFFFFFFFF);
         addText(panel, "Android 6 视频 App 页面观察验证版", 17, 0xFFB8C9D5);
         toggle = new Button(this);
         toggle.setAllCaps(false);
@@ -133,7 +133,7 @@ public final class MainActivity extends Activity {
         remoteDebug = addText(panel, "遥控器：首次打开直接按确定进行自动配对", 14, 0xFFB8C9D5);
         details = addText(panel, "", 20, 0xFFEAF4F9);
         guidance = addText(panel, "", 16, 0xFFB8C9D5);
-        addText(panel, "开启后有可见后台监测通知；仅向 N1 发送当前状态，无文件日志、数据库或离线队列。", 14, 0xFFB8C9D5);
+        addText(panel, "开启后由系统恢复任务维持监测；仅向 N1 发送当前状态，无文件日志、数据库或离线队列。", 14, 0xFFB8C9D5);
         addText(panel, "本版连接 N1 仅用于观察，不参与计时、奖励、暂停或防火墙判断。", 14, 0xFFB8C9D5);
         setContentView(scroller);
         // First-launch focus always lands on the only button needed for pairing.
