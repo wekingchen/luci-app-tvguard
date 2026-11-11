@@ -108,6 +108,9 @@ const page = factory(view, form, uci);
 
     assert.equal(byName.bark_enabled.type, 'Flag');
     assert.equal(byName.bark_enabled.default, '0');
+    assert.equal(byName.child_name.default, '孩子');
+    assert.equal(byName.bark_server.default, 'https://api.day.app');
+    assert.equal(byName.bark_daily_time.default, '00:05');
     assert.equal(byName.bark_key.password, true);
     assert.equal(byName.child_name.validate('main', '小明'), true);
     assert.notEqual(byName.child_name.validate('main', 'A\nB'), true);
