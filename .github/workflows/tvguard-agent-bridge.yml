@@ -12,7 +12,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Enforce v0.1.13 smart-billing baseline and core isolation
+      - name: Enforce narrow r17 core integration boundary
         shell: bash
         run: |
           set -euo pipefail
@@ -22,14 +22,14 @@ jobs:
           git fetch --depth=1 origin feat/v0.1.13-smart-billing
           git diff --name-only FETCH_HEAD HEAD | while IFS= read -r changed; do
             case "$changed" in
-              bridge/*|tvguard-agent/*|scripts/build-agent-bridge-ipk.sh|.github/workflows/ci.yml|.github/workflows/tvguard-agent.yml|.github/workflows/tvguard-agent-bridge.yml|.github/workflows/tvguard-agent-integration-gate.yml|.github/ci/tvguard-agent-integration.trigger)
+              bridge/*|tvguard-agent/*|root/usr/libexec/tvguardctl|root/usr/share/tvguard/build-id|tests/test-controller.sh|scripts/build-ipk.sh|scripts/build-agent-bridge-ipk.sh|docs/DESIGN.md|.github/workflows/ci.yml|.github/workflows/tvguard-agent.yml|.github/workflows/tvguard-agent-bridge.yml|.github/workflows/tvguard-agent-integration-gate.yml|.github/ci/tvguard-agent-integration.trigger)
                 : ;;
               *)
-                echo "::error::Unexpected change to existing smart-billing core: $changed"
+                echo "::error::Unexpected change outside r17 conservative-home integration boundary: $changed"
                 exit 1 ;;
             esac
           done
-          echo "smart-billing baseline and non-overwrite gate: PASS"
+          echo "r17 conservative-home integration boundary: PASS"
       - name: Check executable scripts and isolation
         shell: bash
         run: |
