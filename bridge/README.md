@@ -1,10 +1,10 @@
-# TVGuard Agent + N1 Bridge · 双端联动 0.2.1（实验影子版）
+# TVGuard Agent + N1 Bridge · 双端联动 0.2.7（实验影子版）
 
 ## 为何不把旧的 TVGuard 全量 IPK 重打包？
 
 用户 N1 真机已经使用 `v0.1.13-r15-temporal-state-migration`。当前仓库 main 为更早 v0.1.12，公开 `feat/v0.1.13-smart-billing` 也没有 r15 的所有固化内容。**不可用旧源码生成的 luci-app-tvguard 覆盖真机。**
 
-本方案交付 **独立、仅影子观察的 `tvguard-agent-bridge_0.2.1-1_all.ipk`**。它仅安装独立 CGI、只读融合状态脚本和一次生成的配对密钥；不覆盖 `tvguardctl`、`tvguardd`、LuCI、iptables、防火墙、代理、配额和奖励，也不重启相关服务。
+本方案交付 **独立、仅影子观察的 `tvguard-agent-bridge_0.2.7-1_all.ipk`**。它仅安装独立 CGI、只读融合状态脚本和一次生成的配对密钥；不覆盖 `tvguardctl`、`tvguardd`、LuCI、iptables、防火墙、代理、配额和奖励，也不重启相关服务。
 
 ## 链路与安全
 
@@ -14,12 +14,12 @@ Agent → N1 的 OpenWrt uhttpd `/cgi-bin/tvguard-agent`（POST，固定最小�
 - 单次 HTTP 200 OK 为收到；3xx/4xx/5xx 不计成功。旧数据超过 35 秒直接作为失效。
 - 配对码在 `/etc/tvguard/agent-bridge.key` 中生成一次，600 权限。电视首次配置服务器 URL 与配对码需要在私有首选项落盘一次；不会保存流量历史。
 - **明文 LAN HTTP 的密钥在局域网不防嗅探，本版本仅供影子联调，不能作为真实防火墙/计费授权。** 正式控制需额外认证、重放防护和部署审计。
-- 影子分析输出 `system_home`、`app_home_candidate`、`playing_candidate`、`player_open_audio_inactive`、`sleep_candidate`、`unknown`。`PlayerActivity`、`AudioManager.isMusicActive()` 或出站 PPS 单独都**不能证明视频真的播放或暂停**；不修改使用额度。
+- v0.2.7 新增 `combined_state=playing|paused|app_home|system_home|unknown` 与详细 `combined_candidate`。其中只有已在真机验证 Activity 语义的场景才允许进入四状态；`PlayerActivity`、`AudioManager.isMusicActive()` 或单个 PPS 窗口单独都**不能证明视频真的播放或暂停**；不修改使用额度。
 - 如果电视后台被清理、断网、失权限，发送停止，N1 35 秒后自动标记 stale。
 
 ## N1 操作（无需修改原 IPK）
 
-1. 单独安装 companion IPK：`opkg install /tmp/tvguard-agent-bridge_0.2.1-1_all.ipk`。不要使用旧版主仓生成的 `luci-app-tvguard` 替换 r15。
+1. 单独安装 companion IPK：`opkg install /tmp/tvguard-agent-bridge_0.2.7-1_all.ipk`。不要使用旧版主仓生成的 `luci-app-tvguard` 替换 r15。
 2. 确保 N1 当前 uhttpd 在 LAN 监听，且已启用 CGI prefix `/cgi-bin`。
 3. 查看一次性 token：`/usr/libexec/tvguard-agent-bridge-report pairing`。
 4. 记下 N1 的 LAN IP。电视 Agent UI 填写 `http://N1_LAN_IP/cgi-bin/tvguard-agent` 与配对码，保存后启动监测。
@@ -67,3 +67,58 @@ N1 独立 Bridge v0.2.2-1 可从 v0.2.1-1 单独升级，配置脚本保留已�
 Shadow Soak v2 在 N1 RAM 中保留上一次报告序号。若新的有效报告序号从较大值回落（例如 6 → 1），该行标记 `agent_process_restart_suspected`。这与 Android Agent 的进程内 sequence 重置相对应，用来判断 watchdog 是否实际拉起了新进程。它仅是诊断证据，不参与正式计时。
 
 Soak 自身重启时会从 RAM 历史最后一行恢复 last_seq / last_received 签名，避免把同一条旧上报重新算成新证据。
+
+
+## v0.2.7 · PlayerActivity + N1 pause_hint 时序融合（2026-11-11）
+
+本阶段只解决 **Shadow 层的 paused 识别**，不接入正式计时。Android Agent 继续使用已真机验证的
+`0.2.6-r2`；因为现有上报已经包含 package / Activity / audio / screen，暂停融合所需的新证据全部在 N1，
+所以本轮无需为了版本号修改 APK。
+
+### 已纳入的真机事实
+
+- 银河奇异果 `com.gitvdemo.video`：
+  - 首页与播放器 Activity 可区分；
+  - 正常播放为 `PlayerActivity`；
+  - 暂停时 Activity 仍为 `PlayerActivity`；
+  - `audio_active=1` 在暂停时仍可能持续，因此不能作为暂停否决条件。
+- 腾讯极光 `com.ktcp.video`：
+  - `HomeSingleTaskActivity` 在真实播放和暂停中都会出现；
+  - 因此 v0.2.7 明确禁止把该 Activity 直接当成 `app_home` 或 `paused`。
+- 免费低码率播放存在很低 PPS 窗口；`idle_overlap` 只代表网络重叠区域，**永远不能单独触发 paused**。
+
+### v0.2.7 规则
+
+银河 `PlayerActivity` 下：
+
+1. `bursty_pause >= 75` 或 `high_ratio_pause >= 90` 才算正向暂停证据；
+2. 必须连续 **3 个新的 Agent report** 才进入 `combined_state=paused`；
+3. 重复读取同一 report 不增加 streak；
+4. 一旦出现明确当前播放证据（network shadow=playing，或 Adaptive clear_current / 当前 PPS 超 active_floor），
+   立即退出暂停并进入 `playing`，不等待对称的 3 窗；
+5. 暂停确认后允许 1 个缺失 hint 窗口的 temporal hold，第二个缺失窗口回到 unknown；
+6. Agent 进程重启后首个 report 清空 pause streak，不跨进程继承播放器时序置信度；
+7. `idle_overlap` 即使持续低 PPS，也始终保持 `unknown`，这是 576p/720p P0 防漏计门禁。
+
+### 数据与隔离
+
+- temporal fusion 状态只写 `/var/run/tvguard-agent-bridge/fusion.state`；
+- Shadow Soak 升级为 RAM-only `soak-v3.csv`，记录 Adaptive pause hint、P50/P90、active floor、
+  combined_state、candidate、fusion streak、report sequence 与新鲜度；
+- 文件仍有固定行数上限，重启即清空；
+- 不读取或修改 `USED_S`、`billing_state`、奖励、`TVG_GATE` 或防火墙；
+- bridge 仍通过 CI 隔离门禁，禁止覆盖现有 smart-billing core。
+
+### 真机验收
+
+v0.2.7 安装后先只观察银河奇异果：
+
+- 正常低码率播放：不得进入 `paused`；
+- 暂停：预期先出现 `pause_candidate_warming`，连续证据后变为
+  `combined_state=paused / paused_confirmed_temporal`；
+- 恢复播放：明确播放证据出现后应快速切回 `playing`；
+- App 首页与系统首页分别显示 `app_home` / `system_home`；
+- 整个过程 `billing_effect=none`。
+
+银河通过后，再单独为腾讯共享 Activity 建立可靠 discriminator；在此之前腾讯保持 conservative unknown，
+不为了“凑齐四状态”制造假确定性。
