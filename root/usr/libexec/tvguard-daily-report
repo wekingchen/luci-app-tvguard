@@ -57,12 +57,29 @@ command -v curl >/dev/null 2>&1 || exit 0
 
 name="$(printf '%s' "$name" | tr '\r\n' '  ' | cut -c 1-96)"
 [ -n "$name" ] || name='孩子'
+# Child-only full-day total, never clamped to the configured allowance.
+# Show roughly rounded-down whole minutes rather than robot-like seconds.
 hours=$((seconds / 3600))
 mins=$(((seconds % 3600) / 60))
-secs=$((seconds % 60))
-title="${name}的电视观看日报"
-body="${report_date} 观看估算：${hours}小时${mins}分${secs}秒
-依据 TV Guard 当前儿童计时规则，含家长与儿童模式；不等于真实视频播放时长。"
+if [ "$seconds" -eq 0 ]; then
+    viewing='0分钟'
+elif [ "$seconds" -lt 60 ]; then
+    viewing='不到1分钟'
+elif [ "$hours" -gt 0 ]; then
+    viewing="约${hours}小时"
+    [ "$mins" -eq 0 ] || viewing="${viewing}${mins}分钟"
+else
+    viewing="约$((seconds / 60))分钟"
+fi
+day_label="$(printf '%s\n' "$report_date" | awk -F- '{printf "%d月%d日", $2, $3}')"
+title="${name}的电视观看小结"
+if [ "$seconds" -eq 0 ]; then
+    body="${day_label}，儿童模式下没有记录到${name}的电视观看时间。"
+else
+    body="${day_label}，${name}在儿童模式下累计看了${viewing}电视。"
+fi
+body="${body}
+家长模式不算在内。时间按目前的联网计时规则估算，可能有些误差。"
 response="$(mktemp /var/run/tvguard-bark.XXXXXX)" || exit 1
 trap 'rm -f "$response"' EXIT HUP INT TERM
 
