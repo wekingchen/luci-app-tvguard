@@ -95,6 +95,14 @@ EOAGENTBILL
 chmod +x "$TMP/agent-billing"
 export TVGUARD_TEST_AGENT_BILLING=charge
 
+cat > "$TMP/bark-report" <<'EOBARK'
+#!/bin/sh
+[ "$1" = test ] || exit 2
+awk -F= '$1=="USED_S" {print $2}' "$TVGUARD_TEST_STATE/state" >> "$TVGUARD_TEST_BARK_LOG"
+echo '测试推送已发送'
+EOBARK
+chmod +x "$TMP/bark-report"
+
 cat > "$TMP/data" <<'EODATA'
 #!/bin/sh
 mode="${TVGUARD_TEST_DATA_MODE:-persistent}"
@@ -134,6 +142,8 @@ exit 0
 EOLEARN
 chmod +x "$TMP/learn"
 : > "$TMP/learn.log"
+: > "$TMP/bark.log"
+export TVGUARD_TEST_BARK_LOG="$TMP/bark.log"
 export TVGUARD_TEST_LEARN_LOG="$TMP/learn.log"
 export TVGUARD_TEST_STATE="$TMP/state"
 export TVGUARD_TEST_VOLATILE="$TMP/volatile"
@@ -167,6 +177,7 @@ mapping={
     'LEARN=/usr/libexec/tvguard-learn': 'LEARN='+root+'/learn',
     'SOAK=/usr/libexec/tvguard-soak': 'SOAK='+root+'/soak',
     'AGENT_BILLING=/usr/libexec/tvguard-agent-billing-hint': 'AGENT_BILLING='+root+'/agent-billing',
+    'BARK_REPORT=/usr/libexec/tvguard-daily-report': 'BARK_REPORT='+root+'/bark-report',
     'TX_IDLE_BILLING_AUTHORITY=0': 'TX_IDLE_BILLING_AUTHORITY="${TVGUARD_TEST_TX_IDLE_AUTHORITY:-0}"',
     'DATA=/usr/libexec/tvguard-data': 'DATA='+root+'/data',
     'RUN=/var/run/tvguard.state': 'RUN='+root+'/run/runtime',
@@ -953,4 +964,29 @@ sh "$CTL" sync
 status
 check 'assert s["watch_seconds"]==125 and s["used_seconds"]==125 and s["previous_day_date"]=="none" and s["previous_day_seconds"]==0,s'
 
-echo "PASS: child-only watching, over-quota observation, rollover, migration and enforcement safety"
+# The admin's live test refreshes counters and saves the exact child-only
+# snapshot before it invokes Bark; it cannot enable enforcement.
+sh "$CTL" mode child
+export TVGUARD_TEST_AGENT_BILLING=charge
+python3 - "$TMP/run/runtime" <<'PY'
+from pathlib import Path
+import sys,time
+p=Path(sys.argv[1])
+s=p.read_text()
+p.write_text('\n'.join(
+    'LAST_EPOCH='+str(int(time.time())-10) if x.startswith('LAST_EPOCH=') else x
+    for x in s.splitlines()
+)+'\n')
+PY
+set -- $(cat "$TMP/sample")
+echo "$(($1+500)) $(($2+100000)) $(($3+250)) $(($4+50000)) $(($5+250)) $(($6+50000))" > "$TMP/sample"
+previous="$(sh "$CTL" status | python3 -c 'import json,sys;print(json.load(sys.stdin)["used_seconds"])')"
+sh "$CTL" bark-test > "$TMP/bark-response"
+grep -q '测试推送已发送' "$TMP/bark-response"
+reported="$(tail -n 1 "$TMP/bark.log")"
+[ "$reported" -ge "$((previous+9))" ] && [ "$reported" -le "$((previous+11))" ]
+status
+check 'assert s["used_seconds"]==s["watch_seconds"] and s["enforce"]==0,s'
+[ "$(cat "$TMP/gate")" = 0 ]
+
+echo "PASS: child-only watching, uncapped quota, live Bark snapshot and migration safety"
