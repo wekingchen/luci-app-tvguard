@@ -79,41 +79,7 @@ sh "$DAEMON"
 [ "$(grep -c '^data:prepare$' "$LOG")" -eq 2 ]
 [ "$(grep -c '^data:config-sync$' "$LOG")" -eq 2 ]
 [ "$(grep -c '^retention:trim$' "$LOG")" -eq 1 ]
-[ "$(grep -c '^ctl:tick
-grep -qx 'sleep:10' "$LOG"
-! grep -q '^logger:' "$LOG"
-
-# Tick failure is logged; cadence continues.
-export TVG_TICK_EXIT=7
-: > "$LOG"
-sh "$DAEMON"
-grep -qx 'ctl:tick' "$LOG"
-! grep -q '^report:' "$LOG"
-grep -qx 'logger:-t tvguard sample/update failed; keeping existing firewall gate' "$LOG"
-grep -qx 'sleep:10' "$LOG"
-
-# Transient mmc prepare failure is logged but does not stop the safe current
-# root from being used for config sync/tick.
-export TVG_TICK_EXIT=0
-export TVG_DATA_PREPARE_EXIT=7
-: > "$LOG"
-sh "$DAEMON"
-grep -q '^logger:-t tvguard durable data prepare failed;' "$LOG"
-grep -q '^data:config-sync$' "$LOG"
-grep -qx 'ctl:tick' "$LOG"
-grep -qx 'sleep:10' "$LOG"
-export TVG_DATA_PREPARE_EXIT=0
-
-# Config backup failure is diagnostic only and never changes firewall cadence.
-export TVG_DATA_CONFIG_EXIT=9
-: > "$LOG"
-sh "$DAEMON"
-grep -q '^logger:-t tvguard UCI config persistence sync failed;' "$LOG"
-grep -qx 'ctl:tick' "$LOG"
-grep -qx 'sleep:10' "$LOG"
-
-echo "PASS: daemon maintains bounded data/config persistence and 10-second cadence"
- "$LOG")" -eq 1 ]
+[ "$(grep -c '^ctl:tick$' "$LOG")" -eq 1 ]
 grep -qx 'report:tick' "$LOG"
 grep -qx 'sleep:10' "$LOG"
 ! grep -q '^logger:' "$LOG"
@@ -123,6 +89,7 @@ export TVG_TICK_EXIT=7
 : > "$LOG"
 sh "$DAEMON"
 grep -qx 'ctl:tick' "$LOG"
+! grep -q '^report:' "$LOG"
 grep -qx 'logger:-t tvguard sample/update failed; keeping existing firewall gate' "$LOG"
 grep -qx 'sleep:10' "$LOG"
 
