@@ -37,6 +37,13 @@ android {
         }
     }
 
+    // This APK is intentionally sideloaded only to the Android 6/API23 TV.
+    // Keep targetSdk 23 for the validated legacy runtime semantics; suppress
+    // only the Google Play distribution-age warning, not release lint itself.
+    lint {
+        disable 'ExpiredTargetSdkVersion'
+    }
+
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_1_8
         targetCompatibility JavaVersion.VERSION_1_8
