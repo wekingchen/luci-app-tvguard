@@ -1,6 +1,12 @@
 plugins {
     id 'com.android.application'
 }
+
+def releaseKeystorePath = System.getenv('TVGUARD_KEYSTORE_PATH')
+def releaseStorePassword = System.getenv('TVGUARD_STORE_PASSWORD')
+def releaseKeyAlias = System.getenv('TVGUARD_KEY_ALIAS')
+def releaseKeyPassword = System.getenv('TVGUARD_KEY_PASSWORD')
+
 android {
     namespace 'com.tvguard.agent'
     compileSdk 35
@@ -11,6 +17,24 @@ android {
         targetSdk 23
         versionCode 8
         versionName '0.2.6'
+    }
+
+    signingConfigs {
+        release {
+            if (releaseKeystorePath) {
+                storeFile file(releaseKeystorePath)
+                storePassword releaseStorePassword
+                keyAlias releaseKeyAlias
+                keyPassword releaseKeyPassword
+                storeType 'PKCS12'
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            signingConfig signingConfigs.release
+        }
     }
 
     compileOptions {
