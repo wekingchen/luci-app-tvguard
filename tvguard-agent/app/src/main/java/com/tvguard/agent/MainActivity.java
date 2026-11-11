@@ -56,7 +56,7 @@ public final class MainActivity extends Activity {
         panel.setOrientation(LinearLayout.VERTICAL);
         panel.setPadding(36, 30, 36, 30);
         scroller.addView(panel);
-        addText(panel, "TVGuard 助手 · 0.2.6-r2", 27, 0xFFFFFFFF);
+        addText(panel, "TVGuard 助手 · 0.2.8", 27, 0xFFFFFFFF);
         addText(panel, "Android 6 视频 App 页面观察验证版", 17, 0xFFB8C9D5);
         toggle = new Button(this);
         toggle.setAllCaps(false);
@@ -184,18 +184,12 @@ public final class MainActivity extends Activity {
         long ack = BridgeClient.ackAt();
         bridgeStatus.setText("N1：" + BridgeClient.state() +
                 "  · 最近接收：" + (ack == 0 ? "尚无" : time(ack)));
-        VideoActivityHistory.Event video = state.recentVideo;
-        VideoActivityHistory.Event meaningful = state.recentNonLauncher;
+        ForegroundActivityHistory.Event meaningful = state.recentNonLauncher;
         StringBuilder info = new StringBuilder();
         info.append("\n权限：").append(access ? "已允许" : "未授权")
                 .append("\n监测开关：").append(enabled ? "已开启" : "未开启")
                 .append("\n状态：").append(state.state)
                 .append("\n采样：").append(freshness);
-        info.append("\n\n【最近视频 App】")
-                .append("\n应用：").append(video == null ? "近期没有已识别的视频 App" :
-                        applicationName(video.packageName))
-                .append("\n页面：").append(video == null ? "未知" : blank(video.activityName))
-                .append("\n时间：").append(video == null ? "尚无" : time(video.timeMs));
         info.append("\n\n【最近非桌面 App】")
                 .append("\n应用：").append(meaningful == null ? "暂无" :
                         applicationName(meaningful.packageName))
@@ -204,10 +198,9 @@ public final class MainActivity extends Activity {
         info.append("\n\n当前前台：").append(applicationName(state.currentPackage))
                 .append("\nActivity：").append(blank(state.currentClass))
                 .append("\n\n最近前台页面切换（仅内存，最多显示6条）：");
-        for (VideoActivityHistory.Event event : state.timeline) {
-            String kind = VideoActivityHistory.isLauncherPackage(event.packageName) ?
-                    "桌面" : VideoActivityHistory.isVideoPackage(event.packageName) ?
-                    "视频" : "其他";
+        for (ForegroundActivityHistory.Event event : state.timeline) {
+            String kind = ForegroundActivityHistory.isLauncherPackage(event.packageName) ?
+                    "桌面" : "应用";
             info.append("\n").append(DateFormat.getTimeInstance().format(
                     new Date(event.timeMs))).append(" [").append(kind).append("] ")
                     .append(event.packageName).append(" / ")
@@ -215,7 +208,7 @@ public final class MainActivity extends Activity {
         }
         info.append("\n");
         details.setText(info.toString());
-        guidance.setText(access ? "正常操作：打开视频 → 播放 → Home 返回桌面 → 从应用菜单打开助手。最近视频 App 不会被桌面覆盖；页面不等于播放/暂停。"
+        guidance.setText(access ? "助手只上报前台上下文，不维护视频 App 白名单。播放/暂停由 N1 根据网络与时序证据统一学习；页面名称本身不等于播放状态。"
                 : "请首次开启 ADB，在电脑执行：\n"
                 + "adb shell appops set com.tvguard.agent GET_USAGE_STATS allow\n"
                 + "授权后无需常驻 ADB。");
