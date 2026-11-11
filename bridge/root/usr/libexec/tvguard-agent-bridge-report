@@ -34,7 +34,7 @@ case "${1:-status}" in
         exit 0 ;;
     summary)
         if [ ! -s "$RAM/soak-v3.csv" ]; then
-            printf 'schema=v3\nrows=0\nfresh_reports=0\nrepeated_rows=0\nstale_rows=0\ncombined_playing=0\ncombined_paused=0\ncombined_app_home=0\ncombined_system_home=0\ncombined_unknown=0\npause_warming=0\npause_confirmed=0\npause_hold=0\nmedia_idle_overlap_unresolved=0\napp_nonplaying_warming=0\napp_nonplaying_confirmed=0\nunlearned_pause_ignored=0\nagent_restart_reset=0\nbilling_effect=none\n'
+            printf 'schema=v3\nrows=0\nfresh_reports=0\nrepeated_rows=0\nstale_rows=0\ncombined_playing=0\ncombined_paused=0\ncombined_app_home=0\ncombined_system_home=0\ncombined_unknown=0\npause_warming=0\npause_confirmed=0\npause_hold=0\nrecent_play_burst_guard=0\nmedia_idle_overlap_unresolved=0\napp_nonplaying_warming=0\napp_nonplaying_confirmed=0\nunlearned_pause_ignored=0\nagent_restart_reset=0\nbilling_effect=none\n'
             exit 0
         fi
         awk -F, '
@@ -56,6 +56,7 @@ case "${1:-status}" in
                     if (candidate=="pause_candidate_learned_context") warming++
                     else if (candidate=="paused_confirmed_learned_context") confirmed++
                     else if (candidate=="paused_temporal_hold") hold++
+                    else if (candidate=="recent_play_burst_guard") burstguard++
                     else if (candidate=="learned_media_idle_overlap_unresolved") idleoverlap++
                     else if (candidate=="app_nonplaying_warming") appwarm++
                     else if (candidate=="app_nonplaying_confirmed") appconfirmed++
@@ -79,6 +80,7 @@ case "${1:-status}" in
                 print "pause_warming=" warming+0
                 print "pause_confirmed=" confirmed+0
                 print "pause_hold=" hold+0
+                print "recent_play_burst_guard=" burstguard+0
                 print "media_idle_overlap_unresolved=" idleoverlap+0
                 print "app_nonplaying_warming=" appwarm+0
                 print "app_nonplaying_confirmed=" appconfirmed+0
