@@ -44,7 +44,9 @@ jobs:
         run: python3 bridge/tests/test_pairing.py
       - name: Run testable bridge HTTP ingress contract
         run: python3 bridge/tests/test_http_bridge.py
-      - name: Verify fresh, repeated and stale RAM shadow samples
+      - name: Verify v0.2.7 temporal fusion and low-bitrate safety
+        run: python3 bridge/tests/test_fusion.py
+      - name: Verify fresh, repeated and stale RAM fusion samples
         run: python3 bridge/tests/test_shadow_freshness.py
       - name: Package standalone OpenWrt companion IPK
         run: |
