@@ -421,6 +421,9 @@ return view.extend({
         var used = Math.max(0, Number(state.used_seconds) || 0);
         var quotaPercent = quota > 0 ? clamp(used * 100 / quota, 0, 100) : 0;
 
+        n.watchToday.textContent = duration(state.watch_seconds || 0);
+        n.watchYesterday.textContent = state.previous_day_date && state.previous_day_date !== 'none' ?
+            (state.previous_day_date + '：' + duration(state.previous_day_seconds || 0)) : '尚无完整自然日记录';
         n.remaining.textContent = duration(state.remaining_seconds);
         n.mode.textContent = modeName;
         n.modeNote.textContent = modeNote;
@@ -891,6 +894,10 @@ return view.extend({
             });
         }
 
+        var watchTodayNode = E('strong', { 'style': 'font-size:1.35rem' }, duration(s.watch_seconds || 0));
+        var watchYesterdayNode = E('span', { 'class': 'description' },
+            s.previous_day_date && s.previous_day_date !== 'none' ?
+                (s.previous_day_date + '：' + duration(s.previous_day_seconds || 0)) : '尚无完整自然日记录');
         var remainingNode = E('span', {}, duration(s.remaining_seconds));
         var modeNode = E('span', {}, modeName);
         var modeNoteNode = E('span', {}, modeNote);
@@ -945,6 +952,8 @@ return view.extend({
             byteRate(s.bytes_per_second || 0));
 
         this._overviewNodes = {
+            watchToday: watchTodayNode,
+            watchYesterday: watchYesterdayNode,
             remaining: remainingNode,
             mode: modeNode,
             modeNote: modeNoteNode,
@@ -1000,6 +1009,13 @@ return view.extend({
                     }, activityNode)
                 ])
             ], 180, 'tvg-summary-grid'),
+
+            panel('今日累计观看', '沿用儿童模式的计时判断，不区分家长和儿童模式；联网活动估算不等同于实际视频播放时长。', [
+                E('div', { 'style': 'margin-bottom:6px' }, watchTodayNode),
+                E('div', { 'class': 'description' }, ['上一完整自然日：', watchYesterdayNode]),
+                E('div', { 'class': 'description', 'style': 'margin-top:8px' },
+                    '每天定时发送上一完整自然日的 Bark 日报，设置入口在“时间规则”。')
+            ], 'margin-top:16px'),
 
             panel('今日儿童额度', '这里显示的是根据经过 N1 的联网活动估算的使用时长，不等同于真实亮屏或观看时间。', [
                 E('div', {
