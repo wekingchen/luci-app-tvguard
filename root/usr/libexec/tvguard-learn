@@ -105,6 +105,9 @@ dominant_activity_share=0
 audio_ratio=0
 screen_ratio=0
 context_changes=0
+activity_trail_coverage=0
+dominant_activity_trail=none
+dominant_activity_trail_share=0
 
 if [ -s "$V5" ]; then
     context_stats="$(awk -F, -v sid="$sid" -v label="$label" '
@@ -114,6 +117,10 @@ if [ -s "$V5" ]; then
             fresh++
             audio += $8+0
             screen += $9+0
+            if ($19!="" && $19!="none") {
+                trail_known++
+                trail[$19]++
+            }
             if ($6!="" && $6!="unknown") {
                 known++
                 pkg[$6]++
@@ -128,9 +135,10 @@ if [ -s "$V5" ]; then
         }
     }
     END {
-        dp="unknown"; da="unknown"; dpn=0; dan=0
+        dp="unknown"; da="unknown"; dt="none"; dpn=0; dan=0; dtn=0
         for (k in pkg) if (pkg[k]>dpn) { dpn=pkg[k]; dp=k }
         for (k in act) if (act[k]>dan) { dan=act[k]; da=k }
+        for (k in trail) if (trail[k]>dtn) { dtn=trail[k]; dt=k }
         tcov=(total>0 ? int(fresh*100/total) : 0)
         pcov=(total>0 ? int(known*100/total) : 0)
         fcov=(total>0 ? int(full*100/total) : 0)
@@ -138,15 +146,17 @@ if [ -s "$V5" ]; then
         das=(full>0 ? int(dan*100/full) : 0)
         ar=(fresh>0 ? int(audio*100/fresh) : 0)
         sr=(fresh>0 ? int(screen*100/fresh) : 0)
-        printf "%d|%d|%d|%d|%d|%d|%d|%s|%d|%s|%d|%d|%d|%d\n",
+        trcov=(fresh>0 ? int(trail_known*100/fresh) : 0)
+        dts=(trail_known>0 ? int(dtn*100/trail_known) : 0)
+        printf "%d|%d|%d|%d|%d|%d|%d|%s|%d|%s|%d|%d|%d|%d|%d|%s|%d\n",
             total+0,fresh+0,tcov,known+0,pcov,full+0,fcov,
-            dp,dps,da,das,ar,sr,changes+0
+            dp,dps,da,das,ar,sr,changes+0,trcov,dt,dts
     }' "$V5")"
     old_ifs="$IFS"
     IFS='|'
     set -- $context_stats
     IFS="$old_ifs"
-    if [ "$#" -eq 14 ]; then
+    if [ "$#" -eq 17 ]; then
         agent_total="$1"
         agent_fresh="$2"
         agent_coverage="$3"
@@ -161,6 +171,9 @@ if [ -s "$V5" ]; then
         audio_ratio="${12}"
         screen_ratio="${13}"
         context_changes="${14}"
+        activity_trail_coverage="${15}"
+        dominant_activity_trail="${16}"
+        dominant_activity_trail_share="${17}"
     fi
 fi
 
@@ -221,6 +234,7 @@ TCP/UDP: 中位 $t50 / $u50 PPS
 Agent 传输: ${agent_fresh}/${agent_total} fresh · 覆盖 ${agent_coverage}%
 应用包上下文: ${agent_package_known}/${agent_total} · 覆盖 ${agent_package_coverage}% · $dominant_pkg · 稳定 ${dominant_pkg_share}%
 完整前台上下文: ${agent_full_context}/${agent_total} · 覆盖 ${agent_full_coverage}% · $dominant_activity · 稳定 ${dominant_activity_share}%
+最近 Activity 轨迹: 覆盖 ${activity_trail_coverage}% · $dominant_activity_trail · 稳定 ${dominant_activity_trail_share}%
 电视上下文: 音频活跃 ${audio_ratio}% · 屏幕亮 ${screen_ratio}% · 前台切换 ${context_changes} 次
 联合质量: $joint_quality
 处理: $verdict
