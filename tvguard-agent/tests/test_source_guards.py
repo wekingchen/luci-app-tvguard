@@ -34,8 +34,8 @@ assert "startForeground(" not in service
 assert "stopForeground(" not in service
 assert "static boolean isRunning()" in service
 gradle = (root / "app/build.gradle").read_text()
-assert "versionCode 12" in gradle
-assert "versionName '0.2.9'" in gradle
+assert "versionCode 13" in gradle
+assert "versionName '0.3.0'" in gradle
 
 main_activity = (src / "java/com/tvguard/agent/MainActivity.java").read_text()
 assert "不维护视频 App 白名单" in main_activity
@@ -75,7 +75,7 @@ assert "SharedPreferences.Editor" in service
 assert "editor.commit()" in service
 main_activity = (src / "java/com/tvguard/agent/MainActivity.java").read_text()
 editor = (src / "java/com/tvguard/agent/TvAddressEditor.java").read_text()
-assert "TVGuard 助手 · 0.2.9" in main_activity
+assert "TVGuard 助手 · 0.3.0" in main_activity
 gradle = (root / "app/build.gradle").read_text()
 assert "targetSdk 23" in gradle
 assert "disable 'ExpiredTargetSdkVersion'" in gradle
@@ -117,6 +117,9 @@ assert "PAIR1" in bridge_client
 assert "TOKEN1|" in bridge_client
 protocol = (src / "java/com/tvguard/agent/BridgeProtocol.java").read_text()
 assert '"TVG2|"' in protocol
+assert '"TVG3|"' in protocol
+assert "activityTrail" in protocol
+assert "bodyV3" in protocol
 assert "usageAccess" in protocol and "foregroundSource" in protocol
 assert "foregroundStatus" in protocol
 assert "TvAddressEditor.show" in main_activity
