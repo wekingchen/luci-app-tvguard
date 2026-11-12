@@ -5,8 +5,8 @@
 set -eu
 
 ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
-VERSION="${1:-0.1.13}"
-RELEASE="${2:-21}"
+VERSION="${1:-0.1.14}"
+RELEASE="${2:-7}"
 OUT="$ROOT/dist"
 PACKAGE="luci-app-tvguard"
 ARCH="all"
@@ -16,6 +16,19 @@ trap 'rm -rf "$WORK"' EXIT HUP INT TERM
 mkdir -p "$OUT" "$WORK/data/www" "$WORK/control"
 cp -R "$ROOT/root/." "$WORK/data/"
 cp -R "$ROOT/htdocs/." "$WORK/data/www/"
+
+# Keep Bridge/Fusion source isolated for tests, but ship it in the main IPK.
+# Fail on duplicate file paths instead of overriding core files.
+find "$ROOT/bridge/root" -type f | while IFS= read -r source; do
+    rel="${source#"$ROOT/bridge/root/"}"
+    [ ! -e "$WORK/data/$rel" ] || {
+        echo "bridge/core package path collision: $rel" >&2
+        exit 1
+    }
+done
+cp -R "$ROOT/bridge/root/." "$WORK/data/"
+# Reuse the existing tested BusyBox-safe setup script; never ship the key.
+cp "$ROOT/bridge/ipkg/postinst" "$WORK/data/usr/libexec/tvguard-agent-bridge-setup"
 
 for f in \
     etc/init.d/tvguard \
@@ -33,7 +46,15 @@ for f in \
     usr/libexec/tvguard-data \
     usr/libexec/tvguard-soak \
     usr/libexec/tvguard-soak-report \
-    usr/libexec/tvguard-daily-report; do
+    usr/libexec/tvguard-daily-report \
+    etc/init.d/tvguard-agent-bridge \
+    www/cgi-bin/tvguard-agent \
+    usr/libexec/tvguard-agent-billing-hint \
+    usr/libexec/tvguard-agent-bridge-pair \
+    usr/libexec/tvguard-agent-bridge-report \
+    usr/libexec/tvguard-agent-bridge-soak \
+    usr/libexec/tvguard-agent-fusion \
+    usr/libexec/tvguard-agent-bridge-setup; do
     chmod 755 "$WORK/data/$f"
 done
 
@@ -55,7 +76,10 @@ Maintainer: TV Guard contributors
 Section: luci
 Priority: optional
 Installed-Size: $INSTALLED_SIZE
-Depends: luci-base, rpcd, curl
+Depends: luci-base, rpcd, curl, uhttpd
+Conflicts: tvguard-agent-bridge
+Replaces: tvguard-agent-bridge
+Provides: tvguard-agent-bridge
 Description: TV Guard LuCI and shadow time-control service for firewall3 / iptables-legacy
 EOF
 

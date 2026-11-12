@@ -5,6 +5,7 @@ import android.media.AudioManager;
 import android.os.PowerManager;
 import android.app.Service;
 import android.app.usage.UsageEvents;
+import android.app.usage.UsageStats;
 import android.app.usage.UsageStatsManager;
 import android.content.Context;
 import android.content.Intent;
@@ -13,6 +14,7 @@ import android.os.Handler;
 import android.os.HandlerThread;
 import android.os.IBinder;
 import android.os.Process;
+import java.util.List;
 
 /**
  * Volatile, bounded observer. No file I/O, database, log, network or event queue.
@@ -41,12 +43,16 @@ public final class MonitorService extends Service {
         public final long sampledMs;
         public final ForegroundActivityHistory.Event recentNonLauncher;
         public final ForegroundActivityHistory.Event[] timeline;
+        public final String usageAccess;
+        public final String foregroundSource;
+        public final String foregroundStatus;
 
         Snapshot(String state, String currentPackage, String currentClass,
                  String lastOtherPackage, String lastOtherClass,
                  long changedMs, long sampledMs,
                  ForegroundActivityHistory.Event recentNonLauncher,
-                 ForegroundActivityHistory.Event[] timeline) {
+                 ForegroundActivityHistory.Event[] timeline,
+                 String usageAccess, String foregroundSource, String foregroundStatus) {
             this.state = state;
             this.currentPackage = currentPackage;
             this.currentClass = currentClass;
@@ -56,11 +62,22 @@ public final class MonitorService extends Service {
             this.sampledMs = sampledMs;
             this.recentNonLauncher = recentNonLauncher;
             this.timeline = timeline.clone();
+            this.usageAccess = usageAccess;
+            this.foregroundSource = foregroundSource;
+            this.foregroundStatus = foregroundStatus;
         }
 
         static Snapshot empty(String state) {
             return new Snapshot(state, "", "", "", "", 0L, 0L, null,
-                    new ForegroundActivityHistory.Event[0]);
+                    new ForegroundActivityHistory.Event[0],
+                    "unknown", "none", "no_sample");
+        }
+
+        static Snapshot diagnostic(String state, long sampledMs,
+                                   String usageAccess, String foregroundStatus) {
+            return new Snapshot(state, "", "", "", "", 0L, sampledMs, null,
+                    new ForegroundActivityHistory.Event[0],
+                    usageAccess, "none", foregroundStatus);
         }
     }
 
@@ -92,13 +109,19 @@ public final class MonitorService extends Service {
         return saved;
     }
 
-    public static boolean hasUsageAccess(Context context) {
+    static String usageAccessState(Context context) {
         AppOpsManager appOps =
                 (AppOpsManager) context.getSystemService(Context.APP_OPS_SERVICE);
-        return appOps != null &&
-                appOps.checkOpNoThrow(AppOpsManager.OPSTR_GET_USAGE_STATS,
-                        Process.myUid(), context.getPackageName())
-                        == AppOpsManager.MODE_ALLOWED;
+        if (appOps == null) return "unknown";
+        int mode = appOps.checkOpNoThrow(AppOpsManager.OPSTR_GET_USAGE_STATS,
+                Process.myUid(), context.getPackageName());
+        if (mode == AppOpsManager.MODE_ALLOWED) return "allowed";
+        if (mode == AppOpsManager.MODE_DEFAULT) return "default";
+        return "denied";
+    }
+
+    public static boolean hasUsageAccess(Context context) {
+        return "allowed".equals(usageAccessState(context));
     }
 
     @Override
@@ -143,9 +166,10 @@ public final class MonitorService extends Service {
             } catch (RuntimeException failure) {
                 Snapshot before = latest;
                 // Never mark a failed query as a successful new sample.
-                latest = new Snapshot("读取失败：" + failure.getClass().getSimpleName(),
-                        "", "", "", "", 0L, before.sampledMs,
-                        null, new ForegroundActivityHistory.Event[0]);
+                latest = Snapshot.diagnostic(
+                        "读取失败：" + failure.getClass().getSimpleName(),
+                        System.currentTimeMillis(), usageAccessState(MonitorService.this),
+                        "query_error_" + failure.getClass().getSimpleName());
                 recentActivity.clear();
                 lastScanEnd = 0L;
             }
@@ -156,8 +180,7 @@ public final class MonitorService extends Service {
     };
 
     // Independent latest-only LAN heartbeat: no disk log, queue or history.
-    // On an unavailable/stuck UsageStats reader, explicitly send "unknown"
-    // rather than recycling the last PlayerActivity as if still confirmed.
+    // Foreground diagnostics are sent even when exact Activity context is unavailable.
     private final Runnable report = new Runnable() {
         @Override
         public void run() {
@@ -165,12 +188,13 @@ public final class MonitorService extends Service {
             try {
                 Snapshot sample = latest;
                 long now = System.currentTimeMillis();
-                boolean fresh = HeartbeatState.isFresh(now, sample.sampledMs) &&
-                        "监测中".equals(sample.state) &&
-                        sample.currentPackage.length() != 0 &&
-                        hasUsageAccess(MonitorService.this);
-                String pkg = fresh ? sample.currentPackage : "unknown";
-                String cls = fresh ? sample.currentClass : "unknown";
+                boolean fresh = HeartbeatState.isFresh(now, sample.sampledMs);
+                String pkg = fresh && sample.currentPackage.length() != 0
+                        ? sample.currentPackage : "unknown";
+                String cls = fresh && sample.currentClass.length() != 0
+                        ? sample.currentClass : "unknown";
+                String source = fresh ? sample.foregroundSource : "none";
+                String status = fresh ? sample.foregroundStatus : "sample_stale";
                 AudioManager audio = (AudioManager)
                         getSystemService(Context.AUDIO_SERVICE);
                 PowerManager power = (PowerManager)
@@ -178,7 +202,7 @@ public final class MonitorService extends Service {
                 boolean activeAudio = audio != null && audio.isMusicActive();
                 boolean screenOn = power != null && power.isInteractive();
                 BridgeClient.maybeSend(MonitorService.this, pkg, cls,
-                        activeAudio, screenOn, now);
+                        activeAudio, screenOn, now, sample.usageAccess, source, status);
             } catch (RuntimeException e) {
                 BridgeClient.markUplinkError("本地上报异常：" +
                         e.getClass().getSimpleName());
@@ -190,82 +214,123 @@ public final class MonitorService extends Service {
         }
     };
 
+    private String fallbackPackage(UsageStatsManager manager, long now) {
+        List<UsageStats> stats;
+        try {
+            long from = Math.max(0L, now - 6L * 60L * 60L * 1000L);
+            stats = manager.queryUsageStats(UsageStatsManager.INTERVAL_DAILY, from, now + 1000L);
+        } catch (RuntimeException ignored) {
+            return "";
+        }
+        if (stats == null) return "";
+        String best = "";
+        long bestTime = 0L;
+        long cutoff = Math.max(0L, now - 6L * 60L * 60L * 1000L);
+        for (UsageStats item : stats) {
+            if (item == null) continue;
+            String pkg = item.getPackageName();
+            long used = item.getLastTimeUsed();
+            if (pkg == null || pkg.length() == 0 || pkg.equals(getPackageName())
+                    || used < cutoff || used > now + 5000L || used <= bestTime) {
+                continue;
+            }
+            best = pkg;
+            bestTime = used;
+        }
+        return best;
+    }
+
     private void sampleOnce() {
         long now = System.currentTimeMillis();
-        if (!hasUsageAccess(this)) {
-            latest = Snapshot.empty("等待使用情况权限");
-            recentActivity.clear();
-            lastScanEnd = 0;
-            return;
-        }
+        String access = usageAccessState(this);
         UsageStatsManager manager =
                 (UsageStatsManager) getSystemService(Context.USAGE_STATS_SERVICE);
         if (manager == null) {
-            latest = Snapshot.empty("系统未提供 UsageStats 服务");
-            recentActivity.clear();
-            lastScanEnd = 0;
-            return;
-        }
-        SamplingWindow window = SamplingWindow.plan(now, lastScanEnd);
-        if (window.reset) {
-            // Cold start can rebuild meaningful history from Android UsageEvents.
-            // No event is persisted by TVGuard itself.
-            recentActivity.clear();
-        }
-        Snapshot previous = latest;
-        // A stale foreground must not survive suspension or clock rollback.
-        ForegroundReducer reducer = new ForegroundReducer(
-                window.reset ? "" : previous.currentPackage,
-                window.reset ? "" : previous.currentClass,
-                window.reset ? "" : previous.lastOtherPackage,
-                window.reset ? "" : previous.lastOtherClass,
-                window.reset ? 0L : previous.changedMs);
-        UsageEvents events = manager.queryEvents(window.fromMs, now + 1000L);
-        if (events == null) {
-            latest = Snapshot.empty("系统未返回使用事件");
+            latest = Snapshot.diagnostic("系统未提供 UsageStats 服务", now,
+                    access, "service_missing");
             recentActivity.clear();
             lastScanEnd = 0L;
             return;
         }
-        UsageEvents.Event e = new UsageEvents.Event();
+
+        SamplingWindow window = SamplingWindow.plan(now, lastScanEnd);
+        if (window.reset) {
+            recentActivity.clear();
+        }
+        Snapshot previous = latest;
+        boolean reuseEventContext = !window.reset
+                && "usage_events".equals(previous.foregroundSource);
+        ForegroundReducer reducer = new ForegroundReducer(
+                reuseEventContext ? previous.currentPackage : "",
+                reuseEventContext ? previous.currentClass : "",
+                reuseEventContext ? previous.lastOtherPackage : "",
+                reuseEventContext ? previous.lastOtherClass : "",
+                reuseEventContext ? previous.changedMs : 0L);
+
+        UsageEvents events = null;
+        try {
+            events = manager.queryEvents(window.fromMs, now + 1000L);
+        } catch (RuntimeException ignored) {
+            // Vendor Android 6 builds may reject UsageEvents while still
+            // returning package-level UsageStats. Fall through to that safer,
+            // lower-confidence source instead of pretending the Agent is offline.
+        }
+
         int processed = 0;
         boolean overflow = false;
-        while (events.hasNextEvent()) {
-            if (processed++ >= MAX_EVENTS_PER_POLL) {
-                overflow = true;
-                break;
-            }
-            events.getNextEvent(e);
-            int type = e.getEventType();
-            String pkg = e.getPackageName();
-            if (pkg == null) {
-                continue;
-            }
-            if (type == UsageEvents.Event.MOVE_TO_FOREGROUND) {
-                reducer.foreground(pkg, e.getClassName(), e.getTimeStamp(),
-                        getPackageName());
-                recentActivity.recordForeground(pkg, e.getClassName(), e.getTimeStamp(),
-                        getPackageName());
-            } else if (type == UsageEvents.Event.MOVE_TO_BACKGROUND) {
-                reducer.background(pkg, e.getClassName(), e.getTimeStamp());
+        if (events != null) {
+            UsageEvents.Event e = new UsageEvents.Event();
+            while (events.hasNextEvent()) {
+                if (processed++ >= MAX_EVENTS_PER_POLL) {
+                    overflow = true;
+                    break;
+                }
+                events.getNextEvent(e);
+                int type = e.getEventType();
+                String pkg = e.getPackageName();
+                if (pkg == null) continue;
+                if (type == UsageEvents.Event.MOVE_TO_FOREGROUND) {
+                    reducer.foreground(pkg, e.getClassName(), e.getTimeStamp(),
+                            getPackageName());
+                    recentActivity.recordForeground(pkg, e.getClassName(), e.getTimeStamp(),
+                            getPackageName());
+                } else if (type == UsageEvents.Event.MOVE_TO_BACKGROUND) {
+                    reducer.background(pkg, e.getClassName(), e.getTimeStamp());
+                }
             }
         }
         lastScanEnd = now;
-        if (overflow) {
-            // A partial event window is not valid proof of foreground state.
-            recentActivity.clear();
-            latest = new Snapshot("事件超限，前台待确认", "", "", "", "", 0L, now,
-                    null, new ForegroundActivityHistory.Event[0]);
+
+        if (!overflow && reducer.currentPackage.length() != 0) {
+            boolean full = reducer.currentClass.length() != 0;
+            latest = new Snapshot(full ? "监测中" : "监测中（仅识别到应用）",
+                    reducer.currentPackage, reducer.currentClass,
+                    reducer.lastOtherPackage, reducer.lastOtherClass,
+                    reducer.changedMs, now,
+                    recentActivity.lastNonLauncher(), recentActivity.lastEvents(6),
+                    access, "usage_events", full ? "full_context" : "package_only");
             return;
         }
-        String state = reducer.currentPackage.length() == 0
-                ? "监测中（前台待确认）" : "监测中";
-        latest = new Snapshot(state,
-                reducer.currentPackage, reducer.currentClass,
-                reducer.lastOtherPackage, reducer.lastOtherClass,
-                reducer.changedMs, now,
-                recentActivity.lastNonLauncher(),
-                recentActivity.lastEvents(6));
+
+        // Package-level fallback deliberately does NOT invent an Activity.
+        // N1 may use it only as positive playback context; it can never grant
+        // system/app-home or paused free time.
+        String fallback = fallbackPackage(manager, now);
+        if (fallback.length() != 0) {
+            latest = new Snapshot("监测中（仅识别到应用）",
+                    fallback, "", "", "", now, now,
+                    recentActivity.lastNonLauncher(), recentActivity.lastEvents(6),
+                    access, "usage_stats",
+                    overflow ? "package_only_after_overflow" : "package_only");
+            return;
+        }
+
+        String status;
+        if (overflow) status = "event_overflow";
+        else if (!"allowed".equals(access)) status = "permission_unconfirmed";
+        else if (events == null) status = "events_unavailable";
+        else status = "no_foreground";
+        latest = Snapshot.diagnostic("监测中（前台待确认）", now, access, status);
     }
 
     @Override

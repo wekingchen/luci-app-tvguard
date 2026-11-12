@@ -28,10 +28,12 @@ trim_file() {
 trim_all() {
     mkdir -p "$DIR"
     # Hard design budget for append-only persistent data:
-    # 256 KiB + 256 KiB + 384 KiB + 128 KiB = 1 MiB.
+    # events 256 KiB + v3 256 KiB + optional reply v4 128 KiB +
+    # Agent-enriched v5 256 KiB + session summaries 128 KiB = 1 MiB.
     trim_file "$DIR/events.log" 262144 1500
     trim_file "$DIR/calibration-v3.csv" 262144 1500
-    trim_file "$DIR/calibration-v4.csv" 393216 1800
+    trim_file "$DIR/calibration-v4.csv" 131072 700
+    trim_file "$DIR/calibration-v5.csv" 262144 1200
     trim_file "$DIR/learning-sessions.csv" 131072 512
 }
 
@@ -47,12 +49,13 @@ report() {
     events="$(bytes_of "$DIR/events.log")"
     v3="$(bytes_of "$DIR/calibration-v3.csv")"
     v4="$(bytes_of "$DIR/calibration-v4.csv")"
+    v5="$(bytes_of "$DIR/calibration-v5.csv")"
     sessions="$(bytes_of "$DIR/learning-sessions.csv")"
     last="$(bytes_of "$DIR/learning-last.txt")"
     state="$(bytes_of "$DIR/state")"
     config_backup="$(bytes_of "$PERSIST_DIR/config/tvguard")"
     soak_summary="$(bytes_of "$PERSIST_DIR/soak-summary")"
-    total=$((events + v3 + v4 + sessions))
+    total=$((events + v3 + v4 + v5 + sessions))
     small=$((last + state))
 
     data_status="$("$DATA" status 2>/dev/null || echo "unknown|$DIR|status_error")"
@@ -75,7 +78,8 @@ TV Guard 存储护栏
 当前追加数据: $total bytes
 events.log: $events / 262144
 calibration-v3.csv: $v3 / 262144
-calibration-v4.csv: $v4 / 393216
+calibration-v4.csv: $v4 / 131072
+calibration-v5.csv: $v5 / 262144
 learning-sessions.csv: $sessions / 131072
 覆盖写小文件: $small bytes
 UCI 配置备份: $config_backup bytes

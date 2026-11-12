@@ -38,6 +38,48 @@ def make_rows(apps, confuse=False):
     return "\n".join(rows) + "\n"
 
 
+def make_v5_rows(packages):
+    rows = []
+    sid = 1000
+    seq = 0
+    for package in packages:
+        for scene, metrics in scenes.items():
+            for run in range(3):
+                sid += 1
+                for window in range(8):
+                    seq += 1
+                    p, tcp, udp, by = metrics
+                    stamp = 1740000000 + sid * 130 + window * 10
+                    audio = 1 if scene == "playing" else 0
+                    activity = package + (".PlayerActivity" if scene != "app_home" else ".HomeActivity")
+                    rows.append(
+                        f"{stamp},{sid}-1,{scene},fresh,2,{package},{activity},"
+                        f"{audio},1,{seq},{p+window%2},{tcp+window%2},"
+                        f"{udp+window%2},{by+window*20}"
+                    )
+    return "\n".join(rows) + "\n"
+
+
+def make_v5_extended_package_only(packages):
+    rows = []
+    sid = 2000
+    seq = 0
+    for package in packages:
+        for scene, metrics in scenes.items():
+            for run in range(3):
+                sid += 1
+                for window in range(8):
+                    seq += 1
+                    p, tcp, udp, by = metrics
+                    stamp = 1750000000 + sid * 130 + window * 10
+                    rows.append(
+                        f"{stamp},{sid}-1,{scene},fresh,2,{package},unknown,"
+                        f"1,1,{seq},{p},{tcp},{udp},{by},allowed,usage_stats,"
+                        f"package_only,package_only"
+                    )
+    return "\n".join(rows) + "\n"
+
+
 def check(csv_path):
     return json.loads(subprocess.check_output(
         [sys.executable, str(evaluator), str(csv_path)],
@@ -61,6 +103,21 @@ with tempfile.TemporaryDirectory() as d:
     assert report["overall"]["idle_hint_correct"] > 0, report
     assert report["overall"]["charge_correct"] > 0, report
     assert report["overall"]["dangerous_idle_false_hints"] == 0, report
+
+    v5_path = Path(d) / "calibration-v5.csv"
+    v5_packages = ("com.alpha.video", "com.beta.video", "com.gamma.video")
+    v5_path.write_text(make_v5_rows(v5_packages), encoding="utf-8")
+    report = check(v5_path)
+    assert report["input_schema"] == "v5", report
+    assert report["generic_idle_validation_ready"] is True, report
+    assert {fold["held_out_app"] for fold in report["folds"]} == set(v5_packages), report
+    assert report["overall"]["dangerous_idle_false_hints"] == 0, report
+
+    v5_path.write_text(
+        make_v5_extended_package_only(v5_packages), encoding="utf-8")
+    report = check(v5_path)
+    assert report["input_schema"] == "unknown", report
+    assert report["generic_idle_validation_ready"] is False, report
 
     csv_path.write_text(
         make_rows(("tencent", "iqiyi", "mango"), confuse=True), encoding="utf-8")

@@ -68,7 +68,7 @@ exit 0
 SH
 
 chmod +x "$TMP/bin/uci" "$TMP/mock-action"
-for name in rpcd tvguard tvguardctl; do
+for name in rpcd tvguard tvguardctl tvguard-agent-bridge tvguard-agent-bridge-setup; do
     cp "$TMP/mock-action" "$TMP/$name"
 done
 
@@ -97,9 +97,13 @@ import sys
 src, dst, tmp = sys.argv[1:]
 text = Path(src).read_text()
 text = text.replace("/etc/init.d/rpcd", tmp + "/rpcd")
+text = text.replace("/etc/init.d/tvguard-agent-bridge", tmp + "/tvguard-agent-bridge")
 text = text.replace("/etc/init.d/tvguard", tmp + "/tvguard")
+text = text.replace("/usr/libexec/tvguard-agent-bridge-setup", tmp + "/tvguard-agent-bridge-setup")
 text = text.replace("/usr/libexec/tvguardctl", tmp + "/tvguardctl")
 text = text.replace("/usr/libexec/tvguard-fw", tmp + "/tvguard-fw")
+text = text.replace("/etc/config/tvguard-opkg", tmp + "/tvguard-opkg")
+text = text.replace("/usr/share/tvguard/default-config", tmp + "/default-config")
 Path(dst).write_text(text)
 PY
     chmod +x "$dest"
@@ -154,8 +158,12 @@ EOF
 }
 
 # Clean install: add only TV Guard metadata; preserve unrelated proxy UCI.
+# A byte-identical opkg conffile duplicate is safe to discard.
+printf 'default\n' > "$TMP/default-config"
+cp "$TMP/default-config" "$TMP/tvguard-opkg"
 reset_state
 sh "$TMP/postinst"
+[ ! -e "$TMP/tvguard-opkg" ]
 assert_proxy_section
 grep -q '^firewall.tvguard=include$' "$STATE"
 grep -q '^firewall.tvguard.type=script$' "$STATE"
@@ -163,12 +171,17 @@ grep -q '^firewall.tvguard.path=/usr/libexec/tvguard-firewall-include$' "$STATE"
 grep -q '^commit firewall$' "$LOG"
 grep -q '^tvguard enable$' "$LOG"
 grep -q '^tvguard start$' "$LOG"
+grep -q '^tvguard-agent-bridge-setup $' "$LOG"
 ! grep -q 'firewall restart\|firewall reload' "$LOG"
 
-# Existing owned section: accept without rewriting firewall UCI.
+# Existing owned section: accept without rewriting firewall UCI. A divergent
+# -opkg file must be preserved because it could contain something meaningful.
+printf 'different\n' > "$TMP/tvguard-opkg"
 owned_state
 : > "$LOG"
 sh "$TMP/postinst"
+[ -f "$TMP/tvguard-opkg" ]
+grep -qx 'different' "$TMP/tvguard-opkg"
 assert_proxy_section
 ! grep -q '^set firewall\.' "$LOG"
 ! grep -q '^commit firewall$' "$LOG"
@@ -187,6 +200,19 @@ assert_proxy_section
 ! grep -q '^set firewall\.' "$LOG"
 ! grep -q '^delete firewall\.' "$LOG"
 ! grep -q '^tvguard start$' "$LOG"
+
+# Package upgrade: stop only TV Guard processes so files can be replaced.
+# Never rewrite enforcement, detach the firewall hook, or mutate UCI.
+owned_state
+: > "$LOG"
+sh "$TMP/prerm" upgrade
+assert_proxy_section
+grep -q '^tvguard-agent-bridge stop$' "$LOG"
+grep -q '^tvguard stop$' "$LOG"
+! grep -q '^tvguardctl enforce off$' "$LOG"
+! grep -q '^tvguard-fw remove$' "$LOG"
+! grep -q '^delete firewall\.tvguard$' "$LOG"
+grep -q '^firewall.tvguard=include$' "$STATE"
 
 # Foreign section on uninstall: never delete it.
 foreign_state

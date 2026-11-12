@@ -94,7 +94,7 @@ function clear_local_playing() {
 }
 $2 ~ /^[0-9]+-[0-9]+$/ &&
 $3 ~ /^(playing|paused|app_home|system_home|sleep)$/ &&
-$4 ~ /^(general|tencent|iqiyi|mango|other|system)$/ &&
+$4 ~ /^[A-Za-z0-9._$]+$/ &&
 $5 ~ /^[0-9]+$/ && $6 ~ /^[0-9]+$/ &&
 $7 ~ /^[0-9]+$/ && $8 ~ /^[0-9]+$/ {
     label=$3
@@ -116,7 +116,10 @@ $7 ~ /^[0-9]+$/ && $8 ~ /^[0-9]+$/ {
         bmin[label]=low(bmin[label],$8); bmax[label]=high(bmax[label],$8)
     }
     session_seen[label SUBSEP $2]=1
-    if ($4=="tencent" || $4=="iqiyi" || $4=="mango")
+    # Fresh Agent-assisted learning writes real package IDs here. Legacy
+    # symbolic labels remain accepted; generic/other/system never count as
+    # independent video Apps for cross-App evidence.
+    if ($4!="general" && $4!="other" && $4!="system")
         app_seen[label SUBSEP $4]=1
 }
 END {

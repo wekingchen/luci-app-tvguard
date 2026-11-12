@@ -1,4 +1,4 @@
-name: Agent + N1 bridge shadow integration
+name: Integrated N1 Bridge source and package gate
 
 on:
   workflow_call:
@@ -28,7 +28,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          for file in bridge/root/www/cgi-bin/tvguard-agent bridge/root/usr/libexec/tvguard-agent-bridge-report bridge/root/usr/libexec/tvguard-agent-bridge-soak bridge/root/usr/libexec/tvguard-agent-bridge-pair bridge/root/usr/libexec/tvguard-agent-billing-hint bridge/root/usr/libexec/tvguard-agent-fusion bridge/root/etc/init.d/tvguard-agent-bridge bridge/ipkg/postinst bridge/ipkg/prerm scripts/build-agent-bridge-ipk.sh; do
+          for file in bridge/root/www/cgi-bin/tvguard-agent bridge/root/usr/libexec/tvguard-agent-bridge-report bridge/root/usr/libexec/tvguard-agent-bridge-soak bridge/root/usr/libexec/tvguard-agent-bridge-pair bridge/root/usr/libexec/tvguard-agent-billing-hint bridge/root/usr/libexec/tvguard-agent-fusion bridge/root/etc/init.d/tvguard-agent-bridge bridge/ipkg/postinst bridge/ipkg/prerm scripts/build-ipk.sh; do
             dash -n "$file"
           done
           python3 bridge/tests/test_source_contract.py
@@ -50,16 +50,13 @@ jobs:
         run: python3 bridge/tests/test_report_summary.py
       - name: Verify fresh, repeated and stale RAM fusion samples
         run: python3 bridge/tests/test_shadow_freshness.py
-      - name: Package standalone OpenWrt companion IPK
+      - name: Package integrated TVGuard + Bridge (no companion IPK)
         run: |
-          sh scripts/build-agent-bridge-ipk.sh
-          tar -tzf dist/tvguard-agent-bridge_0.2.8-4_all.ipk | grep -q './data.tar.gz'
-          tar -xOzf dist/tvguard-agent-bridge_0.2.8-4_all.ipk ./data.tar.gz | tar -tzf - | grep -q './www/cgi-bin/tvguard-agent'
-          tar -xOzf dist/tvguard-agent-bridge_0.2.8-4_all.ipk ./control.tar.gz | tar -tzf - > /tmp/bridge-control-list
-          ! grep -q 'conffiles$' /tmp/bridge-control-list
-          tar -xOzf dist/tvguard-agent-bridge_0.2.8-4_all.ipk ./control.tar.gz | tar -xOzf - ./control | grep -q 'Version: 0.2.8-4'
-      - uses: actions/upload-artifact@v4
-        with:
-          name: tvguard-agent-bridge-0.2.8-r4-ipk
-          path: dist/tvguard-agent-bridge_0.2.8-4_all.ipk
-          retention-days: 7
+          set -euo pipefail
+          sh scripts/build-ipk.sh 0.1.14 1
+          PKG=dist/luci-app-tvguard_0.1.14-1_all.ipk
+          python3 scripts/verify-ipk.py "$PKG" 0.1.14 1
+          tar -xOzf "$PKG" ./data.tar.gz | tar -tzf - > /tmp/tvguard-integrated-filelist
+          grep -Fxq './www/cgi-bin/tvguard-agent' /tmp/tvguard-integrated-filelist
+          grep -Fxq './usr/libexec/tvguard-agent-bridge-setup' /tmp/tvguard-integrated-filelist
+          test ! -f dist/tvguard-agent-bridge_0.2.8-4_all.ipk

@@ -376,7 +376,7 @@ return view.extend({
             fs.exec('/usr/libexec/tvguard-status', ['log']).then(function(r) {
                 return r.stdout || '';
             }),
-            fs.exec('/usr/libexec/tvguard-status', ['calibration']).then(function(r) {
+            fs.exec('/usr/libexec/tvguard-status', ['calibration-v5']).then(function(r) {
                 return r.stdout || '';
             }),
             fs.exec('/usr/libexec/tvguard-status', ['learning']).then(function(r) {
@@ -544,6 +544,26 @@ return view.extend({
         var remaining = Math.max(0, Number(state.calibration_remaining_seconds) || 0);
         var count = Math.max(0, Number(state.calibration_samples) || 0);
         var progress = clamp(state.calibration_percent, 0, 100);
+        var agentFresh = state.agent_state === 'fresh';
+        var contextQuality = String(state.agent_context_quality || 'unknown');
+        var contextFull = agentFresh && contextQuality === 'full';
+        this._lastCalibrationState = state;
+
+        n.agentStatus.textContent = agentFresh ?
+            ('电视 Agent 已连接 · ' + String(state.agent_age_seconds || 0) + ' 秒前上报 · ' +
+                (contextQuality === 'full' ? '前台识别完整' :
+                    (contextQuality === 'package_only' ? '仅识别到应用' : '前台上下文未确认'))) :
+            (state.agent_state === 'stale' ? '电视 Agent 上报已过期' :
+                (state.agent_state === 'invalid' ? '电视 Agent 上报异常' : '电视 Agent 暂无上报'));
+        n.agentContext.textContent = agentFresh ?
+            '当前应用：' + String(state.agent_package || 'unknown') +
+                ' · 页面：' + String(state.agent_activity || 'unknown') +
+                ' · 音频：' + (Number(state.agent_audio_active || 0) ? '活跃' : '无') +
+                ' · 屏幕：' + (Number(state.agent_screen_on || 0) ? '亮' : '灭') +
+                ' · 权限判断：' + String(state.agent_usage_access || 'legacy') +
+                ' · 来源：' + String(state.agent_foreground_source || 'legacy') +
+                ' · 诊断：' + String(state.agent_foreground_status || 'legacy') :
+            '本次仍可学习网络特征，但不会伪装成 Agent 联合高可信样本。';
 
         n.bar.value = active ? progress : (phase === 'completed' ? 100 : 0);
         n.bar.setAttribute('aria-valuenow', String(n.bar.value));
@@ -559,7 +579,9 @@ return view.extend({
             n.title.textContent = '正在学习 · ' + sceneName(state.calibration_label);
             n.detail.textContent = '已进行 ' + elapsed + ' / ' + configuredDuration +
                 ' 秒 · 剩余 ' + remaining + ' 秒 · 已保存 ' + count + ' 条有效窗口';
-            n.hint.textContent = '保持电视当前状态不变即可；到时会自动结束、分析并保存学习会话。';
+            n.hint.textContent = contextFull ?
+                '保持电视当前状态不变即可；网络窗口会和完整 App / Activity / 音频 / 屏幕上下文同步保存。' :
+                '保持电视当前状态不变即可；当前 Agent 上下文不完整，网络样本照常保存，但不会标成联合高可信。';
         }
         else if (phase === 'finishing') {
             n.title.textContent = '采集完成，正在自动分析…';
@@ -576,8 +598,12 @@ return view.extend({
         }
         else {
             n.title.textContent = '准备学习';
-            n.detail.textContent = '先选择电视当前真实状态，再选择采集时长。推荐 3 分钟。';
-            n.hint.textContent = '采集和分析不会改变防火墙；Adaptive Engine 正式接入前也不会用单次学习结果直接改变计时。';
+            n.detail.textContent = '先选择电视当前真实状态，再选择采集时长。推荐 3 分钟；App 和页面由电视 Agent 自动识别。';
+            n.hint.textContent = contextFull ?
+                'Agent 前台上下文完整。本次会同步保存网络与电视端证据；人工选择的状态仍是唯一真值。' :
+                (agentFresh ?
+                    'Agent 传输在线，但前台上下文尚不完整。本次可以学习网络特征，不会冒充高可信联合样本。' :
+                    'Agent 当前不可用也可以开始，但本次只会作为兼容网络学习样本。');
         }
     },
 
@@ -596,7 +622,7 @@ return view.extend({
             if (n && session !== 'none' && n.lastSession !== session) {
                 n.lastSession = session;
                 return Promise.all([
-                    fs.exec('/usr/libexec/tvguard-status', ['calibration']),
+                    fs.exec('/usr/libexec/tvguard-status', ['calibration-v5']),
                     fs.exec('/usr/libexec/tvguard-status', ['learning'])
                 ]).then(function(results) {
                     if (!results[0].code)
@@ -766,10 +792,20 @@ return view.extend({
             'click': ui.createHandlerFn(this, function(ev) {
                 var seconds = durationSelect.value || '180';
                 var minutes = Math.round(Number(seconds) / 60);
+                var live = this._lastCalibrationState || s;
+                var liveQuality = String(live.agent_context_quality || 'unknown');
+                var agentNote = live.agent_state === 'fresh' ?
+                    ('电视 Agent 当前识别：' + String(live.agent_package || 'unknown') +
+                        ' / ' + String(live.agent_activity || 'unknown') +
+                        '（' + (liveQuality === 'full' ? '完整前台上下文' :
+                            (liveQuality === 'package_only' ? '仅应用包' : '上下文未确认')) + '）。' +
+                        (liveQuality === 'full' ? '' :
+                            ' 本次不会标成联合高可信。')) :
+                    '电视 Agent 当前不可用，本次会保留网络学习样本，但不会标成联合高可信。';
                 return this.handleAction(
                     ['calibrate', selectedScene, seconds],
-                    '请确认电视当前确实处于“' + selectedSceneName +
-                        '”。接下来会自动采集约 ' + minutes +
+                    '请确认电视当前确实处于“' + selectedSceneName + '”。' + agentNote +
+                        ' 接下来会自动采集约 ' + minutes +
                         ' 分钟，到时自动结束并分析；采集期间请不要操作遥控器。',
                     ev
                 );
@@ -794,6 +830,11 @@ return view.extend({
             'class': 'description',
             'style': 'margin:7px 0 0;line-height:1.5'
         }, '');
+        var agentStatusNode = E('strong', {}, '读取电视 Agent…');
+        var agentContextNode = E('div', {
+            'class': 'description',
+            'style': 'margin-top:5px;line-height:1.5;word-break:break-word'
+        }, '正在读取当前应用与页面');
         var learningReport = E('pre', {
             'style': [
                 'max-height:260px',
@@ -832,6 +873,8 @@ return view.extend({
             selectedScene: selectedSceneNode,
             report: learningReport,
             samples: samplePreview,
+            agentStatus: agentStatusNode,
+            agentContext: agentContextNode,
             lastSession: s.calibration_last_session || 'none'
         };
 
@@ -1014,7 +1057,7 @@ return view.extend({
                 E('div', { 'style': 'margin-bottom:6px' }, watchTodayNode),
                 E('div', { 'class': 'description' }, ['上一完整自然日：', watchYesterdayNode]),
                 E('div', { 'class': 'description', 'style': 'margin-top:8px' },
-                    '每天定时发送上一完整自然日的 Bark 日报，设置入口在“时间规则”。')
+                    '每天定时发送上一完整自然日的 Bark 日报，可在“设置 → 每日观看日报 · Bark”中配置。')
             ], 'margin-top:16px'),
 
             panel('今日儿童额度', '这里显示的是根据经过 N1 的联网活动估算的使用时长，不等同于真实亮屏或观看时间。', [
@@ -1048,12 +1091,16 @@ return view.extend({
                 rewardLimitNode
             ]),
 
-            panel('智能识别学习', 'Adaptive Engine 会学习连续行为画像。Phase 2A 已加入暂停多原型诊断，但暂停线索暂不直接改变计时。', [
+            panel('智能识别学习', 'Adaptive Engine 会继续学习连续行为画像。普通暂停线索不改变计时；只有已学习媒体上下文中连续新鲜证据明确确认的暂停才免计时。', [
                 grid([
                     metric('当前自动判断', shadowValueNode, shadowNoteNode, false),
                     metric('网络活动强度', trafficValueNode, trafficNoteNode, false)
                 ], 220, 'tvg-smart-grid'),
                 E('div', { 'class': 'tvg-soft-box', 'style': 'margin-top:10px' }, [
+                    E('div', { 'style': 'margin-bottom:10px;padding-bottom:10px;border-bottom:1px solid rgba(127,127,127,.28)' }, [
+                        agentStatusNode,
+                        agentContextNode
+                    ]),
                     E('strong', {}, '1. 选择电视当前状态'),
                     E('div', { 'class': 'tvg-learning-grid' }, [
                         systemHomeButton, appHomeButton, playingButton, pausedButton
@@ -1073,7 +1120,7 @@ return view.extend({
                     'style': 'margin-top:10px'
                 }, [calTitle, calDetail, calProgress, calHint]),
                 detailBlock('最近一次自动分析', [learningReport], true),
-                detailBlock('高级 · 最近原始样本', [samplePreview], false)
+                detailBlock('高级 · 最近 Agent 联合原始样本', [samplePreview], false)
             ]),
 
             panel('正式控制', '这是高风险区域。只有管理员已解锁，而且代理隔离审计通过时，才允许开启实际网络控制。', [

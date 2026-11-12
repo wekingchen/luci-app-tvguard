@@ -7,6 +7,7 @@ case "${1:-status}" in
     log) exec /usr/libexec/tvguardctl log ;;
     calibration) exec /usr/libexec/tvguardctl calibration ;;
     calibration-v4) exec /usr/libexec/tvguardctl calibration-v4 ;;
+    calibration-v5) exec /usr/libexec/tvguardctl calibration-v5 ;;
     learning) exec /usr/libexec/tvguardctl learning ;;
     storage) exec /usr/libexec/tvguard-retention report ;;
     soak) exec /usr/libexec/tvguard-soak-report ;;

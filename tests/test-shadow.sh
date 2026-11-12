@@ -24,7 +24,7 @@ scenes={"playing":(180,30,150,65000),
         "paused":(85,5,80,30000),
         "app_home":(30,1,28,16000)}
 sid=0
-for app in ("tencent","iqiyi"):
+for app in ("com.alpha.video","com.beta.video"):
     for scene,base in scenes.items():
         for session in range(3):
             sid+=1

@@ -87,7 +87,7 @@ cat > "$TMP/agent-billing" <<'EOAGENTBILL'
 case "${TVGUARD_TEST_AGENT_BILLING:-charge}" in
     system_home) echo 'free system_home' ;;
     app_home) echo 'free app_home' ;;
-    paused) echo 'charge paused' ;;
+    paused) echo 'free paused' ;;
     playing) echo 'charge playing' ;;
     *) echo 'charge unknown' ;;
 esac
@@ -177,6 +177,7 @@ mapping={
     'LEARN=/usr/libexec/tvguard-learn': 'LEARN='+root+'/learn',
     'SOAK=/usr/libexec/tvguard-soak': 'SOAK='+root+'/soak',
     'AGENT_BILLING=/usr/libexec/tvguard-agent-billing-hint': 'AGENT_BILLING='+root+'/agent-billing',
+    'AGENT_LATEST=/var/run/tvguard-agent-bridge/latest': 'AGENT_LATEST='+root+'/agent-latest',
     'BARK_REPORT=/usr/libexec/tvguard-daily-report': 'BARK_REPORT='+root+'/bark-report',
     'TX_IDLE_BILLING_AUTHORITY=0': 'TX_IDLE_BILLING_AUTHORITY="${TVGUARD_TEST_TX_IDLE_AUTHORITY:-0}"',
     'DATA=/usr/libexec/tvguard-data': 'DATA='+root+'/data',
@@ -222,6 +223,7 @@ check 'assert s["reply_observer"] == "disabled" and s["reply_coverage"] == "unve
 check 'assert s["reply_prerouting_pps"] == 0 and s["reply_local_pps"] == 0'
 check 'assert s["bonus_undo_available"] == 0 and s["bonus_limit_seconds"] == 7200'
 check 'assert s["policy_reason"] == "none"'
+check 'assert s["agent_state"] == "missing" and s["agent_package"] == "unknown", s'
 
 sh "$CTL" bonus 15
 status
@@ -299,6 +301,8 @@ s='\n'.join('LAST_EPOCH='+str(int(time.time())-10) if x.startswith('LAST_EPOCH='
 p.write_text(s)
 PY
 sh "$CTL" calibrate playing tencent
+agent_now="$(date +%s)"
+printf '%s|com.example.video|com.example.video.PlayerActivity|1|1|%s|41\n'     "$agent_now" "$((agent_now * 1000))" > "$TMP/agent-latest"
 echo '1500 240000 170 27000 1280 193000' > "$TMP/sample"
 sh "$CTL" tick
 status
@@ -311,12 +315,18 @@ check 'assert s["calibration_phase"] == "running" and s["calibration_active"] ==
 check 'assert s["calibration_samples"] == 1 and 0 <= s["calibration_elapsed_seconds"] <= 120'
 check 'assert s["calibration_remaining_seconds"] > 0 and 0 <= s["calibration_percent"] < 100'
 check 'assert s["server_epoch"] > 0'
+check 'assert s["agent_state"] == "fresh" and s["agent_package"] == "com.example.video", s'
+check 'assert s["agent_activity"] == "com.example.video.PlayerActivity" and s["agent_audio_active"] == 1 and s["agent_screen_on"] == 1, s'
+check 'assert s["agent_report_seq"] == 41 and 0 <= s["agent_age_seconds"] <= 20, s'
 if sh "$CTL" calibrate paused tencent > "$TMP/out" 2>&1; then
     echo "FAIL: a new session replaced an active calibration" >&2
     exit 1
 fi
 test -s "$TMP/state/calibration-v3.csv"
 grep -q ',playing,tencent,' "$TMP/state/calibration-v3.csv"
+test -s "$TMP/state/calibration-v5.csv"
+awk -F, 'NF!=18 {exit 1} $3=="playing" && $4=="fresh" && $6=="com.example.video" && $7=="com.example.video.PlayerActivity" && $8==1 && $9==1 && $10==41 && $15=="legacy" && $16=="legacy" && $17=="legacy" && $18=="full" {found=1} END {exit !found}' "$TMP/state/calibration-v5.csv"
+sh "$CTL" calibration-v5 | grep -q ',playing,fresh,'
 # Reply observer is disabled here: never manufacture directional zeros.
 [ ! -e "$TMP/state/calibration-v4.csv" ]
 # Simulate a completed 120-second calibration without sleeping.
@@ -404,6 +414,7 @@ echo '1650 270000 200 33000 1400 220000' > "$TMP/sample"
 echo '240 31000 330 42000' > "$TMP/reply"
 sh "$CTL" tick
 test -s "$TMP/state/calibration-v4.csv"
+grep -q ',app_home,com.example.video,' "$TMP/state/calibration-v3.csv"
 awk -F, 'NF!=12 {exit 1} $3=="app_home" && $4=="general" {found=1} END {exit !found}'     "$TMP/state/calibration-v4.csv"
 sh "$CTL" calibration-v4 | grep -q ',app_home,general,'
 sh "$CTL" calibrate stop
@@ -522,8 +533,8 @@ delta_p0_shadow=$((after_p0_shadow-before_p0_shadow))
 check 'assert s["shadow_label"]=="system_home" and s["adaptive_state"]=="unready", s'
 check 'assert s["billing_state"]=="charge" and s["idle_reason"]=="none", s'
 
-# Conservative Agent-assisted formal billing: ONLY explicit homes are free.
-# All other bridge states, including paused, remain chargeable.
+# Conservative Agent-assisted formal billing: explicit homes and only a
+# bridge-confirmed paused state are free. Generic TX idle remains chargeable.
 export TVGUARD_TEST_TX_IDLE_AUTHORITY=0
 export TVGUARD_TEST_ADAPTIVE=ambiguous
 export TVGUARD_TEST_SHADOW=unknown
@@ -571,7 +582,7 @@ after_app_home="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])
 [ "$after_app_home" = "$after_home" ]
 check 'assert s["billing_state"]=="idle_verified" and s["idle_reason"]=="app_home", s'
 
-# Even a bridge-confirmed paused state MUST charge under the simplified policy.
+# Explicit confirmed pause is now a narrow exemption.
 export TVGUARD_TEST_AGENT_BILLING=paused
 python3 - "$TMP/run/runtime" <<'PY'
 from pathlib import Path
@@ -589,9 +600,8 @@ echo "$(($1 + 200)) $(($2 + 40000)) $(($3 + 20)) $(($4 + 4000)) $(($5 + 180)) $(
 sh "$CTL" tick
 status
 after_paused="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["used_seconds"])' "$TMP/status.json")"
-delta_paused=$((after_paused-after_app_home))
-[ "$delta_paused" -ge 9 ] && [ "$delta_paused" -le 11 ]
-check 'assert s["billing_state"]=="charge" and s["idle_reason"]=="none", s'
+[ "$after_paused" = "$after_app_home" ]
+check 'assert s["billing_state"]=="idle_verified" and s["idle_reason"]=="paused", s'
 export TVGUARD_TEST_AGENT_BILLING=charge
 
 # Keep the previous smart-idle state machine covered as dormant code. Tests may

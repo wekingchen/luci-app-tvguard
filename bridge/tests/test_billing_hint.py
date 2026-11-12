@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Conservative formal-billing contract: only explicit homes may grant free time."""
+"""Formal billing: explicit homes and freshly confirmed paused may grant free time."""
 import subprocess
 import tempfile
 from pathlib import Path
@@ -14,10 +14,31 @@ BROWSE = "com.example.media.Browse"
 
 with tempfile.TemporaryDirectory(prefix="tvguard-billing-hint-") as folder:
     d = Path(folder)
+    data = d / "tvguard-data"
+    data.write_text("#!/bin/sh\n[ \"$1\" = root ] && printf '%s\\n' \"$(dirname \"$0\")\"\n")
+    data.chmod(0o755)
+
     fusion = d / "fusion"
-    fusion.write_text(fusion_source.replace(
-        "RAM=/var/run/tvguard-agent-bridge", f"RAM={d}"))
+    fusion_text = fusion_source.replace(
+        "RAM=/var/run/tvguard-agent-bridge", f"RAM={d}")
+    fusion_text = fusion_text.replace(
+        "DATA=/usr/libexec/tvguard-data", f"DATA={data}")
+    fusion.write_text(fusion_text)
     fusion.chmod(0o755)
+
+    def write_audio_profile(pkg=PKG, activity=PLAYER,
+                            play_audio=100, pause_audio=0):
+        def row(sid, label, audio):
+            return ",".join(map(str, [
+                1000, sid, label, "general", 120, "completed", 12, 120,
+                100, 10, 20, 30, 1, 19, 10000, 20000, "stable", "high",
+                "high", 100, 100, 100, pkg, 100, activity, 100,
+                audio, 100, 0,
+            ]))
+        (d / "learning-sessions.csv").write_text(
+            row("1-play", "playing", play_audio) + "\n" +
+            row("2-pause", "paused", pause_audio) + "\n"
+        )
 
     hint = d / "billing-hint"
     text = hint_source.replace(
@@ -79,8 +100,29 @@ with tempfile.TemporaryDirectory(prefix="tvguard-billing-hint-") as folder:
                pause_hint="idle_overlap", pause_score=60) == (
         "free", "app_home")
 
-    # Pause remains Shadow-only research. Even a confirmed generic paused state
-    # is explicitly chargeable under the conservative formal policy.
+    # Paired manual Agent learning grants a second strict pause path. One fresh
+    # audio-off report remains chargeable; the second confirms pause. Even a
+    # high network burst cannot override the exact learned playing/paused context.
+    write_audio_profile()
+    put(14, 340, PKG, PLAYER, audio=0)
+    assert run(340, pps=300, shadow="playing", adaptive_state="active",
+               adaptive_score=100, adaptive_reason="clear_current",
+               pause_hint="none", pause_score=0) == (
+        "charge", "unknown")
+    put(15, 350, PKG, PLAYER, audio=0)
+    assert run(350, pps=300, shadow="playing", adaptive_state="active",
+               adaptive_score=100, adaptive_reason="clear_current",
+               pause_hint="none", pause_score=0) == (
+        "free", "paused")
+    put(16, 360, PKG, PLAYER, audio=1)
+    assert run(360, pps=5, shadow="idle", adaptive_state="ambiguous",
+               adaptive_score=50, adaptive_reason="overlap",
+               pause_hint="none", pause_score=0) == (
+        "charge", "playing")
+    (d / "learning-sessions.csv").unlink()
+
+    # A paused state is free only after the strict learned-context Fusion
+    # confirmation path has fired on three fresh reports.
     put(20, 400, PKG, PLAYER, audio=1)
     assert run(400, pps=180, adaptive_state="active",
                adaptive_score=100, adaptive_reason="clear_current") == (
@@ -95,10 +137,30 @@ with tempfile.TemporaryDirectory(prefix="tvguard-billing-hint-") as folder:
     assert run(480, pps=45, adaptive_state="ambiguous",
                adaptive_score=50, adaptive_reason="overlap",
                pause_hint="high_ratio_pause", pause_score=95) == (
+        "free", "paused")
+
+    # The first fresh miss after confirmation is only a temporal hold. It may
+    # still display paused, but it must not inherit billing authority.
+    put(24, 490, PKG, PLAYER, audio=1)
+    assert run(490, pps=45, adaptive_state="ambiguous",
+               adaptive_score=50, adaptive_reason="overlap",
+               pause_hint="none", pause_score=0) == (
         "charge", "paused")
+
+    # TVG2 diagnostics are accepted; incomplete context never grants free time.
+    latest.write_text(
+        "495|unknown|unknown|1|1|495000|25|allowed|none|no_foreground\n")
+    assert run(495, pps=180, adaptive_state="active",
+               adaptive_score=100, adaptive_reason="clear_current") == (
+        "charge", "playing")
+    latest.write_text(
+        "496|com.mitv.tvhome|unknown|0|1|496000|26|allowed|usage_stats|package_only\n")
+    assert run(496, pps=5, shadow="idle", adaptive_state="idle",
+               adaptive_score=95, adaptive_reason="stable_low") == (
+        "charge", "unknown")
 
     # A launcher report older than the 20-second billing freshness gate fails closed.
     put(30, 500, "com.mitv.tvhome", "com.mitv.tvhome.MainActivityUserMode", audio=0)
     assert run(521, pps=10) == ("charge", "unknown")
 
-print("billing hint: only system_home/app_home free; pause/unknown/stale charge PASS")
+print("billing hint: system/app home + confirmed pause free; pause-hold/unknown/stale charge PASS")

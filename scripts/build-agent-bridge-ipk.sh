@@ -1,5 +1,6 @@
 #!/bin/sh
-# Standalone companion IPK: never repackages an older tvguardctl or firewall.
+# LEGACY ROLLBACK ONLY (v0.1.13): the v0.1.14 main IPK owns Bridge.
+# Never publish this standalone IPK with a v0.1.14 Release.
 set -eu
 ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
 WORK="$(mktemp -d)"

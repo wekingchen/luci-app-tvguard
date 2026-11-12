@@ -76,6 +76,27 @@ reply_local_pps,reply_local_bytes_per_second
 
 如果回程观测关闭或不可用，**不会写全 0 的 v4 假样本**。v4 当前只作为下一阶段判断“双向数据是否真能提高通用识别”的实验数据；现有 `USED_S`、`ACTIVITY`、`tvguard-shadow` 和防火墙都不读取它。
 
+### Agent 联合 v5 数据
+
+v0.1.14-r3 起，四状态人工学习在继续写 `calibration-v3.csv` 的同时，新增 `/mnt/mmcblk2p4/tvguard/calibration-v5.csv`。v5 不需要开启 `observe_reply`，直接复用电视 Agent 已经每约 10 秒送到 N1 的 latest-only 上下文。
+
+每行 14 列：
+
+```text
+epoch,session_id,ground_truth,agent_state,agent_age_seconds,
+package,activity,audio_active,screen_on,report_seq,
+pps,tcp_pps,udp_pps,outbound_bytes_per_second
+```
+
+- `ground_truth` 仍由家长在学习中心选择，只有 `system_home / app_home / playing / paused` 四种；
+- `agent_state=fresh` 只在 N1 接收时间不超过 20 秒且格式有效时成立；stale/missing/invalid 不会沿用最后一次 package/Activity 伪装成当前上下文；
+- package/Activity 用于自动区分不同视频 App 和页面上下文；audio/screen 只作为辅助证据，不能单独证明播放或暂停；
+- `calibration-v3.csv` 继续作为现有 Adaptive/Shadow 的兼容网络数据源，历史模型不会因 r3 升级失效；
+- `tvguard-learn` 会从 v5 计算 Agent 覆盖率、主 package/Activity 稳定度、音频/屏幕比例和前台切换次数；Agent 覆盖不足时明确降级为 network-only，而不是伪造联合高可信。r6 起这些联合统计还会追加进入 `learning-sessions.csv`（原 18 列保持不变，后追加 11 个 Agent 特征），因此高可信人工会话终于可以被运行时 Fusion 复用。
+
+v5 同样由 `tvguard-data` 管理：持久分区不可用时只写 `/var/run/tvguard-data`，挂载恢复后只合并中断期间的新记录。电视端仍然不保存学习历史。
+
+
 将 v3 从 N1 拷到电脑后，使用：
 
 ```sh
@@ -222,3 +243,73 @@ Shadow Soak 不产生新的模型权重，也不改变 paused/playing 分类边�
 
 当前一个值得验证但尚未成立的假设：已知腾讯高吞吐暂停样本多为 UDP 主导，而芒果 576p 假阳性窗口至少观察到明显 TCP 成分。该假设只作为 Soak v2 的研究方向，未进入 billing classifier。
 
+
+
+## v0.1.14-r2：只有“当前明确确认暂停”获得免计时权限
+
+r2 根据当前产品策略，把已有 Fusion 的严格暂停确认态接入正式计时，但**不**开放泛化 idle/pause hint 权限。
+
+允许免计时的暂停必须同时满足：
+
+1. 当前 package/Activity 已经由强播放证据学习为媒体上下文；
+2. 当前不处于 recent-play burst guard；
+3. 连续 3 个新的 Agent report 满足 Fusion 的强暂停证据；
+4. Fusion 当前 candidate 必须精确为 `paused_confirmed_learned_context`。
+
+只有这个 candidate 返回 `free paused`，核心记录为 `billing_state=idle_verified / idle_reason=paused`。
+
+以下全部继续计时并继续作为学习/研究证据：
+
+- `paused_temporal_hold`；
+- `high_ratio_pause / bursty_pause / idle_overlap`；
+- `stable_low` 或 Adaptive idle；
+- 单独的低 PPS、高 B/P、audio off；
+- `unknown / ambiguous`；
+- Agent stale / missing / invalid。
+
+这不是把“暂停画像”整体升格为正式计费依据，而是只给已有严格确认态一个窄授权。后续暂停研究继续用于扩大可确认覆盖面、减少 unknown，并验证不同 App / 码率下的假阳性；任何新状态都不能自动继承免计时权限。
+
+## v0.1.14-r3：Agent-assisted Adaptive Learning
+
+r3 重新定义“选择电视当前状态 → 学习”的职责：用户只负责提供**人工真值**，设备上下文由 Agent 自动补齐。
+
+当前流程：
+
+1. 在 LuCI 选择系统首页、App 首页、正常播放或视频暂停；
+2. 页面同时显示当前 Agent 是否 fresh，以及自动识别到的 package / Activity / audio / screen；
+3. 开始学习后，每个有效网络窗口同时写 v3 与 v5；
+4. Agent 临时失联不会中断会话，网络样本照常保留，但联合质量自动降级；
+5. 会话结束后自动报告 Agent 覆盖率、主 App、主页面、上下文稳定度和网络统计；
+6. `scripts/evaluate-generalization.py` 可直接读取 v5，按真实 package 做 leave-one-app-out，避免再依赖手工的腾讯/爱奇艺/芒果标签。
+
+这一阶段**没有**把 package/Activity/audio/screen 变成新的免计时规则。正式计时仍只接受既有 Home-only 与 `paused_confirmed_learned_context` 的窄授权；其他状态继续计时、继续学习。
+
+
+## v0.1.14-r6：成对人工学习的 Agent 音频画像
+
+r6 针对真机已确认的关键反例补齐最后一段学习链：同一个播放器 Activity 在“正在播放”和“暂停”时可能完全不变，而且暂停后仍会出现数百 PPS 的下载突发。因此网络 active 不能永远覆盖人工学习出来的暂停上下文。
+
+运行时不会使用任何视频 App 白名单。只有同时满足以下条件，exact package+Activity 才获得 learned-audio profile：
+
+1. 至少一个 completed + high 的 playing 人工会话；
+2. 至少一个 completed + high 的 paused 人工会话；
+3. 两类会话的 Agent joint quality 都为 high，dominant package/Activity 稳定度均 ≥75%，屏幕亮比例 ≥90%；
+4. 两类会话必须是同一 exact package+Activity；
+5. playing 平均 audio-active 比例 ≥70%，paused ≤30%，两者差值至少 50 个百分点；
+6. 若同一 exact context 还出现高可信 app_home 会话，则禁用该音频画像，避免把共享 Activity 误当播放器专属页面。
+
+满足后：
+- 当前 exact context + audio=1：直接确认 playing，即使 PPS 暂时很低，也继续计时，优先保护 576p/720p；
+- 当前 exact context + audio=0：r7 起连续 2 个新的 Agent report 后确认 paused；第 1 个仍是 unknown/charge。旧的网络 pause-evidence 路径仍保持 3 个 report，不一起放宽；
+- paused 已确认后，即使后台预取让 PPS 突然升高，也不能单凭网络 active 覆盖人工学习出的暂停状态；
+- audio 恢复为 1 时立即退出 paused 并恢复 playing；
+- Agent stale、package-only、unknown Activity、无成对高可信样本、音频分离不足时全部 fail-closed，继续沿用原来的保守 Fusion/计时路径。
+
+2026-11-12 真机观察到芒果 TV 播放与暂停均处于同一 `VodDynamicActivity`，播放 audio=1、暂停 audio=0；暂停后一度出现 PPS≈198，随后降至 51–98，又可再次升到 349。该反例正是 r6 不再允许“网络 active 无条件否决暂停”的原因，但上述包名/Activity 只记录在测试文档中，不进入决策白名单。
+
+
+## v0.1.14-r7：learned-audio 暂停确认由 3 个心跳收紧到 2 个
+
+r6 真机儿童模式已确认：正常播放 40 秒约 +43 秒，暂停确认后 40 秒 +0，恢复播放 40 秒约 +43 秒；但从按下暂停到正式免计仍多计约 32 秒。随后专门验证“静音但继续播放”：连续 5 个 Agent report 均保持 audio_active=1，Fusion 一直为 playing，未出现静音误判。
+
+因此 r7 只对**已经存在成对高可信 playing/paused Agent 画像的 exact package+Activity**收紧确认：第 1 个 fresh audio=0 report 继续 charge，第 2 个 fresh audio=0 report 才进入 `paused_confirmed_learned_audio_context`。这样保留一个完整抗抖窗口，同时把典型暂停确认延迟从约 30 秒降到约 20 秒。没有 learned-audio profile 的旧网络暂停路径仍要求 3 个 fresh report。

@@ -138,10 +138,10 @@ seed_volatile_from_legacy() {
     # never re-import stale overlay data.
     [ -z "$(ls -A "$VOLATILE_DIR" 2>/dev/null || :)" ] || return 0
     [ -d "$LEGACY_DIR" ] && [ ! -L "$LEGACY_DIR" ] || return 0
-    for name in state events.log calibration-v3.csv calibration-v4.csv learning-sessions.csv learning-last.txt; do
+    for name in state events.log calibration-v3.csv calibration-v4.csv calibration-v5.csv learning-sessions.csv learning-last.txt; do
         copy_verified_if_absent "$LEGACY_DIR/$name" "$VOLATILE_DIR/$name"
         case "$name" in
-            events.log|calibration-v3.csv|calibration-v4.csv|learning-sessions.csv)
+            events.log|calibration-v3.csv|calibration-v4.csv|calibration-v5.csv|learning-sessions.csv)
                 if [ -f "$VOLATILE_DIR/$name" ]; then
                     wc -l < "$VOLATILE_DIR/$name" | tr -d ' ' > "$VOLATILE_DIR/.seed-lines-$name"
                 fi
@@ -158,7 +158,7 @@ migrate_legacy_once() {
         return 0
     }
 
-    for name in state events.log calibration-v3.csv calibration-v4.csv learning-sessions.csv learning-last.txt; do
+    for name in state events.log calibration-v3.csv calibration-v4.csv calibration-v5.csv learning-sessions.csv learning-last.txt; do
         copy_verified_if_absent "$LEGACY_DIR/$name" "$PERSIST_DIR/$name"
     done
 
@@ -167,7 +167,7 @@ migrate_legacy_once() {
 
     # Remove only files we have just migrated. Unknown admin files are never
     # deleted automatically.
-    for name in state events.log calibration-v3.csv calibration-v4.csv learning-sessions.csv learning-last.txt; do
+    for name in state events.log calibration-v3.csv calibration-v4.csv calibration-v5.csv learning-sessions.csv learning-last.txt; do
         if [ -f "$LEGACY_DIR/$name" ] && [ -f "$PERSIST_DIR/$name" ]; then
             src_size="$(wc -c < "$LEGACY_DIR/$name" | tr -d ' ')"
             dst_size="$(wc -c < "$PERSIST_DIR/$name" | tr -d ' ')"
@@ -184,7 +184,7 @@ merge_volatile() {
 
     # Append-only files contain only the interval during which the durable
     # mount was unavailable, so they can be appended once and then removed.
-    for name in events.log calibration-v3.csv calibration-v4.csv learning-sessions.csv; do
+    for name in events.log calibration-v3.csv calibration-v4.csv calibration-v5.csv learning-sessions.csv; do
         if [ -s "$VOLATILE_DIR/$name" ]; then
             seed=0
             if [ -r "$VOLATILE_DIR/.seed-lines-$name" ]; then

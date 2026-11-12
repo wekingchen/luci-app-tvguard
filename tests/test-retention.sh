@@ -45,22 +45,26 @@ make_lines() {
 make_lines "$TMP/state/events.log" 5000 "event-abcdefghijklmnopqrstuvwxyz0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ"
 make_lines "$TMP/state/calibration-v3.csv" 5000 "v3-abcdefghijklmnopqrstuvwxyz0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ"
 make_lines "$TMP/state/calibration-v4.csv" 6000 "v4-abcdefghijklmnopqrstuvwxyz0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
+make_lines "$TMP/state/calibration-v5.csv" 5000 "v5-agent-context-abcdefghijklmnopqrstuvwxyz0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
 make_lines "$TMP/state/learning-sessions.csv" 3000 "session-abcdefghijklmnopqrstuvwxyz0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ"
 
 sh "$DST" trim
 
 [ "$(wc -l < "$TMP/state/events.log")" -le 1500 ]
 [ "$(wc -l < "$TMP/state/calibration-v3.csv")" -le 1500 ]
-[ "$(wc -l < "$TMP/state/calibration-v4.csv")" -le 1800 ]
+[ "$(wc -l < "$TMP/state/calibration-v4.csv")" -le 700 ]
+[ "$(wc -l < "$TMP/state/calibration-v5.csv")" -le 1200 ]
 [ "$(wc -l < "$TMP/state/learning-sessions.csv")" -le 512 ]
 [ "$(wc -c < "$TMP/state/events.log")" -le 262144 ]
 [ "$(wc -c < "$TMP/state/calibration-v3.csv")" -le 262144 ]
-[ "$(wc -c < "$TMP/state/calibration-v4.csv")" -le 393216 ]
+[ "$(wc -c < "$TMP/state/calibration-v4.csv")" -le 131072 ]
+[ "$(wc -c < "$TMP/state/calibration-v5.csv")" -le 262144 ]
 [ "$(wc -c < "$TMP/state/learning-sessions.csv")" -le 131072 ]
 
 grep -q '^005000,' "$TMP/state/events.log"
 grep -q '^005000,' "$TMP/state/calibration-v3.csv"
 grep -q '^006000,' "$TMP/state/calibration-v4.csv"
+grep -q '^005000,' "$TMP/state/calibration-v5.csv"
 grep -q '^003000,' "$TMP/state/learning-sessions.csv"
 
 report="$(sh "$DST" report)"
@@ -69,6 +73,7 @@ printf '%s\n' "$report" | grep -q "^当前数据目录: $TMP/state$"
 printf '%s\n' "$report" | grep -q "^持久目录: $TMP/state$"
 printf '%s\n' "$report" | grep -q '^状态: mounted$'
 printf '%s\n' "$report" | grep -q '持久追加预算: 1048576 bytes (1 MiB)'
+printf '%s\n' "$report" | grep -q 'calibration-v5.csv: .* / 262144'
 printf '%s\n' "$report" | grep -q 'Shadow Soak 持久摘要: 0 bytes'
 printf '%s\n' "$report" | grep -q 'Adaptive 滚动窗口: /var/run/tvguard-adaptive-window.csv'
 

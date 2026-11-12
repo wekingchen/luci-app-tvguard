@@ -21,7 +21,13 @@ let state = {
     calibration_phase: 'idle',
     calibration_label: 'none', calibration_app: 'none',
     calibration_duration_seconds: 0, calibration_last_duration_seconds: 0,
-    calibration_last_session: 'none'
+    calibration_last_session: 'none',
+    agent_state: 'fresh', agent_age_seconds: 2,
+    agent_package: 'com.example.video',
+    agent_activity: 'com.example.video.PlayerActivity',
+    agent_audio_active: 1, agent_screen_on: 1, agent_report_seq: 42,
+    agent_usage_access: 'allowed', agent_foreground_source: 'usage_events',
+    agent_foreground_status: 'full_context', agent_context_quality: 'full'
 };
 let commands = [];
 let eventLog = [
@@ -39,6 +45,7 @@ const mockFs = {
         if (args[0] === 'status') return Promise.resolve({code: 0, stdout: JSON.stringify(state)});
         if (args[0] === 'log') return Promise.resolve({code: 0, stdout: eventLog});
         if (args[0] === 'calibration') return Promise.resolve({code: 0, stdout: 'sample line'});
+        if (args[0] === 'calibration-v5') return Promise.resolve({code: 0, stdout: 'agent sample line'});
         if (args[0] === 'learning') return Promise.resolve({code: 0, stdout: '学习分析\n状态: 电视系统首页'});
         if (args[0] === 'isolation') return Promise.resolve({code: 0, stdout: 'ok\n'});
         if (name === '/usr/libexec/tvguardctl') return Promise.resolve({code: 0, stdout: ''});
@@ -78,7 +85,8 @@ const poll = {
     remove(fn) { polls.delete(fn); }
 };
 const L = { bind: (fn, ctx) => fn.bind(ctx) };
-const win = { confirm: () => true, location: { reload: () => reloads++ } };
+let confirmations = [];
+const win = { confirm: (message) => { confirmations.push(String(message || '')); return true; }, location: { reload: () => reloads++ } };
 const view = { extend: (value) => value };
 const factory = new Function('view', 'fs', 'ui', 'poll', 'L', 'E', 'window', source);
 const page = factory(view, mockFs, ui, poll, L, E, win);
@@ -113,6 +121,8 @@ const updates = [
     assert.match(source, /tvg-mode-row>\.btn:last-child\{grid-column:1\/-1/);
     assert.match(source, /background:rgba\(127,127,127,\.08\)/);
     assert.match(source, /metric\('儿童剩余'/);
+    assert.match(source, /设置 → 每日观看日报 · Bark/);
+    assert.doesNotMatch(source, /设置入口在“时间规则”/);
     assert.match(source, /tvg-state-note-good/);
     assert.doesNotMatch(source, /background:var\(--background-color-high,#fafafa\)/);
     assert.equal(polls.size, 1);
@@ -123,6 +133,11 @@ const updates = [
     assert.equal(page._calibrationNodes.duration.props['aria-label'], '学习采集时长');
     assert.equal(page._calibrationNodes.sceneButtons.length, 4);
     assert.equal(page._calibrationNodes.selectedScene.children[0], '电视系统首页');
+    assert.match(page._calibrationNodes.agentStatus.textContent, /Agent 已连接/);
+    assert.match(page._calibrationNodes.agentContext.textContent, /com\.example\.video/);
+    assert.match(page._calibrationNodes.agentContext.textContent, /PlayerActivity/);
+    assert.match(page._calibrationNodes.agentContext.textContent, /usage_events/);
+    assert.match(page._calibrationNodes.agentStatus.textContent, /前台识别完整/);
     assert.match(String(page._calibrationNodes.report.children[0] || ''), /学习分析/);
     assert.equal(page._overviewNodes.childButton.props.type, 'button');
     assert.equal(page._overviewNodes.parentButton.props.type, 'button');
@@ -316,7 +331,7 @@ const updates = [
     Object.assign(state, updates[2]);
     await page.refreshCalibration();
     assert.equal(page._calibrationNodes.bar.value, 100);
-    assert.equal(page._calibrationNodes.samples.textContent, 'sample line');
+    assert.equal(page._calibrationNodes.samples.textContent, 'agent sample line');
     assert.match(page._calibrationNodes.report.textContent, /学习分析/);
     assert.match(page._calibrationNodes.title.textContent, /完成/);
 
@@ -340,6 +355,21 @@ const updates = [
     await page._calibrationNodes.start.props.click();
     assert.ok(commands.some(([n, args]) =>
         n === '/usr/libexec/tvguardctl' && args.join(' ') === 'calibrate system_home 180'));
+    assert.match(confirmations[confirmations.length - 1], /com\.example\.video/);
+    assert.match(confirmations[confirmations.length - 1], /PlayerActivity/);
+
+    Object.assign(state, {
+        calibration_phase: 'idle',
+        agent_state: 'fresh',
+        agent_package: 'com.example.video',
+        agent_activity: 'unknown',
+        agent_foreground_source: 'usage_stats',
+        agent_foreground_status: 'package_only',
+        agent_context_quality: 'package_only'
+    });
+    page.updateCalibrationUI(state);
+    assert.match(page._calibrationNodes.agentStatus.textContent, /仅识别到应用/);
+    assert.match(page._calibrationNodes.hint.textContent, /不会冒充高可信联合样本/);
 
     // Calibration stop remains an independent action.
     state = {...state, ...updates[0]};

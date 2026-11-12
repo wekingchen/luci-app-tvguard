@@ -7,6 +7,7 @@ This script deliberately does not generate firewall rules or automatic
 import argparse
 import csv
 import json
+import re
 from collections import defaultdict
 from itertools import product
 from pathlib import Path
@@ -27,7 +28,8 @@ def read_sessions(filename):
             if len(row) != 8:
                 raise ValueError(f"line {line}: expected 8 columns, got {len(row)}")
             timestamp, session, scene, app, *numbers = row
-            if scene not in VALID_SCENES or app not in VALID_APPS:
+            package_like = bool(re.fullmatch(r"[A-Za-z0-9._$]+", app))
+            if scene not in VALID_SCENES or not (app in VALID_APPS or package_like):
                 raise ValueError(f"line {line}: unsupported scene/app")
             if not session or any(ch not in "0123456789-" for ch in session):
                 raise ValueError(f"line {line}: bad session identifier")
@@ -104,9 +106,10 @@ def main():
     if args.min_sessions < 3:
         parser.error("at least 3 independent sessions are required")
     groups = read_sessions(args.csv)
+    apps = sorted({key[0] for key in groups if key[0] != "system"})
     result = [
         evaluate_pair(groups, app, idle, min_sessions=args.min_sessions)
-        for app in ("tencent", "iqiyi", "mango", "other", "general")
+        for app in apps
         for idle in LABELS
         if any(k[0] == app for k in groups)
     ]

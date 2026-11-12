@@ -13,6 +13,7 @@ from __future__ import annotations
 import argparse
 import csv
 import json
+import re
 import subprocess
 import sys
 import tempfile
@@ -26,22 +27,54 @@ VALID_SCENES = set(SCENES) | {"system_home", "sleep"}
 
 
 def parse_rows(path: Path):
+    """Normalize legacy v3 or Agent-enriched v5 into v3-shaped rows.
+
+    v5 legacy columns (14) end at bps. r4 rows add:
+      usage_access,foreground_source,foreground_status,context_quality
+
+    Only fresh rows with a known package AND full package+Activity context may
+    establish an automatic app identity for cross-app billing safety claims.
+    """
     rows = []
+    source_schema = None
     with path.open(encoding="utf-8", newline="") as handle:
         for number, parts in enumerate(csv.reader(handle), 1):
             if not parts:
                 continue
-            if len(parts) != 8:
-                raise ValueError(f"line {number}: expected eight CSV fields")
-            stamp, session, scene, app, *metrics = parts
-            if scene not in VALID_SCENES or app not in VALID_APPS:
-                raise ValueError(f"line {number}: invalid scene/app label")
+            if len(parts) == 8:
+                schema = "v3"
+                stamp, session, scene, app, *metrics = parts
+                package_like = bool(re.fullmatch(r"[A-Za-z0-9._$]+", app))
+                if scene not in VALID_SCENES or not (app in VALID_APPS or package_like):
+                    raise ValueError(f"line {number}: invalid scene/app label")
+            elif len(parts) in (14, 18):
+                schema = "v5"
+                base = parts[:14]
+                (stamp, session, scene, agent_state, _agent_age, package,
+                 activity, _audio, _screen, _seq, *metrics) = base
+                context_quality = parts[17] if len(parts) == 18 else (
+                    "full" if package not in ("", "unknown") and
+                    activity not in ("", "unknown") else "unknown")
+                if scene not in VALID_SCENES:
+                    raise ValueError(f"line {number}: invalid scene label")
+                if agent_state != "fresh" or context_quality != "full":
+                    continue
+                if not package or package == "unknown" or "," in package:
+                    continue
+                app = package
+            else:
+                raise ValueError(
+                    f"line {number}: expected v3 (8) or v5 (14/18) CSV fields")
+            if source_schema is None:
+                source_schema = schema
+            elif source_schema != schema:
+                raise ValueError("mixed v3/v5 rows are not supported")
             if not session.replace("-", "").isdigit() or session.count("-") != 1:
                 raise ValueError(f"line {number}: invalid session id")
             if not stamp.isdigit() or not all(x.isdigit() for x in metrics):
                 raise ValueError(f"line {number}: invalid telemetry")
             rows.append((stamp, session, scene, app, *metrics))
-    return rows
+    return rows, source_schema or "unknown"
 
 
 def complete_app(app, rows):
@@ -55,10 +88,15 @@ def complete_app(app, rows):
     return True
 
 
-def evaluate(rows, script_path):
-    apps = [app for app in KNOWN_VIDEO_APPS if complete_app(app, rows)]
+def evaluate(rows, script_path, input_schema="v3"):
+    candidates = sorted({
+        row[3] for row in rows
+        if row[2] in SCENES and row[3] not in {"general", "other", "system"}
+    })
+    apps = [app for app in candidates if complete_app(app, rows)]
     result = {
-        "schema": "tvguard-cross-app-billing-v2",
+        "schema": "tvguard-cross-app-billing-v3",
+        "input_schema": input_schema,
         "billing_policy": "verified_idle_after_30s_hysteresis",
         "generic_idle_validation_ready": len(apps) >= 3,
         "video_apps_with_complete_sessions": apps,
@@ -97,8 +135,27 @@ def evaluate(rows, script_path):
 
         for holdout in apps:
             train = [row for row in rows if row[3] != holdout]
+            train_apps = sorted({
+                row[3] for row in train
+                if row[2] in SCENES and row[3] not in {"general", "other", "system"}
+            })
+            # tvguard-shadow keeps its stable v3 schema with three symbolic app
+            # slots. Map real Agent package identities into those slots only
+            # inside this temporary evaluator; production data remains generic.
+            slot_map = {
+                app: KNOWN_VIDEO_APPS[i]
+                for i, app in enumerate(train_apps[:len(KNOWN_VIDEO_APPS)])
+            }
+            normalized = []
+            for row in train:
+                stamp, session, scene, app, *metrics = row
+                if scene == "system_home":
+                    label = "system"
+                else:
+                    label = slot_map.get(app, app if app in VALID_APPS else "other")
+                normalized.append((stamp, session, scene, label, *metrics))
             csv_path.write_text(
-                "\n".join(",".join(row) for row in train) + "\n",
+                "\n".join(",".join(row) for row in normalized) + "\n",
                 encoding="utf-8",
             )
             counts = Counter()
@@ -147,9 +204,11 @@ def main():
     parser.add_argument("csv", help="export of N1 calibration-v3.csv")
     args = parser.parse_args()
     root = Path(__file__).resolve().parents[1]
+    rows, input_schema = parse_rows(Path(args.csv))
     report = evaluate(
-        parse_rows(Path(args.csv)),
+        rows,
         root / "root/usr/libexec/tvguard-shadow",
+        input_schema=input_schema,
     )
     print(json.dumps(report, ensure_ascii=False, indent=2))
 

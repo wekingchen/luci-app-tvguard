@@ -1,16 +1,55 @@
 #!/bin/sh
-# Preserve the live UCI config before package upgrade. On a fresh firmware
-# overlay, remember that no TV Guard config existed before extraction so
-# postinst can restore the durable mmc copy instead of accepting defaults.
+# Capture the state available to the new package during the first integrated
+# upgrade. opkg removes the replaced standalone Bridge and runs the old main
+# package prerm before this new preinst. The legacy main prerm deliberately
+# leaves TV Guard in observer mode, so all user settings except active enforce
+# remain intact here; viewing counters and the Bridge key are still available.
 [ -n "${IPKG_INSTROOT:-}" ] && exit 0
+set -u
+umask 077
 
 MARK=/tmp/tvguard-config-restore-needed
+UPGRADE=/tmp/tvguard-v014-upgrade
+PENDING="$UPGRADE/pending"
+
+atomic_copy() {
+    src="$1"
+    dst="$2"
+    [ -f "$src" ] || return 1
+    tmp="${dst}.$$"
+    cp "$src" "$tmp" || { rm -f "$tmp"; return 1; }
+    chmod 600 "$tmp" 2>/dev/null || :
+    mv -f "$tmp" "$dst"
+}
 
 if [ -f /etc/config/tvguard ]; then
     rm -f "$MARK"
-    if [ -x /usr/libexec/tvguard-data ]; then
-        /usr/libexec/tvguard-data backup-config >/dev/null 2>&1 || :
+    mkdir -p "$UPGRADE"
+    chmod 700 "$UPGRADE"
+
+    # The old v0.1.13 prerm has already forced enforce=0 by this point.
+    # Preserve that fail-safe observer state together with every other current
+    # UCI setting (child name, Bark IDs, quotas, schedule, etc.).
+    atomic_copy /etc/config/tvguard "$UPGRADE/config" || exit 1
+
+    state_src=''
+    if [ -r /var/run/tvguard.state ]; then
+        state_src=/var/run/tvguard.state
+    elif [ -x /usr/libexec/tvguard-data ]; then
+        data_root="$(/usr/libexec/tvguard-data root 2>/dev/null || :)"
+        [ -n "$data_root" ] && [ -r "$data_root/state" ] && state_src="$data_root/state"
+    elif [ -r /mnt/mmcblk2p4/tvguard/state ]; then
+        state_src=/mnt/mmcblk2p4/tvguard/state
     fi
+    [ -z "$state_src" ] || atomic_copy "$state_src" "$UPGRADE/state"
+
+    # The standalone Bridge deliberately kept this key on uninstall. Keep an
+    # extra RAM copy as a belt-and-suspenders guard against package transition.
+    [ ! -f /etc/tvguard/agent-bridge.key ] ||
+        atomic_copy /etc/tvguard/agent-bridge.key "$UPGRADE/agent-bridge.key"
+
+    printf '%s\n' "$(date +%s 2>/dev/null || echo 0)" > "$PENDING"
+    chmod 600 "$PENDING"
 else
     : > "$MARK"
     chmod 600 "$MARK"
