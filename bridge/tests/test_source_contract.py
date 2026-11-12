@@ -83,6 +83,10 @@ assert 'learning-sessions.csv' in fusion
 assert 'playing_confirmed_learned_audio_profile' in fusion
 assert 'paused_confirmed_learned_audio_context' in fusion
 assert 'paused_audio_profile_warming' in fusion
+assert 'learned_nonplaying_profile' in fusion
+assert 'playing_confirmed_learned_nonplaying_profile' in fusion
+assert 'nonplaying_audio_profile_warming' in fusion
+assert 'nonplaying_confirmed_learned_audio_context' in fusion
 assert 'pause_streak" -ge 2' in fusion
 assert 'pause_streak" -ge 3' in fusion  # legacy network-pause path stays conservative
 assert '$19=="high"' in fusion and '$27+0' in fusion
@@ -102,6 +106,8 @@ print('bridge v0.2.9 generic-context / learned-audio / isolation / freshness / p
 assert 'free system_home' in billing
 assert 'free app_home' in billing
 assert 'free paused' in billing
+assert 'free nonplaying' in billing
+assert 'nonplaying_confirmed_learned_audio_context' in billing
 assert 'paused_confirmed_learned_context' in billing
 assert 'paused_confirmed_learned_audio_context' in billing
 assert 'playing|unknown' in billing
