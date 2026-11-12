@@ -5,6 +5,7 @@ LUCI_DESCRIPTION:=LuCI UI and lightweight time-control daemon for firewall3 rout
 LUCI_DEPENDS:=+luci-base +rpcd +curl +uhttpd
 LUCI_PKGARCH:=all
 PKG_LICENSE:=MIT
+PKG_VERSION:=0.1.14
 PKG_RELEASE:=1
 
 # luci.mk only stages ./root by default. Merge the separately tested Bridge
