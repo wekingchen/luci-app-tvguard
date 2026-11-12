@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Conservative formal-billing contract: only explicit homes may grant free time."""
+"""Formal billing: explicit homes and freshly confirmed paused may grant free time."""
 import subprocess
 import tempfile
 from pathlib import Path
@@ -79,8 +79,8 @@ with tempfile.TemporaryDirectory(prefix="tvguard-billing-hint-") as folder:
                pause_hint="idle_overlap", pause_score=60) == (
         "free", "app_home")
 
-    # Pause remains Shadow-only research. Even a confirmed generic paused state
-    # is explicitly chargeable under the conservative formal policy.
+    # A paused state is free only after the strict learned-context Fusion
+    # confirmation path has fired on three fresh reports.
     put(20, 400, PKG, PLAYER, audio=1)
     assert run(400, pps=180, adaptive_state="active",
                adaptive_score=100, adaptive_reason="clear_current") == (
@@ -95,10 +95,18 @@ with tempfile.TemporaryDirectory(prefix="tvguard-billing-hint-") as folder:
     assert run(480, pps=45, adaptive_state="ambiguous",
                adaptive_score=50, adaptive_reason="overlap",
                pause_hint="high_ratio_pause", pause_score=95) == (
+        "free", "paused")
+
+    # The first fresh miss after confirmation is only a temporal hold. It may
+    # still display paused, but it must not inherit billing authority.
+    put(24, 490, PKG, PLAYER, audio=1)
+    assert run(490, pps=45, adaptive_state="ambiguous",
+               adaptive_score=50, adaptive_reason="overlap",
+               pause_hint="none", pause_score=0) == (
         "charge", "paused")
 
     # A launcher report older than the 20-second billing freshness gate fails closed.
     put(30, 500, "com.mitv.tvhome", "com.mitv.tvhome.MainActivityUserMode", audio=0)
     assert run(521, pps=10) == ("charge", "unknown")
 
-print("billing hint: only system_home/app_home free; pause/unknown/stale charge PASS")
+print("billing hint: system/app home + confirmed pause free; pause-hold/unknown/stale charge PASS")
