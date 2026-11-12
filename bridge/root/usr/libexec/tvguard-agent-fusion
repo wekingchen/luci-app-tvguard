@@ -7,6 +7,7 @@ PATH=/usr/sbin:/usr/bin:/sbin:/bin
 export PATH
 
 RAM=/var/run/tvguard-agent-bridge
+DATA=/usr/libexec/tvguard-data
 STATE="$RAM/fusion.state"
 LOCK="$RAM/fusion.lock"
 
@@ -134,6 +135,53 @@ case "$activity" in ''|unknown) activity_known=0 ;; esac
 full_context=0
 if [ "$pkg_known" -eq 1 ] && [ "$activity_known" -eq 1 ]; then full_context=1; fi
 
+# Manual-learning profile: only an exact package+Activity pair with completed,
+# high-quality network AND Agent joint sessions may teach audio semantics.
+# Require at least one trusted playing and paused session whose audio ratios are
+# strongly separated. Any trusted app_home sample in the same exact context
+# disables the profile. Older 18-column session rows are deliberately ignored.
+learned_audio_profile=0
+learned_play_audio=0
+learned_pause_audio=0
+if [ "$full_context" -eq 1 ] && [ -x "$DATA" ]; then
+    data_root="$("$DATA" root 2>/dev/null || :)"
+    model="$data_root/learning-sessions.csv"
+    if [ -n "$data_root" ] && [ -s "$model" ]; then
+        profile="$(awk -F, -v pkg="$pkg" -v activity="$activity" '
+        NF>=29 && $6=="completed" && $18=="high" && $19=="high" &&
+        $23==pkg && $25==activity && $24+0>=75 && $26+0>=75 && $28+0>=90 {
+            if ($3=="playing") {
+                pn++
+                pa += $27+0
+            } else if ($3=="paused") {
+                qn++
+                qa += $27+0
+            } else if ($3=="app_home") {
+                conflict++
+            }
+        }
+        END {
+            p=(pn>0 ? int(pa/pn) : 0)
+            q=(qn>0 ? int(qa/qn) : 0)
+            ok=(pn>=1 && qn>=1 && conflict==0 &&
+                p>=70 && q<=30 && p-q>=50)
+            printf "%d %d %d\n", ok,p,q
+        }' "$model" 2>/dev/null || echo '0 0 0')"
+        set -- $profile
+        if [ "$#" -eq 3 ]; then
+            case "$1:$2:$3" in
+                *[!0-9:]*|'') : ;;
+                *)
+                    learned_audio_profile="$1"
+                    learned_play_audio="$2"
+                    learned_pause_audio="$3"
+                    ;;
+            esac
+        fi
+    fi
+fi
+case "$learned_audio_profile" in 0|1) : ;; *) learned_audio_profile=0 ;; esac
+
 context_changed=0
 if [ "$full_context" -eq 1 ] &&
    { [ "$pkg" != "$last_pkg" ] || [ "$activity" != "$last_activity" ]; }; then
@@ -245,6 +293,43 @@ elif [ "$is_launcher" -eq 1 ] && [ "$full_context" -eq 1 ]; then
     pause_miss=0
     home_streak=0
     latched=none
+
+elif [ "$learned_audio_profile" -eq 1 ]; then
+    # Human-labelled paired playing/paused sessions have taught this exact
+    # context that audio-active separates playback from pause. This branch is
+    # intentionally above network strong_play: a paused player may keep
+    # downloading at hundreds of PPS, while low-bitrate playback may dip far
+    # below the learned network floor.
+    media_pkg="$pkg"
+    media_activity="$activity"
+    known_media_package=1
+    known_media_context=1
+    home_streak=0
+    switch_activity=''
+    switch_strong_hits=0
+    switch_last_strong_seen=0
+
+    if [ "$audio" -eq 1 ]; then
+        combined=playing
+        candidate=playing_confirmed_learned_audio_profile
+        pause_streak=0
+        pause_miss=0
+        latched=none
+        last_strong_seen="$now"
+    else
+        if [ "$fresh" -eq 1 ]; then
+            pause_streak=$((pause_streak + 1))
+            pause_miss=0
+        fi
+        if [ "$latched" = paused ] || [ "$pause_streak" -ge 3 ]; then
+            latched=paused
+            combined=paused
+            candidate=paused_confirmed_learned_audio_context
+        else
+            combined=unknown
+            candidate=paused_audio_profile_warming
+        fi
+    fi
 
 elif [ "$pkg_known" -eq 0 ]; then
     if [ "$strong_play" -eq 1 ] && [ "$audio" -eq 1 ]; then
