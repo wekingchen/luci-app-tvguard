@@ -1048,7 +1048,7 @@ return view.extend({
                 rewardLimitNode
             ]),
 
-            panel('智能识别学习', 'Adaptive Engine 会学习连续行为画像。Phase 2A 已加入暂停多原型诊断，但暂停线索暂不直接改变计时。', [
+            panel('智能识别学习', 'Adaptive Engine 会继续学习连续行为画像。普通暂停线索不改变计时；只有已学习媒体上下文中连续新鲜证据明确确认的暂停才免计时。', [
                 grid([
                     metric('当前自动判断', shadowValueNode, shadowNoteNode, false),
                     metric('网络活动强度', trafficValueNode, trafficNoteNode, false)
