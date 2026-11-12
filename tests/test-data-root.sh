@@ -36,16 +36,19 @@ chmod +x "$DST"
 mkdir -p "$TMP/etc/tvguard"
 printf 'legacy-state\n' > "$TMP/etc/tvguard/state"
 printf 'legacy-event\n' > "$TMP/etc/tvguard/events.log"
+printf 'legacy-v5\n' > "$TMP/etc/tvguard/calibration-v5.csv"
 printf 'legacy-session\n' > "$TMP/etc/tvguard/learning-sessions.csv"
 
 sh "$DST" prepare
 [ -f "$TMP/run/tvguard-data/state" ]
 [ -f "$TMP/run/tvguard-data/events.log" ]
+[ -f "$TMP/run/tvguard-data/calibration-v5.csv" ]
 [ -f "$TMP/run/tvguard-data/learning-sessions.csv" ]
 [ -f "$TMP/etc/tvguard/state" ]
 
 # Simulate new records created only during the outage.
 printf 'volatile-event\n' >> "$TMP/run/tvguard-data/events.log"
+printf 'volatile-v5\n' >> "$TMP/run/tvguard-data/calibration-v5.csv"
 printf 'volatile-session\n' >> "$TMP/run/tvguard-data/learning-sessions.csv"
 
 # 2) Persistent mount appears: legacy data migrates to mmc, outage-only suffix
@@ -56,9 +59,1533 @@ sh "$DST" prepare
 [ "$(sh "$DST" root)" = "$TMP/mmc/tvguard" ]
 [ -f "$TMP/mmc/tvguard/.layout-v1" ]
 grep -qx 'legacy-state' "$TMP/mmc/tvguard/state"
-grep -q '^legacy-event$' "$TMP/mmc/tvguard/events.log"
-grep -q '^volatile-event$' "$TMP/mmc/tvguard/events.log"
-grep -q '^legacy-session$' "$TMP/mmc/tvguard/learning-sessions.csv"
+grep -q '^legacy-event
+grep -q '^volatile-session$' "$TMP/mmc/tvguard/learning-sessions.csv"
+[ "$(grep -c '^legacy-event
+
+# Known legacy files are removed only after verified migration. If the legacy
+# directory becomes empty it may become a compatibility symlink.
+if [ -L "$TMP/etc/tvguard" ]; then
+    [ "$(readlink "$TMP/etc/tvguard")" = "$TMP/mmc/tvguard" ]
+else
+    [ ! -e "$TMP/etc/tvguard/state" ]
+    [ ! -e "$TMP/etc/tvguard/events.log" ]
+    [ ! -e "$TMP/etc/tvguard/learning-sessions.csv" ]
+fi
+
+# 3) UCI config backup: current live custom config becomes the durable copy.
+printf 'custom-a\n' > "$TMP/etc/config/tvguard"
+sh "$DST" config-sync
+cmp "$TMP/etc/config/tvguard" "$TMP/mmc/tvguard/config/tvguard"
+[ -f "$TMP/etc/.tvguard-config-v1" ]
+
+# A later admin change updates the durable backup; unchanged config-sync is
+# byte-identical and does not need a different file.
+printf 'custom-b\n' > "$TMP/etc/config/tvguard"
+sh "$DST" config-sync
+grep -qx 'custom-b' "$TMP/mmc/tvguard/config/tvguard"
+
+# If the live config disappears on the same overlay, restore it from mmc.
+rm -f "$TMP/etc/config/tvguard"
+sh "$DST" config-sync
+grep -qx 'custom-b' "$TMP/etc/config/tvguard"
+
+# Simulate a freshly rebuilt firmware overlay: marker gone, package default is
+# present, durable custom backup exists. The backup must win.
+rm -f "$TMP/etc/.tvguard-config-v1"
+cp "$TMP/default-config" "$TMP/etc/config/tvguard"
+sh "$DST" config-sync
+grep -qx 'custom-b' "$TMP/etc/config/tvguard"
+grep -qx 'custom-b' "$TMP/mmc/tvguard/config/tvguard"
+
+# Simulate sysupgrade preserving a non-default, newer admin config but not the
+# overlay marker. That live custom config must win and refresh the backup.
+rm -f "$TMP/etc/.tvguard-config-v1"
+printf 'custom-c\n' > "$TMP/etc/config/tvguard"
+sh "$DST" config-sync
+grep -qx 'custom-c' "$TMP/etc/config/tvguard"
+grep -qx 'custom-c' "$TMP/mmc/tvguard/config/tvguard"
+
+# 4) A later mount outage selects only volatile RAM. Config sync is a no-op
+# for persistent backup while mmc is unavailable.
+: > "$MOUNTS"
+[ "$(sh "$DST" root)" = "$TMP/run/tvguard-data" ]
+printf 'custom-d\n' > "$TMP/etc/config/tvguard"
+sh "$DST" config-sync
+grep -qx 'custom-c' "$TMP/mmc/tvguard/config/tvguard"
+case "$(sh "$DST" status)" in
+    volatile\|"$TMP/run/tvguard-data"\|persistent_mount_unavailable) : ;;
+    *) exit 1 ;;
+esac
+
+# When mmc returns on the same overlay, the current live config is backed up.
+printf '/dev/mmcblk2p4 %s xfs rw,relatime 0 0\n' "$TMP/mmc" > "$MOUNTS"
+sh "$DST" config-sync
+grep -qx 'custom-d' "$TMP/mmc/tvguard/config/tvguard"
+
+echo 'PASS: durable data + UCI config survive overlay rebuilds without duplicate learning data'
+ "$TMP/mmc/tvguard/events.log"
+grep -q '^volatile-event
+grep -q '^volatile-session$' "$TMP/mmc/tvguard/learning-sessions.csv"
+[ "$(grep -c '^legacy-event$' "$TMP/mmc/tvguard/events.log")" -eq 1 ]
+[ "$(grep -c '^legacy-session$' "$TMP/mmc/tvguard/learning-sessions.csv")" -eq 1 ]
+
+# Known legacy files are removed only after verified migration. If the legacy
+# directory becomes empty it may become a compatibility symlink.
+if [ -L "$TMP/etc/tvguard" ]; then
+    [ "$(readlink "$TMP/etc/tvguard")" = "$TMP/mmc/tvguard" ]
+else
+    [ ! -e "$TMP/etc/tvguard/state" ]
+    [ ! -e "$TMP/etc/tvguard/events.log" ]
+    [ ! -e "$TMP/etc/tvguard/learning-sessions.csv" ]
+fi
+
+# 3) UCI config backup: current live custom config becomes the durable copy.
+printf 'custom-a\n' > "$TMP/etc/config/tvguard"
+sh "$DST" config-sync
+cmp "$TMP/etc/config/tvguard" "$TMP/mmc/tvguard/config/tvguard"
+[ -f "$TMP/etc/.tvguard-config-v1" ]
+
+# A later admin change updates the durable backup; unchanged config-sync is
+# byte-identical and does not need a different file.
+printf 'custom-b\n' > "$TMP/etc/config/tvguard"
+sh "$DST" config-sync
+grep -qx 'custom-b' "$TMP/mmc/tvguard/config/tvguard"
+
+# If the live config disappears on the same overlay, restore it from mmc.
+rm -f "$TMP/etc/config/tvguard"
+sh "$DST" config-sync
+grep -qx 'custom-b' "$TMP/etc/config/tvguard"
+
+# Simulate a freshly rebuilt firmware overlay: marker gone, package default is
+# present, durable custom backup exists. The backup must win.
+rm -f "$TMP/etc/.tvguard-config-v1"
+cp "$TMP/default-config" "$TMP/etc/config/tvguard"
+sh "$DST" config-sync
+grep -qx 'custom-b' "$TMP/etc/config/tvguard"
+grep -qx 'custom-b' "$TMP/mmc/tvguard/config/tvguard"
+
+# Simulate sysupgrade preserving a non-default, newer admin config but not the
+# overlay marker. That live custom config must win and refresh the backup.
+rm -f "$TMP/etc/.tvguard-config-v1"
+printf 'custom-c\n' > "$TMP/etc/config/tvguard"
+sh "$DST" config-sync
+grep -qx 'custom-c' "$TMP/etc/config/tvguard"
+grep -qx 'custom-c' "$TMP/mmc/tvguard/config/tvguard"
+
+# 4) A later mount outage selects only volatile RAM. Config sync is a no-op
+# for persistent backup while mmc is unavailable.
+: > "$MOUNTS"
+[ "$(sh "$DST" root)" = "$TMP/run/tvguard-data" ]
+printf 'custom-d\n' > "$TMP/etc/config/tvguard"
+sh "$DST" config-sync
+grep -qx 'custom-c' "$TMP/mmc/tvguard/config/tvguard"
+case "$(sh "$DST" status)" in
+    volatile\|"$TMP/run/tvguard-data"\|persistent_mount_unavailable) : ;;
+    *) exit 1 ;;
+esac
+
+# When mmc returns on the same overlay, the current live config is backed up.
+printf '/dev/mmcblk2p4 %s xfs rw,relatime 0 0\n' "$TMP/mmc" > "$MOUNTS"
+sh "$DST" config-sync
+grep -qx 'custom-d' "$TMP/mmc/tvguard/config/tvguard"
+
+echo 'PASS: durable data + UCI config survive overlay rebuilds without duplicate learning data'
+ "$TMP/mmc/tvguard/events.log"
+grep -q '^legacy-v5
+grep -q '^volatile-session$' "$TMP/mmc/tvguard/learning-sessions.csv"
+[ "$(grep -c '^legacy-event$' "$TMP/mmc/tvguard/events.log")" -eq 1 ]
+[ "$(grep -c '^legacy-session$' "$TMP/mmc/tvguard/learning-sessions.csv")" -eq 1 ]
+
+# Known legacy files are removed only after verified migration. If the legacy
+# directory becomes empty it may become a compatibility symlink.
+if [ -L "$TMP/etc/tvguard" ]; then
+    [ "$(readlink "$TMP/etc/tvguard")" = "$TMP/mmc/tvguard" ]
+else
+    [ ! -e "$TMP/etc/tvguard/state" ]
+    [ ! -e "$TMP/etc/tvguard/events.log" ]
+    [ ! -e "$TMP/etc/tvguard/learning-sessions.csv" ]
+fi
+
+# 3) UCI config backup: current live custom config becomes the durable copy.
+printf 'custom-a\n' > "$TMP/etc/config/tvguard"
+sh "$DST" config-sync
+cmp "$TMP/etc/config/tvguard" "$TMP/mmc/tvguard/config/tvguard"
+[ -f "$TMP/etc/.tvguard-config-v1" ]
+
+# A later admin change updates the durable backup; unchanged config-sync is
+# byte-identical and does not need a different file.
+printf 'custom-b\n' > "$TMP/etc/config/tvguard"
+sh "$DST" config-sync
+grep -qx 'custom-b' "$TMP/mmc/tvguard/config/tvguard"
+
+# If the live config disappears on the same overlay, restore it from mmc.
+rm -f "$TMP/etc/config/tvguard"
+sh "$DST" config-sync
+grep -qx 'custom-b' "$TMP/etc/config/tvguard"
+
+# Simulate a freshly rebuilt firmware overlay: marker gone, package default is
+# present, durable custom backup exists. The backup must win.
+rm -f "$TMP/etc/.tvguard-config-v1"
+cp "$TMP/default-config" "$TMP/etc/config/tvguard"
+sh "$DST" config-sync
+grep -qx 'custom-b' "$TMP/etc/config/tvguard"
+grep -qx 'custom-b' "$TMP/mmc/tvguard/config/tvguard"
+
+# Simulate sysupgrade preserving a non-default, newer admin config but not the
+# overlay marker. That live custom config must win and refresh the backup.
+rm -f "$TMP/etc/.tvguard-config-v1"
+printf 'custom-c\n' > "$TMP/etc/config/tvguard"
+sh "$DST" config-sync
+grep -qx 'custom-c' "$TMP/etc/config/tvguard"
+grep -qx 'custom-c' "$TMP/mmc/tvguard/config/tvguard"
+
+# 4) A later mount outage selects only volatile RAM. Config sync is a no-op
+# for persistent backup while mmc is unavailable.
+: > "$MOUNTS"
+[ "$(sh "$DST" root)" = "$TMP/run/tvguard-data" ]
+printf 'custom-d\n' > "$TMP/etc/config/tvguard"
+sh "$DST" config-sync
+grep -qx 'custom-c' "$TMP/mmc/tvguard/config/tvguard"
+case "$(sh "$DST" status)" in
+    volatile\|"$TMP/run/tvguard-data"\|persistent_mount_unavailable) : ;;
+    *) exit 1 ;;
+esac
+
+# When mmc returns on the same overlay, the current live config is backed up.
+printf '/dev/mmcblk2p4 %s xfs rw,relatime 0 0\n' "$TMP/mmc" > "$MOUNTS"
+sh "$DST" config-sync
+grep -qx 'custom-d' "$TMP/mmc/tvguard/config/tvguard"
+
+echo 'PASS: durable data + UCI config survive overlay rebuilds without duplicate learning data'
+ "$TMP/mmc/tvguard/calibration-v5.csv"
+grep -q '^volatile-v5
+grep -q '^volatile-session$' "$TMP/mmc/tvguard/learning-sessions.csv"
+[ "$(grep -c '^legacy-event$' "$TMP/mmc/tvguard/events.log")" -eq 1 ]
+[ "$(grep -c '^legacy-session$' "$TMP/mmc/tvguard/learning-sessions.csv")" -eq 1 ]
+
+# Known legacy files are removed only after verified migration. If the legacy
+# directory becomes empty it may become a compatibility symlink.
+if [ -L "$TMP/etc/tvguard" ]; then
+    [ "$(readlink "$TMP/etc/tvguard")" = "$TMP/mmc/tvguard" ]
+else
+    [ ! -e "$TMP/etc/tvguard/state" ]
+    [ ! -e "$TMP/etc/tvguard/events.log" ]
+    [ ! -e "$TMP/etc/tvguard/learning-sessions.csv" ]
+fi
+
+# 3) UCI config backup: current live custom config becomes the durable copy.
+printf 'custom-a\n' > "$TMP/etc/config/tvguard"
+sh "$DST" config-sync
+cmp "$TMP/etc/config/tvguard" "$TMP/mmc/tvguard/config/tvguard"
+[ -f "$TMP/etc/.tvguard-config-v1" ]
+
+# A later admin change updates the durable backup; unchanged config-sync is
+# byte-identical and does not need a different file.
+printf 'custom-b\n' > "$TMP/etc/config/tvguard"
+sh "$DST" config-sync
+grep -qx 'custom-b' "$TMP/mmc/tvguard/config/tvguard"
+
+# If the live config disappears on the same overlay, restore it from mmc.
+rm -f "$TMP/etc/config/tvguard"
+sh "$DST" config-sync
+grep -qx 'custom-b' "$TMP/etc/config/tvguard"
+
+# Simulate a freshly rebuilt firmware overlay: marker gone, package default is
+# present, durable custom backup exists. The backup must win.
+rm -f "$TMP/etc/.tvguard-config-v1"
+cp "$TMP/default-config" "$TMP/etc/config/tvguard"
+sh "$DST" config-sync
+grep -qx 'custom-b' "$TMP/etc/config/tvguard"
+grep -qx 'custom-b' "$TMP/mmc/tvguard/config/tvguard"
+
+# Simulate sysupgrade preserving a non-default, newer admin config but not the
+# overlay marker. That live custom config must win and refresh the backup.
+rm -f "$TMP/etc/.tvguard-config-v1"
+printf 'custom-c\n' > "$TMP/etc/config/tvguard"
+sh "$DST" config-sync
+grep -qx 'custom-c' "$TMP/etc/config/tvguard"
+grep -qx 'custom-c' "$TMP/mmc/tvguard/config/tvguard"
+
+# 4) A later mount outage selects only volatile RAM. Config sync is a no-op
+# for persistent backup while mmc is unavailable.
+: > "$MOUNTS"
+[ "$(sh "$DST" root)" = "$TMP/run/tvguard-data" ]
+printf 'custom-d\n' > "$TMP/etc/config/tvguard"
+sh "$DST" config-sync
+grep -qx 'custom-c' "$TMP/mmc/tvguard/config/tvguard"
+case "$(sh "$DST" status)" in
+    volatile\|"$TMP/run/tvguard-data"\|persistent_mount_unavailable) : ;;
+    *) exit 1 ;;
+esac
+
+# When mmc returns on the same overlay, the current live config is backed up.
+printf '/dev/mmcblk2p4 %s xfs rw,relatime 0 0\n' "$TMP/mmc" > "$MOUNTS"
+sh "$DST" config-sync
+grep -qx 'custom-d' "$TMP/mmc/tvguard/config/tvguard"
+
+echo 'PASS: durable data + UCI config survive overlay rebuilds without duplicate learning data'
+ "$TMP/mmc/tvguard/calibration-v5.csv"
+grep -q '^legacy-session
+grep -q '^volatile-session$' "$TMP/mmc/tvguard/learning-sessions.csv"
+[ "$(grep -c '^legacy-event$' "$TMP/mmc/tvguard/events.log")" -eq 1 ]
+[ "$(grep -c '^legacy-session$' "$TMP/mmc/tvguard/learning-sessions.csv")" -eq 1 ]
+
+# Known legacy files are removed only after verified migration. If the legacy
+# directory becomes empty it may become a compatibility symlink.
+if [ -L "$TMP/etc/tvguard" ]; then
+    [ "$(readlink "$TMP/etc/tvguard")" = "$TMP/mmc/tvguard" ]
+else
+    [ ! -e "$TMP/etc/tvguard/state" ]
+    [ ! -e "$TMP/etc/tvguard/events.log" ]
+    [ ! -e "$TMP/etc/tvguard/learning-sessions.csv" ]
+fi
+
+# 3) UCI config backup: current live custom config becomes the durable copy.
+printf 'custom-a\n' > "$TMP/etc/config/tvguard"
+sh "$DST" config-sync
+cmp "$TMP/etc/config/tvguard" "$TMP/mmc/tvguard/config/tvguard"
+[ -f "$TMP/etc/.tvguard-config-v1" ]
+
+# A later admin change updates the durable backup; unchanged config-sync is
+# byte-identical and does not need a different file.
+printf 'custom-b\n' > "$TMP/etc/config/tvguard"
+sh "$DST" config-sync
+grep -qx 'custom-b' "$TMP/mmc/tvguard/config/tvguard"
+
+# If the live config disappears on the same overlay, restore it from mmc.
+rm -f "$TMP/etc/config/tvguard"
+sh "$DST" config-sync
+grep -qx 'custom-b' "$TMP/etc/config/tvguard"
+
+# Simulate a freshly rebuilt firmware overlay: marker gone, package default is
+# present, durable custom backup exists. The backup must win.
+rm -f "$TMP/etc/.tvguard-config-v1"
+cp "$TMP/default-config" "$TMP/etc/config/tvguard"
+sh "$DST" config-sync
+grep -qx 'custom-b' "$TMP/etc/config/tvguard"
+grep -qx 'custom-b' "$TMP/mmc/tvguard/config/tvguard"
+
+# Simulate sysupgrade preserving a non-default, newer admin config but not the
+# overlay marker. That live custom config must win and refresh the backup.
+rm -f "$TMP/etc/.tvguard-config-v1"
+printf 'custom-c\n' > "$TMP/etc/config/tvguard"
+sh "$DST" config-sync
+grep -qx 'custom-c' "$TMP/etc/config/tvguard"
+grep -qx 'custom-c' "$TMP/mmc/tvguard/config/tvguard"
+
+# 4) A later mount outage selects only volatile RAM. Config sync is a no-op
+# for persistent backup while mmc is unavailable.
+: > "$MOUNTS"
+[ "$(sh "$DST" root)" = "$TMP/run/tvguard-data" ]
+printf 'custom-d\n' > "$TMP/etc/config/tvguard"
+sh "$DST" config-sync
+grep -qx 'custom-c' "$TMP/mmc/tvguard/config/tvguard"
+case "$(sh "$DST" status)" in
+    volatile\|"$TMP/run/tvguard-data"\|persistent_mount_unavailable) : ;;
+    *) exit 1 ;;
+esac
+
+# When mmc returns on the same overlay, the current live config is backed up.
+printf '/dev/mmcblk2p4 %s xfs rw,relatime 0 0\n' "$TMP/mmc" > "$MOUNTS"
+sh "$DST" config-sync
+grep -qx 'custom-d' "$TMP/mmc/tvguard/config/tvguard"
+
+echo 'PASS: durable data + UCI config survive overlay rebuilds without duplicate learning data'
+ "$TMP/mmc/tvguard/learning-sessions.csv"
+grep -q '^volatile-session$' "$TMP/mmc/tvguard/learning-sessions.csv"
+[ "$(grep -c '^legacy-event$' "$TMP/mmc/tvguard/events.log")" -eq 1 ]
+[ "$(grep -c '^legacy-session$' "$TMP/mmc/tvguard/learning-sessions.csv")" -eq 1 ]
+
+# Known legacy files are removed only after verified migration. If the legacy
+# directory becomes empty it may become a compatibility symlink.
+if [ -L "$TMP/etc/tvguard" ]; then
+    [ "$(readlink "$TMP/etc/tvguard")" = "$TMP/mmc/tvguard" ]
+else
+    [ ! -e "$TMP/etc/tvguard/state" ]
+    [ ! -e "$TMP/etc/tvguard/events.log" ]
+    [ ! -e "$TMP/etc/tvguard/learning-sessions.csv" ]
+fi
+
+# 3) UCI config backup: current live custom config becomes the durable copy.
+printf 'custom-a\n' > "$TMP/etc/config/tvguard"
+sh "$DST" config-sync
+cmp "$TMP/etc/config/tvguard" "$TMP/mmc/tvguard/config/tvguard"
+[ -f "$TMP/etc/.tvguard-config-v1" ]
+
+# A later admin change updates the durable backup; unchanged config-sync is
+# byte-identical and does not need a different file.
+printf 'custom-b\n' > "$TMP/etc/config/tvguard"
+sh "$DST" config-sync
+grep -qx 'custom-b' "$TMP/mmc/tvguard/config/tvguard"
+
+# If the live config disappears on the same overlay, restore it from mmc.
+rm -f "$TMP/etc/config/tvguard"
+sh "$DST" config-sync
+grep -qx 'custom-b' "$TMP/etc/config/tvguard"
+
+# Simulate a freshly rebuilt firmware overlay: marker gone, package default is
+# present, durable custom backup exists. The backup must win.
+rm -f "$TMP/etc/.tvguard-config-v1"
+cp "$TMP/default-config" "$TMP/etc/config/tvguard"
+sh "$DST" config-sync
+grep -qx 'custom-b' "$TMP/etc/config/tvguard"
+grep -qx 'custom-b' "$TMP/mmc/tvguard/config/tvguard"
+
+# Simulate sysupgrade preserving a non-default, newer admin config but not the
+# overlay marker. That live custom config must win and refresh the backup.
+rm -f "$TMP/etc/.tvguard-config-v1"
+printf 'custom-c\n' > "$TMP/etc/config/tvguard"
+sh "$DST" config-sync
+grep -qx 'custom-c' "$TMP/etc/config/tvguard"
+grep -qx 'custom-c' "$TMP/mmc/tvguard/config/tvguard"
+
+# 4) A later mount outage selects only volatile RAM. Config sync is a no-op
+# for persistent backup while mmc is unavailable.
+: > "$MOUNTS"
+[ "$(sh "$DST" root)" = "$TMP/run/tvguard-data" ]
+printf 'custom-d\n' > "$TMP/etc/config/tvguard"
+sh "$DST" config-sync
+grep -qx 'custom-c' "$TMP/mmc/tvguard/config/tvguard"
+case "$(sh "$DST" status)" in
+    volatile\|"$TMP/run/tvguard-data"\|persistent_mount_unavailable) : ;;
+    *) exit 1 ;;
+esac
+
+# When mmc returns on the same overlay, the current live config is backed up.
+printf '/dev/mmcblk2p4 %s xfs rw,relatime 0 0\n' "$TMP/mmc" > "$MOUNTS"
+sh "$DST" config-sync
+grep -qx 'custom-d' "$TMP/mmc/tvguard/config/tvguard"
+
+echo 'PASS: durable data + UCI config survive overlay rebuilds without duplicate learning data'
+ "$TMP/mmc/tvguard/events.log")" -eq 1 ]
+[ "$(grep -c '^legacy-v5
+
+# Known legacy files are removed only after verified migration. If the legacy
+# directory becomes empty it may become a compatibility symlink.
+if [ -L "$TMP/etc/tvguard" ]; then
+    [ "$(readlink "$TMP/etc/tvguard")" = "$TMP/mmc/tvguard" ]
+else
+    [ ! -e "$TMP/etc/tvguard/state" ]
+    [ ! -e "$TMP/etc/tvguard/events.log" ]
+    [ ! -e "$TMP/etc/tvguard/learning-sessions.csv" ]
+fi
+
+# 3) UCI config backup: current live custom config becomes the durable copy.
+printf 'custom-a\n' > "$TMP/etc/config/tvguard"
+sh "$DST" config-sync
+cmp "$TMP/etc/config/tvguard" "$TMP/mmc/tvguard/config/tvguard"
+[ -f "$TMP/etc/.tvguard-config-v1" ]
+
+# A later admin change updates the durable backup; unchanged config-sync is
+# byte-identical and does not need a different file.
+printf 'custom-b\n' > "$TMP/etc/config/tvguard"
+sh "$DST" config-sync
+grep -qx 'custom-b' "$TMP/mmc/tvguard/config/tvguard"
+
+# If the live config disappears on the same overlay, restore it from mmc.
+rm -f "$TMP/etc/config/tvguard"
+sh "$DST" config-sync
+grep -qx 'custom-b' "$TMP/etc/config/tvguard"
+
+# Simulate a freshly rebuilt firmware overlay: marker gone, package default is
+# present, durable custom backup exists. The backup must win.
+rm -f "$TMP/etc/.tvguard-config-v1"
+cp "$TMP/default-config" "$TMP/etc/config/tvguard"
+sh "$DST" config-sync
+grep -qx 'custom-b' "$TMP/etc/config/tvguard"
+grep -qx 'custom-b' "$TMP/mmc/tvguard/config/tvguard"
+
+# Simulate sysupgrade preserving a non-default, newer admin config but not the
+# overlay marker. That live custom config must win and refresh the backup.
+rm -f "$TMP/etc/.tvguard-config-v1"
+printf 'custom-c\n' > "$TMP/etc/config/tvguard"
+sh "$DST" config-sync
+grep -qx 'custom-c' "$TMP/etc/config/tvguard"
+grep -qx 'custom-c' "$TMP/mmc/tvguard/config/tvguard"
+
+# 4) A later mount outage selects only volatile RAM. Config sync is a no-op
+# for persistent backup while mmc is unavailable.
+: > "$MOUNTS"
+[ "$(sh "$DST" root)" = "$TMP/run/tvguard-data" ]
+printf 'custom-d\n' > "$TMP/etc/config/tvguard"
+sh "$DST" config-sync
+grep -qx 'custom-c' "$TMP/mmc/tvguard/config/tvguard"
+case "$(sh "$DST" status)" in
+    volatile\|"$TMP/run/tvguard-data"\|persistent_mount_unavailable) : ;;
+    *) exit 1 ;;
+esac
+
+# When mmc returns on the same overlay, the current live config is backed up.
+printf '/dev/mmcblk2p4 %s xfs rw,relatime 0 0\n' "$TMP/mmc" > "$MOUNTS"
+sh "$DST" config-sync
+grep -qx 'custom-d' "$TMP/mmc/tvguard/config/tvguard"
+
+echo 'PASS: durable data + UCI config survive overlay rebuilds without duplicate learning data'
+ "$TMP/mmc/tvguard/events.log"
+grep -q '^volatile-event
+grep -q '^volatile-session$' "$TMP/mmc/tvguard/learning-sessions.csv"
+[ "$(grep -c '^legacy-event$' "$TMP/mmc/tvguard/events.log")" -eq 1 ]
+[ "$(grep -c '^legacy-session$' "$TMP/mmc/tvguard/learning-sessions.csv")" -eq 1 ]
+
+# Known legacy files are removed only after verified migration. If the legacy
+# directory becomes empty it may become a compatibility symlink.
+if [ -L "$TMP/etc/tvguard" ]; then
+    [ "$(readlink "$TMP/etc/tvguard")" = "$TMP/mmc/tvguard" ]
+else
+    [ ! -e "$TMP/etc/tvguard/state" ]
+    [ ! -e "$TMP/etc/tvguard/events.log" ]
+    [ ! -e "$TMP/etc/tvguard/learning-sessions.csv" ]
+fi
+
+# 3) UCI config backup: current live custom config becomes the durable copy.
+printf 'custom-a\n' > "$TMP/etc/config/tvguard"
+sh "$DST" config-sync
+cmp "$TMP/etc/config/tvguard" "$TMP/mmc/tvguard/config/tvguard"
+[ -f "$TMP/etc/.tvguard-config-v1" ]
+
+# A later admin change updates the durable backup; unchanged config-sync is
+# byte-identical and does not need a different file.
+printf 'custom-b\n' > "$TMP/etc/config/tvguard"
+sh "$DST" config-sync
+grep -qx 'custom-b' "$TMP/mmc/tvguard/config/tvguard"
+
+# If the live config disappears on the same overlay, restore it from mmc.
+rm -f "$TMP/etc/config/tvguard"
+sh "$DST" config-sync
+grep -qx 'custom-b' "$TMP/etc/config/tvguard"
+
+# Simulate a freshly rebuilt firmware overlay: marker gone, package default is
+# present, durable custom backup exists. The backup must win.
+rm -f "$TMP/etc/.tvguard-config-v1"
+cp "$TMP/default-config" "$TMP/etc/config/tvguard"
+sh "$DST" config-sync
+grep -qx 'custom-b' "$TMP/etc/config/tvguard"
+grep -qx 'custom-b' "$TMP/mmc/tvguard/config/tvguard"
+
+# Simulate sysupgrade preserving a non-default, newer admin config but not the
+# overlay marker. That live custom config must win and refresh the backup.
+rm -f "$TMP/etc/.tvguard-config-v1"
+printf 'custom-c\n' > "$TMP/etc/config/tvguard"
+sh "$DST" config-sync
+grep -qx 'custom-c' "$TMP/etc/config/tvguard"
+grep -qx 'custom-c' "$TMP/mmc/tvguard/config/tvguard"
+
+# 4) A later mount outage selects only volatile RAM. Config sync is a no-op
+# for persistent backup while mmc is unavailable.
+: > "$MOUNTS"
+[ "$(sh "$DST" root)" = "$TMP/run/tvguard-data" ]
+printf 'custom-d\n' > "$TMP/etc/config/tvguard"
+sh "$DST" config-sync
+grep -qx 'custom-c' "$TMP/mmc/tvguard/config/tvguard"
+case "$(sh "$DST" status)" in
+    volatile\|"$TMP/run/tvguard-data"\|persistent_mount_unavailable) : ;;
+    *) exit 1 ;;
+esac
+
+# When mmc returns on the same overlay, the current live config is backed up.
+printf '/dev/mmcblk2p4 %s xfs rw,relatime 0 0\n' "$TMP/mmc" > "$MOUNTS"
+sh "$DST" config-sync
+grep -qx 'custom-d' "$TMP/mmc/tvguard/config/tvguard"
+
+echo 'PASS: durable data + UCI config survive overlay rebuilds without duplicate learning data'
+ "$TMP/mmc/tvguard/events.log"
+grep -q '^legacy-v5
+grep -q '^volatile-session$' "$TMP/mmc/tvguard/learning-sessions.csv"
+[ "$(grep -c '^legacy-event$' "$TMP/mmc/tvguard/events.log")" -eq 1 ]
+[ "$(grep -c '^legacy-session$' "$TMP/mmc/tvguard/learning-sessions.csv")" -eq 1 ]
+
+# Known legacy files are removed only after verified migration. If the legacy
+# directory becomes empty it may become a compatibility symlink.
+if [ -L "$TMP/etc/tvguard" ]; then
+    [ "$(readlink "$TMP/etc/tvguard")" = "$TMP/mmc/tvguard" ]
+else
+    [ ! -e "$TMP/etc/tvguard/state" ]
+    [ ! -e "$TMP/etc/tvguard/events.log" ]
+    [ ! -e "$TMP/etc/tvguard/learning-sessions.csv" ]
+fi
+
+# 3) UCI config backup: current live custom config becomes the durable copy.
+printf 'custom-a\n' > "$TMP/etc/config/tvguard"
+sh "$DST" config-sync
+cmp "$TMP/etc/config/tvguard" "$TMP/mmc/tvguard/config/tvguard"
+[ -f "$TMP/etc/.tvguard-config-v1" ]
+
+# A later admin change updates the durable backup; unchanged config-sync is
+# byte-identical and does not need a different file.
+printf 'custom-b\n' > "$TMP/etc/config/tvguard"
+sh "$DST" config-sync
+grep -qx 'custom-b' "$TMP/mmc/tvguard/config/tvguard"
+
+# If the live config disappears on the same overlay, restore it from mmc.
+rm -f "$TMP/etc/config/tvguard"
+sh "$DST" config-sync
+grep -qx 'custom-b' "$TMP/etc/config/tvguard"
+
+# Simulate a freshly rebuilt firmware overlay: marker gone, package default is
+# present, durable custom backup exists. The backup must win.
+rm -f "$TMP/etc/.tvguard-config-v1"
+cp "$TMP/default-config" "$TMP/etc/config/tvguard"
+sh "$DST" config-sync
+grep -qx 'custom-b' "$TMP/etc/config/tvguard"
+grep -qx 'custom-b' "$TMP/mmc/tvguard/config/tvguard"
+
+# Simulate sysupgrade preserving a non-default, newer admin config but not the
+# overlay marker. That live custom config must win and refresh the backup.
+rm -f "$TMP/etc/.tvguard-config-v1"
+printf 'custom-c\n' > "$TMP/etc/config/tvguard"
+sh "$DST" config-sync
+grep -qx 'custom-c' "$TMP/etc/config/tvguard"
+grep -qx 'custom-c' "$TMP/mmc/tvguard/config/tvguard"
+
+# 4) A later mount outage selects only volatile RAM. Config sync is a no-op
+# for persistent backup while mmc is unavailable.
+: > "$MOUNTS"
+[ "$(sh "$DST" root)" = "$TMP/run/tvguard-data" ]
+printf 'custom-d\n' > "$TMP/etc/config/tvguard"
+sh "$DST" config-sync
+grep -qx 'custom-c' "$TMP/mmc/tvguard/config/tvguard"
+case "$(sh "$DST" status)" in
+    volatile\|"$TMP/run/tvguard-data"\|persistent_mount_unavailable) : ;;
+    *) exit 1 ;;
+esac
+
+# When mmc returns on the same overlay, the current live config is backed up.
+printf '/dev/mmcblk2p4 %s xfs rw,relatime 0 0\n' "$TMP/mmc" > "$MOUNTS"
+sh "$DST" config-sync
+grep -qx 'custom-d' "$TMP/mmc/tvguard/config/tvguard"
+
+echo 'PASS: durable data + UCI config survive overlay rebuilds without duplicate learning data'
+ "$TMP/mmc/tvguard/calibration-v5.csv"
+grep -q '^volatile-v5
+grep -q '^volatile-session$' "$TMP/mmc/tvguard/learning-sessions.csv"
+[ "$(grep -c '^legacy-event$' "$TMP/mmc/tvguard/events.log")" -eq 1 ]
+[ "$(grep -c '^legacy-session$' "$TMP/mmc/tvguard/learning-sessions.csv")" -eq 1 ]
+
+# Known legacy files are removed only after verified migration. If the legacy
+# directory becomes empty it may become a compatibility symlink.
+if [ -L "$TMP/etc/tvguard" ]; then
+    [ "$(readlink "$TMP/etc/tvguard")" = "$TMP/mmc/tvguard" ]
+else
+    [ ! -e "$TMP/etc/tvguard/state" ]
+    [ ! -e "$TMP/etc/tvguard/events.log" ]
+    [ ! -e "$TMP/etc/tvguard/learning-sessions.csv" ]
+fi
+
+# 3) UCI config backup: current live custom config becomes the durable copy.
+printf 'custom-a\n' > "$TMP/etc/config/tvguard"
+sh "$DST" config-sync
+cmp "$TMP/etc/config/tvguard" "$TMP/mmc/tvguard/config/tvguard"
+[ -f "$TMP/etc/.tvguard-config-v1" ]
+
+# A later admin change updates the durable backup; unchanged config-sync is
+# byte-identical and does not need a different file.
+printf 'custom-b\n' > "$TMP/etc/config/tvguard"
+sh "$DST" config-sync
+grep -qx 'custom-b' "$TMP/mmc/tvguard/config/tvguard"
+
+# If the live config disappears on the same overlay, restore it from mmc.
+rm -f "$TMP/etc/config/tvguard"
+sh "$DST" config-sync
+grep -qx 'custom-b' "$TMP/etc/config/tvguard"
+
+# Simulate a freshly rebuilt firmware overlay: marker gone, package default is
+# present, durable custom backup exists. The backup must win.
+rm -f "$TMP/etc/.tvguard-config-v1"
+cp "$TMP/default-config" "$TMP/etc/config/tvguard"
+sh "$DST" config-sync
+grep -qx 'custom-b' "$TMP/etc/config/tvguard"
+grep -qx 'custom-b' "$TMP/mmc/tvguard/config/tvguard"
+
+# Simulate sysupgrade preserving a non-default, newer admin config but not the
+# overlay marker. That live custom config must win and refresh the backup.
+rm -f "$TMP/etc/.tvguard-config-v1"
+printf 'custom-c\n' > "$TMP/etc/config/tvguard"
+sh "$DST" config-sync
+grep -qx 'custom-c' "$TMP/etc/config/tvguard"
+grep -qx 'custom-c' "$TMP/mmc/tvguard/config/tvguard"
+
+# 4) A later mount outage selects only volatile RAM. Config sync is a no-op
+# for persistent backup while mmc is unavailable.
+: > "$MOUNTS"
+[ "$(sh "$DST" root)" = "$TMP/run/tvguard-data" ]
+printf 'custom-d\n' > "$TMP/etc/config/tvguard"
+sh "$DST" config-sync
+grep -qx 'custom-c' "$TMP/mmc/tvguard/config/tvguard"
+case "$(sh "$DST" status)" in
+    volatile\|"$TMP/run/tvguard-data"\|persistent_mount_unavailable) : ;;
+    *) exit 1 ;;
+esac
+
+# When mmc returns on the same overlay, the current live config is backed up.
+printf '/dev/mmcblk2p4 %s xfs rw,relatime 0 0\n' "$TMP/mmc" > "$MOUNTS"
+sh "$DST" config-sync
+grep -qx 'custom-d' "$TMP/mmc/tvguard/config/tvguard"
+
+echo 'PASS: durable data + UCI config survive overlay rebuilds without duplicate learning data'
+ "$TMP/mmc/tvguard/calibration-v5.csv"
+grep -q '^legacy-session
+grep -q '^volatile-session$' "$TMP/mmc/tvguard/learning-sessions.csv"
+[ "$(grep -c '^legacy-event$' "$TMP/mmc/tvguard/events.log")" -eq 1 ]
+[ "$(grep -c '^legacy-session$' "$TMP/mmc/tvguard/learning-sessions.csv")" -eq 1 ]
+
+# Known legacy files are removed only after verified migration. If the legacy
+# directory becomes empty it may become a compatibility symlink.
+if [ -L "$TMP/etc/tvguard" ]; then
+    [ "$(readlink "$TMP/etc/tvguard")" = "$TMP/mmc/tvguard" ]
+else
+    [ ! -e "$TMP/etc/tvguard/state" ]
+    [ ! -e "$TMP/etc/tvguard/events.log" ]
+    [ ! -e "$TMP/etc/tvguard/learning-sessions.csv" ]
+fi
+
+# 3) UCI config backup: current live custom config becomes the durable copy.
+printf 'custom-a\n' > "$TMP/etc/config/tvguard"
+sh "$DST" config-sync
+cmp "$TMP/etc/config/tvguard" "$TMP/mmc/tvguard/config/tvguard"
+[ -f "$TMP/etc/.tvguard-config-v1" ]
+
+# A later admin change updates the durable backup; unchanged config-sync is
+# byte-identical and does not need a different file.
+printf 'custom-b\n' > "$TMP/etc/config/tvguard"
+sh "$DST" config-sync
+grep -qx 'custom-b' "$TMP/mmc/tvguard/config/tvguard"
+
+# If the live config disappears on the same overlay, restore it from mmc.
+rm -f "$TMP/etc/config/tvguard"
+sh "$DST" config-sync
+grep -qx 'custom-b' "$TMP/etc/config/tvguard"
+
+# Simulate a freshly rebuilt firmware overlay: marker gone, package default is
+# present, durable custom backup exists. The backup must win.
+rm -f "$TMP/etc/.tvguard-config-v1"
+cp "$TMP/default-config" "$TMP/etc/config/tvguard"
+sh "$DST" config-sync
+grep -qx 'custom-b' "$TMP/etc/config/tvguard"
+grep -qx 'custom-b' "$TMP/mmc/tvguard/config/tvguard"
+
+# Simulate sysupgrade preserving a non-default, newer admin config but not the
+# overlay marker. That live custom config must win and refresh the backup.
+rm -f "$TMP/etc/.tvguard-config-v1"
+printf 'custom-c\n' > "$TMP/etc/config/tvguard"
+sh "$DST" config-sync
+grep -qx 'custom-c' "$TMP/etc/config/tvguard"
+grep -qx 'custom-c' "$TMP/mmc/tvguard/config/tvguard"
+
+# 4) A later mount outage selects only volatile RAM. Config sync is a no-op
+# for persistent backup while mmc is unavailable.
+: > "$MOUNTS"
+[ "$(sh "$DST" root)" = "$TMP/run/tvguard-data" ]
+printf 'custom-d\n' > "$TMP/etc/config/tvguard"
+sh "$DST" config-sync
+grep -qx 'custom-c' "$TMP/mmc/tvguard/config/tvguard"
+case "$(sh "$DST" status)" in
+    volatile\|"$TMP/run/tvguard-data"\|persistent_mount_unavailable) : ;;
+    *) exit 1 ;;
+esac
+
+# When mmc returns on the same overlay, the current live config is backed up.
+printf '/dev/mmcblk2p4 %s xfs rw,relatime 0 0\n' "$TMP/mmc" > "$MOUNTS"
+sh "$DST" config-sync
+grep -qx 'custom-d' "$TMP/mmc/tvguard/config/tvguard"
+
+echo 'PASS: durable data + UCI config survive overlay rebuilds without duplicate learning data'
+ "$TMP/mmc/tvguard/learning-sessions.csv"
+grep -q '^volatile-session$' "$TMP/mmc/tvguard/learning-sessions.csv"
+[ "$(grep -c '^legacy-event$' "$TMP/mmc/tvguard/events.log")" -eq 1 ]
+[ "$(grep -c '^legacy-session$' "$TMP/mmc/tvguard/learning-sessions.csv")" -eq 1 ]
+
+# Known legacy files are removed only after verified migration. If the legacy
+# directory becomes empty it may become a compatibility symlink.
+if [ -L "$TMP/etc/tvguard" ]; then
+    [ "$(readlink "$TMP/etc/tvguard")" = "$TMP/mmc/tvguard" ]
+else
+    [ ! -e "$TMP/etc/tvguard/state" ]
+    [ ! -e "$TMP/etc/tvguard/events.log" ]
+    [ ! -e "$TMP/etc/tvguard/learning-sessions.csv" ]
+fi
+
+# 3) UCI config backup: current live custom config becomes the durable copy.
+printf 'custom-a\n' > "$TMP/etc/config/tvguard"
+sh "$DST" config-sync
+cmp "$TMP/etc/config/tvguard" "$TMP/mmc/tvguard/config/tvguard"
+[ -f "$TMP/etc/.tvguard-config-v1" ]
+
+# A later admin change updates the durable backup; unchanged config-sync is
+# byte-identical and does not need a different file.
+printf 'custom-b\n' > "$TMP/etc/config/tvguard"
+sh "$DST" config-sync
+grep -qx 'custom-b' "$TMP/mmc/tvguard/config/tvguard"
+
+# If the live config disappears on the same overlay, restore it from mmc.
+rm -f "$TMP/etc/config/tvguard"
+sh "$DST" config-sync
+grep -qx 'custom-b' "$TMP/etc/config/tvguard"
+
+# Simulate a freshly rebuilt firmware overlay: marker gone, package default is
+# present, durable custom backup exists. The backup must win.
+rm -f "$TMP/etc/.tvguard-config-v1"
+cp "$TMP/default-config" "$TMP/etc/config/tvguard"
+sh "$DST" config-sync
+grep -qx 'custom-b' "$TMP/etc/config/tvguard"
+grep -qx 'custom-b' "$TMP/mmc/tvguard/config/tvguard"
+
+# Simulate sysupgrade preserving a non-default, newer admin config but not the
+# overlay marker. That live custom config must win and refresh the backup.
+rm -f "$TMP/etc/.tvguard-config-v1"
+printf 'custom-c\n' > "$TMP/etc/config/tvguard"
+sh "$DST" config-sync
+grep -qx 'custom-c' "$TMP/etc/config/tvguard"
+grep -qx 'custom-c' "$TMP/mmc/tvguard/config/tvguard"
+
+# 4) A later mount outage selects only volatile RAM. Config sync is a no-op
+# for persistent backup while mmc is unavailable.
+: > "$MOUNTS"
+[ "$(sh "$DST" root)" = "$TMP/run/tvguard-data" ]
+printf 'custom-d\n' > "$TMP/etc/config/tvguard"
+sh "$DST" config-sync
+grep -qx 'custom-c' "$TMP/mmc/tvguard/config/tvguard"
+case "$(sh "$DST" status)" in
+    volatile\|"$TMP/run/tvguard-data"\|persistent_mount_unavailable) : ;;
+    *) exit 1 ;;
+esac
+
+# When mmc returns on the same overlay, the current live config is backed up.
+printf '/dev/mmcblk2p4 %s xfs rw,relatime 0 0\n' "$TMP/mmc" > "$MOUNTS"
+sh "$DST" config-sync
+grep -qx 'custom-d' "$TMP/mmc/tvguard/config/tvguard"
+
+echo 'PASS: durable data + UCI config survive overlay rebuilds without duplicate learning data'
+ "$TMP/mmc/tvguard/calibration-v5.csv")" -eq 1 ]
+[ "$(grep -c '^legacy-session
+
+# Known legacy files are removed only after verified migration. If the legacy
+# directory becomes empty it may become a compatibility symlink.
+if [ -L "$TMP/etc/tvguard" ]; then
+    [ "$(readlink "$TMP/etc/tvguard")" = "$TMP/mmc/tvguard" ]
+else
+    [ ! -e "$TMP/etc/tvguard/state" ]
+    [ ! -e "$TMP/etc/tvguard/events.log" ]
+    [ ! -e "$TMP/etc/tvguard/learning-sessions.csv" ]
+fi
+
+# 3) UCI config backup: current live custom config becomes the durable copy.
+printf 'custom-a\n' > "$TMP/etc/config/tvguard"
+sh "$DST" config-sync
+cmp "$TMP/etc/config/tvguard" "$TMP/mmc/tvguard/config/tvguard"
+[ -f "$TMP/etc/.tvguard-config-v1" ]
+
+# A later admin change updates the durable backup; unchanged config-sync is
+# byte-identical and does not need a different file.
+printf 'custom-b\n' > "$TMP/etc/config/tvguard"
+sh "$DST" config-sync
+grep -qx 'custom-b' "$TMP/mmc/tvguard/config/tvguard"
+
+# If the live config disappears on the same overlay, restore it from mmc.
+rm -f "$TMP/etc/config/tvguard"
+sh "$DST" config-sync
+grep -qx 'custom-b' "$TMP/etc/config/tvguard"
+
+# Simulate a freshly rebuilt firmware overlay: marker gone, package default is
+# present, durable custom backup exists. The backup must win.
+rm -f "$TMP/etc/.tvguard-config-v1"
+cp "$TMP/default-config" "$TMP/etc/config/tvguard"
+sh "$DST" config-sync
+grep -qx 'custom-b' "$TMP/etc/config/tvguard"
+grep -qx 'custom-b' "$TMP/mmc/tvguard/config/tvguard"
+
+# Simulate sysupgrade preserving a non-default, newer admin config but not the
+# overlay marker. That live custom config must win and refresh the backup.
+rm -f "$TMP/etc/.tvguard-config-v1"
+printf 'custom-c\n' > "$TMP/etc/config/tvguard"
+sh "$DST" config-sync
+grep -qx 'custom-c' "$TMP/etc/config/tvguard"
+grep -qx 'custom-c' "$TMP/mmc/tvguard/config/tvguard"
+
+# 4) A later mount outage selects only volatile RAM. Config sync is a no-op
+# for persistent backup while mmc is unavailable.
+: > "$MOUNTS"
+[ "$(sh "$DST" root)" = "$TMP/run/tvguard-data" ]
+printf 'custom-d\n' > "$TMP/etc/config/tvguard"
+sh "$DST" config-sync
+grep -qx 'custom-c' "$TMP/mmc/tvguard/config/tvguard"
+case "$(sh "$DST" status)" in
+    volatile\|"$TMP/run/tvguard-data"\|persistent_mount_unavailable) : ;;
+    *) exit 1 ;;
+esac
+
+# When mmc returns on the same overlay, the current live config is backed up.
+printf '/dev/mmcblk2p4 %s xfs rw,relatime 0 0\n' "$TMP/mmc" > "$MOUNTS"
+sh "$DST" config-sync
+grep -qx 'custom-d' "$TMP/mmc/tvguard/config/tvguard"
+
+echo 'PASS: durable data + UCI config survive overlay rebuilds without duplicate learning data'
+ "$TMP/mmc/tvguard/events.log"
+grep -q '^volatile-event
+grep -q '^volatile-session$' "$TMP/mmc/tvguard/learning-sessions.csv"
+[ "$(grep -c '^legacy-event$' "$TMP/mmc/tvguard/events.log")" -eq 1 ]
+[ "$(grep -c '^legacy-session$' "$TMP/mmc/tvguard/learning-sessions.csv")" -eq 1 ]
+
+# Known legacy files are removed only after verified migration. If the legacy
+# directory becomes empty it may become a compatibility symlink.
+if [ -L "$TMP/etc/tvguard" ]; then
+    [ "$(readlink "$TMP/etc/tvguard")" = "$TMP/mmc/tvguard" ]
+else
+    [ ! -e "$TMP/etc/tvguard/state" ]
+    [ ! -e "$TMP/etc/tvguard/events.log" ]
+    [ ! -e "$TMP/etc/tvguard/learning-sessions.csv" ]
+fi
+
+# 3) UCI config backup: current live custom config becomes the durable copy.
+printf 'custom-a\n' > "$TMP/etc/config/tvguard"
+sh "$DST" config-sync
+cmp "$TMP/etc/config/tvguard" "$TMP/mmc/tvguard/config/tvguard"
+[ -f "$TMP/etc/.tvguard-config-v1" ]
+
+# A later admin change updates the durable backup; unchanged config-sync is
+# byte-identical and does not need a different file.
+printf 'custom-b\n' > "$TMP/etc/config/tvguard"
+sh "$DST" config-sync
+grep -qx 'custom-b' "$TMP/mmc/tvguard/config/tvguard"
+
+# If the live config disappears on the same overlay, restore it from mmc.
+rm -f "$TMP/etc/config/tvguard"
+sh "$DST" config-sync
+grep -qx 'custom-b' "$TMP/etc/config/tvguard"
+
+# Simulate a freshly rebuilt firmware overlay: marker gone, package default is
+# present, durable custom backup exists. The backup must win.
+rm -f "$TMP/etc/.tvguard-config-v1"
+cp "$TMP/default-config" "$TMP/etc/config/tvguard"
+sh "$DST" config-sync
+grep -qx 'custom-b' "$TMP/etc/config/tvguard"
+grep -qx 'custom-b' "$TMP/mmc/tvguard/config/tvguard"
+
+# Simulate sysupgrade preserving a non-default, newer admin config but not the
+# overlay marker. That live custom config must win and refresh the backup.
+rm -f "$TMP/etc/.tvguard-config-v1"
+printf 'custom-c\n' > "$TMP/etc/config/tvguard"
+sh "$DST" config-sync
+grep -qx 'custom-c' "$TMP/etc/config/tvguard"
+grep -qx 'custom-c' "$TMP/mmc/tvguard/config/tvguard"
+
+# 4) A later mount outage selects only volatile RAM. Config sync is a no-op
+# for persistent backup while mmc is unavailable.
+: > "$MOUNTS"
+[ "$(sh "$DST" root)" = "$TMP/run/tvguard-data" ]
+printf 'custom-d\n' > "$TMP/etc/config/tvguard"
+sh "$DST" config-sync
+grep -qx 'custom-c' "$TMP/mmc/tvguard/config/tvguard"
+case "$(sh "$DST" status)" in
+    volatile\|"$TMP/run/tvguard-data"\|persistent_mount_unavailable) : ;;
+    *) exit 1 ;;
+esac
+
+# When mmc returns on the same overlay, the current live config is backed up.
+printf '/dev/mmcblk2p4 %s xfs rw,relatime 0 0\n' "$TMP/mmc" > "$MOUNTS"
+sh "$DST" config-sync
+grep -qx 'custom-d' "$TMP/mmc/tvguard/config/tvguard"
+
+echo 'PASS: durable data + UCI config survive overlay rebuilds without duplicate learning data'
+ "$TMP/mmc/tvguard/events.log"
+grep -q '^legacy-v5
+grep -q '^volatile-session$' "$TMP/mmc/tvguard/learning-sessions.csv"
+[ "$(grep -c '^legacy-event$' "$TMP/mmc/tvguard/events.log")" -eq 1 ]
+[ "$(grep -c '^legacy-session$' "$TMP/mmc/tvguard/learning-sessions.csv")" -eq 1 ]
+
+# Known legacy files are removed only after verified migration. If the legacy
+# directory becomes empty it may become a compatibility symlink.
+if [ -L "$TMP/etc/tvguard" ]; then
+    [ "$(readlink "$TMP/etc/tvguard")" = "$TMP/mmc/tvguard" ]
+else
+    [ ! -e "$TMP/etc/tvguard/state" ]
+    [ ! -e "$TMP/etc/tvguard/events.log" ]
+    [ ! -e "$TMP/etc/tvguard/learning-sessions.csv" ]
+fi
+
+# 3) UCI config backup: current live custom config becomes the durable copy.
+printf 'custom-a\n' > "$TMP/etc/config/tvguard"
+sh "$DST" config-sync
+cmp "$TMP/etc/config/tvguard" "$TMP/mmc/tvguard/config/tvguard"
+[ -f "$TMP/etc/.tvguard-config-v1" ]
+
+# A later admin change updates the durable backup; unchanged config-sync is
+# byte-identical and does not need a different file.
+printf 'custom-b\n' > "$TMP/etc/config/tvguard"
+sh "$DST" config-sync
+grep -qx 'custom-b' "$TMP/mmc/tvguard/config/tvguard"
+
+# If the live config disappears on the same overlay, restore it from mmc.
+rm -f "$TMP/etc/config/tvguard"
+sh "$DST" config-sync
+grep -qx 'custom-b' "$TMP/etc/config/tvguard"
+
+# Simulate a freshly rebuilt firmware overlay: marker gone, package default is
+# present, durable custom backup exists. The backup must win.
+rm -f "$TMP/etc/.tvguard-config-v1"
+cp "$TMP/default-config" "$TMP/etc/config/tvguard"
+sh "$DST" config-sync
+grep -qx 'custom-b' "$TMP/etc/config/tvguard"
+grep -qx 'custom-b' "$TMP/mmc/tvguard/config/tvguard"
+
+# Simulate sysupgrade preserving a non-default, newer admin config but not the
+# overlay marker. That live custom config must win and refresh the backup.
+rm -f "$TMP/etc/.tvguard-config-v1"
+printf 'custom-c\n' > "$TMP/etc/config/tvguard"
+sh "$DST" config-sync
+grep -qx 'custom-c' "$TMP/etc/config/tvguard"
+grep -qx 'custom-c' "$TMP/mmc/tvguard/config/tvguard"
+
+# 4) A later mount outage selects only volatile RAM. Config sync is a no-op
+# for persistent backup while mmc is unavailable.
+: > "$MOUNTS"
+[ "$(sh "$DST" root)" = "$TMP/run/tvguard-data" ]
+printf 'custom-d\n' > "$TMP/etc/config/tvguard"
+sh "$DST" config-sync
+grep -qx 'custom-c' "$TMP/mmc/tvguard/config/tvguard"
+case "$(sh "$DST" status)" in
+    volatile\|"$TMP/run/tvguard-data"\|persistent_mount_unavailable) : ;;
+    *) exit 1 ;;
+esac
+
+# When mmc returns on the same overlay, the current live config is backed up.
+printf '/dev/mmcblk2p4 %s xfs rw,relatime 0 0\n' "$TMP/mmc" > "$MOUNTS"
+sh "$DST" config-sync
+grep -qx 'custom-d' "$TMP/mmc/tvguard/config/tvguard"
+
+echo 'PASS: durable data + UCI config survive overlay rebuilds without duplicate learning data'
+ "$TMP/mmc/tvguard/calibration-v5.csv"
+grep -q '^volatile-v5
+grep -q '^volatile-session$' "$TMP/mmc/tvguard/learning-sessions.csv"
+[ "$(grep -c '^legacy-event$' "$TMP/mmc/tvguard/events.log")" -eq 1 ]
+[ "$(grep -c '^legacy-session$' "$TMP/mmc/tvguard/learning-sessions.csv")" -eq 1 ]
+
+# Known legacy files are removed only after verified migration. If the legacy
+# directory becomes empty it may become a compatibility symlink.
+if [ -L "$TMP/etc/tvguard" ]; then
+    [ "$(readlink "$TMP/etc/tvguard")" = "$TMP/mmc/tvguard" ]
+else
+    [ ! -e "$TMP/etc/tvguard/state" ]
+    [ ! -e "$TMP/etc/tvguard/events.log" ]
+    [ ! -e "$TMP/etc/tvguard/learning-sessions.csv" ]
+fi
+
+# 3) UCI config backup: current live custom config becomes the durable copy.
+printf 'custom-a\n' > "$TMP/etc/config/tvguard"
+sh "$DST" config-sync
+cmp "$TMP/etc/config/tvguard" "$TMP/mmc/tvguard/config/tvguard"
+[ -f "$TMP/etc/.tvguard-config-v1" ]
+
+# A later admin change updates the durable backup; unchanged config-sync is
+# byte-identical and does not need a different file.
+printf 'custom-b\n' > "$TMP/etc/config/tvguard"
+sh "$DST" config-sync
+grep -qx 'custom-b' "$TMP/mmc/tvguard/config/tvguard"
+
+# If the live config disappears on the same overlay, restore it from mmc.
+rm -f "$TMP/etc/config/tvguard"
+sh "$DST" config-sync
+grep -qx 'custom-b' "$TMP/etc/config/tvguard"
+
+# Simulate a freshly rebuilt firmware overlay: marker gone, package default is
+# present, durable custom backup exists. The backup must win.
+rm -f "$TMP/etc/.tvguard-config-v1"
+cp "$TMP/default-config" "$TMP/etc/config/tvguard"
+sh "$DST" config-sync
+grep -qx 'custom-b' "$TMP/etc/config/tvguard"
+grep -qx 'custom-b' "$TMP/mmc/tvguard/config/tvguard"
+
+# Simulate sysupgrade preserving a non-default, newer admin config but not the
+# overlay marker. That live custom config must win and refresh the backup.
+rm -f "$TMP/etc/.tvguard-config-v1"
+printf 'custom-c\n' > "$TMP/etc/config/tvguard"
+sh "$DST" config-sync
+grep -qx 'custom-c' "$TMP/etc/config/tvguard"
+grep -qx 'custom-c' "$TMP/mmc/tvguard/config/tvguard"
+
+# 4) A later mount outage selects only volatile RAM. Config sync is a no-op
+# for persistent backup while mmc is unavailable.
+: > "$MOUNTS"
+[ "$(sh "$DST" root)" = "$TMP/run/tvguard-data" ]
+printf 'custom-d\n' > "$TMP/etc/config/tvguard"
+sh "$DST" config-sync
+grep -qx 'custom-c' "$TMP/mmc/tvguard/config/tvguard"
+case "$(sh "$DST" status)" in
+    volatile\|"$TMP/run/tvguard-data"\|persistent_mount_unavailable) : ;;
+    *) exit 1 ;;
+esac
+
+# When mmc returns on the same overlay, the current live config is backed up.
+printf '/dev/mmcblk2p4 %s xfs rw,relatime 0 0\n' "$TMP/mmc" > "$MOUNTS"
+sh "$DST" config-sync
+grep -qx 'custom-d' "$TMP/mmc/tvguard/config/tvguard"
+
+echo 'PASS: durable data + UCI config survive overlay rebuilds without duplicate learning data'
+ "$TMP/mmc/tvguard/calibration-v5.csv"
+grep -q '^legacy-session
+grep -q '^volatile-session$' "$TMP/mmc/tvguard/learning-sessions.csv"
+[ "$(grep -c '^legacy-event$' "$TMP/mmc/tvguard/events.log")" -eq 1 ]
+[ "$(grep -c '^legacy-session$' "$TMP/mmc/tvguard/learning-sessions.csv")" -eq 1 ]
+
+# Known legacy files are removed only after verified migration. If the legacy
+# directory becomes empty it may become a compatibility symlink.
+if [ -L "$TMP/etc/tvguard" ]; then
+    [ "$(readlink "$TMP/etc/tvguard")" = "$TMP/mmc/tvguard" ]
+else
+    [ ! -e "$TMP/etc/tvguard/state" ]
+    [ ! -e "$TMP/etc/tvguard/events.log" ]
+    [ ! -e "$TMP/etc/tvguard/learning-sessions.csv" ]
+fi
+
+# 3) UCI config backup: current live custom config becomes the durable copy.
+printf 'custom-a\n' > "$TMP/etc/config/tvguard"
+sh "$DST" config-sync
+cmp "$TMP/etc/config/tvguard" "$TMP/mmc/tvguard/config/tvguard"
+[ -f "$TMP/etc/.tvguard-config-v1" ]
+
+# A later admin change updates the durable backup; unchanged config-sync is
+# byte-identical and does not need a different file.
+printf 'custom-b\n' > "$TMP/etc/config/tvguard"
+sh "$DST" config-sync
+grep -qx 'custom-b' "$TMP/mmc/tvguard/config/tvguard"
+
+# If the live config disappears on the same overlay, restore it from mmc.
+rm -f "$TMP/etc/config/tvguard"
+sh "$DST" config-sync
+grep -qx 'custom-b' "$TMP/etc/config/tvguard"
+
+# Simulate a freshly rebuilt firmware overlay: marker gone, package default is
+# present, durable custom backup exists. The backup must win.
+rm -f "$TMP/etc/.tvguard-config-v1"
+cp "$TMP/default-config" "$TMP/etc/config/tvguard"
+sh "$DST" config-sync
+grep -qx 'custom-b' "$TMP/etc/config/tvguard"
+grep -qx 'custom-b' "$TMP/mmc/tvguard/config/tvguard"
+
+# Simulate sysupgrade preserving a non-default, newer admin config but not the
+# overlay marker. That live custom config must win and refresh the backup.
+rm -f "$TMP/etc/.tvguard-config-v1"
+printf 'custom-c\n' > "$TMP/etc/config/tvguard"
+sh "$DST" config-sync
+grep -qx 'custom-c' "$TMP/etc/config/tvguard"
+grep -qx 'custom-c' "$TMP/mmc/tvguard/config/tvguard"
+
+# 4) A later mount outage selects only volatile RAM. Config sync is a no-op
+# for persistent backup while mmc is unavailable.
+: > "$MOUNTS"
+[ "$(sh "$DST" root)" = "$TMP/run/tvguard-data" ]
+printf 'custom-d\n' > "$TMP/etc/config/tvguard"
+sh "$DST" config-sync
+grep -qx 'custom-c' "$TMP/mmc/tvguard/config/tvguard"
+case "$(sh "$DST" status)" in
+    volatile\|"$TMP/run/tvguard-data"\|persistent_mount_unavailable) : ;;
+    *) exit 1 ;;
+esac
+
+# When mmc returns on the same overlay, the current live config is backed up.
+printf '/dev/mmcblk2p4 %s xfs rw,relatime 0 0\n' "$TMP/mmc" > "$MOUNTS"
+sh "$DST" config-sync
+grep -qx 'custom-d' "$TMP/mmc/tvguard/config/tvguard"
+
+echo 'PASS: durable data + UCI config survive overlay rebuilds without duplicate learning data'
+ "$TMP/mmc/tvguard/learning-sessions.csv"
+grep -q '^volatile-session$' "$TMP/mmc/tvguard/learning-sessions.csv"
+[ "$(grep -c '^legacy-event$' "$TMP/mmc/tvguard/events.log")" -eq 1 ]
+[ "$(grep -c '^legacy-session$' "$TMP/mmc/tvguard/learning-sessions.csv")" -eq 1 ]
+
+# Known legacy files are removed only after verified migration. If the legacy
+# directory becomes empty it may become a compatibility symlink.
+if [ -L "$TMP/etc/tvguard" ]; then
+    [ "$(readlink "$TMP/etc/tvguard")" = "$TMP/mmc/tvguard" ]
+else
+    [ ! -e "$TMP/etc/tvguard/state" ]
+    [ ! -e "$TMP/etc/tvguard/events.log" ]
+    [ ! -e "$TMP/etc/tvguard/learning-sessions.csv" ]
+fi
+
+# 3) UCI config backup: current live custom config becomes the durable copy.
+printf 'custom-a\n' > "$TMP/etc/config/tvguard"
+sh "$DST" config-sync
+cmp "$TMP/etc/config/tvguard" "$TMP/mmc/tvguard/config/tvguard"
+[ -f "$TMP/etc/.tvguard-config-v1" ]
+
+# A later admin change updates the durable backup; unchanged config-sync is
+# byte-identical and does not need a different file.
+printf 'custom-b\n' > "$TMP/etc/config/tvguard"
+sh "$DST" config-sync
+grep -qx 'custom-b' "$TMP/mmc/tvguard/config/tvguard"
+
+# If the live config disappears on the same overlay, restore it from mmc.
+rm -f "$TMP/etc/config/tvguard"
+sh "$DST" config-sync
+grep -qx 'custom-b' "$TMP/etc/config/tvguard"
+
+# Simulate a freshly rebuilt firmware overlay: marker gone, package default is
+# present, durable custom backup exists. The backup must win.
+rm -f "$TMP/etc/.tvguard-config-v1"
+cp "$TMP/default-config" "$TMP/etc/config/tvguard"
+sh "$DST" config-sync
+grep -qx 'custom-b' "$TMP/etc/config/tvguard"
+grep -qx 'custom-b' "$TMP/mmc/tvguard/config/tvguard"
+
+# Simulate sysupgrade preserving a non-default, newer admin config but not the
+# overlay marker. That live custom config must win and refresh the backup.
+rm -f "$TMP/etc/.tvguard-config-v1"
+printf 'custom-c\n' > "$TMP/etc/config/tvguard"
+sh "$DST" config-sync
+grep -qx 'custom-c' "$TMP/etc/config/tvguard"
+grep -qx 'custom-c' "$TMP/mmc/tvguard/config/tvguard"
+
+# 4) A later mount outage selects only volatile RAM. Config sync is a no-op
+# for persistent backup while mmc is unavailable.
+: > "$MOUNTS"
+[ "$(sh "$DST" root)" = "$TMP/run/tvguard-data" ]
+printf 'custom-d\n' > "$TMP/etc/config/tvguard"
+sh "$DST" config-sync
+grep -qx 'custom-c' "$TMP/mmc/tvguard/config/tvguard"
+case "$(sh "$DST" status)" in
+    volatile\|"$TMP/run/tvguard-data"\|persistent_mount_unavailable) : ;;
+    *) exit 1 ;;
+esac
+
+# When mmc returns on the same overlay, the current live config is backed up.
+printf '/dev/mmcblk2p4 %s xfs rw,relatime 0 0\n' "$TMP/mmc" > "$MOUNTS"
+sh "$DST" config-sync
+grep -qx 'custom-d' "$TMP/mmc/tvguard/config/tvguard"
+
+echo 'PASS: durable data + UCI config survive overlay rebuilds without duplicate learning data'
+ "$TMP/mmc/tvguard/learning-sessions.csv")" -eq 1 ]
+
+# Known legacy files are removed only after verified migration. If the legacy
+# directory becomes empty it may become a compatibility symlink.
+if [ -L "$TMP/etc/tvguard" ]; then
+    [ "$(readlink "$TMP/etc/tvguard")" = "$TMP/mmc/tvguard" ]
+else
+    [ ! -e "$TMP/etc/tvguard/state" ]
+    [ ! -e "$TMP/etc/tvguard/events.log" ]
+    [ ! -e "$TMP/etc/tvguard/learning-sessions.csv" ]
+fi
+
+# 3) UCI config backup: current live custom config becomes the durable copy.
+printf 'custom-a\n' > "$TMP/etc/config/tvguard"
+sh "$DST" config-sync
+cmp "$TMP/etc/config/tvguard" "$TMP/mmc/tvguard/config/tvguard"
+[ -f "$TMP/etc/.tvguard-config-v1" ]
+
+# A later admin change updates the durable backup; unchanged config-sync is
+# byte-identical and does not need a different file.
+printf 'custom-b\n' > "$TMP/etc/config/tvguard"
+sh "$DST" config-sync
+grep -qx 'custom-b' "$TMP/mmc/tvguard/config/tvguard"
+
+# If the live config disappears on the same overlay, restore it from mmc.
+rm -f "$TMP/etc/config/tvguard"
+sh "$DST" config-sync
+grep -qx 'custom-b' "$TMP/etc/config/tvguard"
+
+# Simulate a freshly rebuilt firmware overlay: marker gone, package default is
+# present, durable custom backup exists. The backup must win.
+rm -f "$TMP/etc/.tvguard-config-v1"
+cp "$TMP/default-config" "$TMP/etc/config/tvguard"
+sh "$DST" config-sync
+grep -qx 'custom-b' "$TMP/etc/config/tvguard"
+grep -qx 'custom-b' "$TMP/mmc/tvguard/config/tvguard"
+
+# Simulate sysupgrade preserving a non-default, newer admin config but not the
+# overlay marker. That live custom config must win and refresh the backup.
+rm -f "$TMP/etc/.tvguard-config-v1"
+printf 'custom-c\n' > "$TMP/etc/config/tvguard"
+sh "$DST" config-sync
+grep -qx 'custom-c' "$TMP/etc/config/tvguard"
+grep -qx 'custom-c' "$TMP/mmc/tvguard/config/tvguard"
+
+# 4) A later mount outage selects only volatile RAM. Config sync is a no-op
+# for persistent backup while mmc is unavailable.
+: > "$MOUNTS"
+[ "$(sh "$DST" root)" = "$TMP/run/tvguard-data" ]
+printf 'custom-d\n' > "$TMP/etc/config/tvguard"
+sh "$DST" config-sync
+grep -qx 'custom-c' "$TMP/mmc/tvguard/config/tvguard"
+case "$(sh "$DST" status)" in
+    volatile\|"$TMP/run/tvguard-data"\|persistent_mount_unavailable) : ;;
+    *) exit 1 ;;
+esac
+
+# When mmc returns on the same overlay, the current live config is backed up.
+printf '/dev/mmcblk2p4 %s xfs rw,relatime 0 0\n' "$TMP/mmc" > "$MOUNTS"
+sh "$DST" config-sync
+grep -qx 'custom-d' "$TMP/mmc/tvguard/config/tvguard"
+
+echo 'PASS: durable data + UCI config survive overlay rebuilds without duplicate learning data'
+ "$TMP/mmc/tvguard/events.log"
+grep -q '^volatile-event
+grep -q '^volatile-session$' "$TMP/mmc/tvguard/learning-sessions.csv"
+[ "$(grep -c '^legacy-event$' "$TMP/mmc/tvguard/events.log")" -eq 1 ]
+[ "$(grep -c '^legacy-session$' "$TMP/mmc/tvguard/learning-sessions.csv")" -eq 1 ]
+
+# Known legacy files are removed only after verified migration. If the legacy
+# directory becomes empty it may become a compatibility symlink.
+if [ -L "$TMP/etc/tvguard" ]; then
+    [ "$(readlink "$TMP/etc/tvguard")" = "$TMP/mmc/tvguard" ]
+else
+    [ ! -e "$TMP/etc/tvguard/state" ]
+    [ ! -e "$TMP/etc/tvguard/events.log" ]
+    [ ! -e "$TMP/etc/tvguard/learning-sessions.csv" ]
+fi
+
+# 3) UCI config backup: current live custom config becomes the durable copy.
+printf 'custom-a\n' > "$TMP/etc/config/tvguard"
+sh "$DST" config-sync
+cmp "$TMP/etc/config/tvguard" "$TMP/mmc/tvguard/config/tvguard"
+[ -f "$TMP/etc/.tvguard-config-v1" ]
+
+# A later admin change updates the durable backup; unchanged config-sync is
+# byte-identical and does not need a different file.
+printf 'custom-b\n' > "$TMP/etc/config/tvguard"
+sh "$DST" config-sync
+grep -qx 'custom-b' "$TMP/mmc/tvguard/config/tvguard"
+
+# If the live config disappears on the same overlay, restore it from mmc.
+rm -f "$TMP/etc/config/tvguard"
+sh "$DST" config-sync
+grep -qx 'custom-b' "$TMP/etc/config/tvguard"
+
+# Simulate a freshly rebuilt firmware overlay: marker gone, package default is
+# present, durable custom backup exists. The backup must win.
+rm -f "$TMP/etc/.tvguard-config-v1"
+cp "$TMP/default-config" "$TMP/etc/config/tvguard"
+sh "$DST" config-sync
+grep -qx 'custom-b' "$TMP/etc/config/tvguard"
+grep -qx 'custom-b' "$TMP/mmc/tvguard/config/tvguard"
+
+# Simulate sysupgrade preserving a non-default, newer admin config but not the
+# overlay marker. That live custom config must win and refresh the backup.
+rm -f "$TMP/etc/.tvguard-config-v1"
+printf 'custom-c\n' > "$TMP/etc/config/tvguard"
+sh "$DST" config-sync
+grep -qx 'custom-c' "$TMP/etc/config/tvguard"
+grep -qx 'custom-c' "$TMP/mmc/tvguard/config/tvguard"
+
+# 4) A later mount outage selects only volatile RAM. Config sync is a no-op
+# for persistent backup while mmc is unavailable.
+: > "$MOUNTS"
+[ "$(sh "$DST" root)" = "$TMP/run/tvguard-data" ]
+printf 'custom-d\n' > "$TMP/etc/config/tvguard"
+sh "$DST" config-sync
+grep -qx 'custom-c' "$TMP/mmc/tvguard/config/tvguard"
+case "$(sh "$DST" status)" in
+    volatile\|"$TMP/run/tvguard-data"\|persistent_mount_unavailable) : ;;
+    *) exit 1 ;;
+esac
+
+# When mmc returns on the same overlay, the current live config is backed up.
+printf '/dev/mmcblk2p4 %s xfs rw,relatime 0 0\n' "$TMP/mmc" > "$MOUNTS"
+sh "$DST" config-sync
+grep -qx 'custom-d' "$TMP/mmc/tvguard/config/tvguard"
+
+echo 'PASS: durable data + UCI config survive overlay rebuilds without duplicate learning data'
+ "$TMP/mmc/tvguard/events.log"
+grep -q '^legacy-v5
+grep -q '^volatile-session$' "$TMP/mmc/tvguard/learning-sessions.csv"
+[ "$(grep -c '^legacy-event$' "$TMP/mmc/tvguard/events.log")" -eq 1 ]
+[ "$(grep -c '^legacy-session$' "$TMP/mmc/tvguard/learning-sessions.csv")" -eq 1 ]
+
+# Known legacy files are removed only after verified migration. If the legacy
+# directory becomes empty it may become a compatibility symlink.
+if [ -L "$TMP/etc/tvguard" ]; then
+    [ "$(readlink "$TMP/etc/tvguard")" = "$TMP/mmc/tvguard" ]
+else
+    [ ! -e "$TMP/etc/tvguard/state" ]
+    [ ! -e "$TMP/etc/tvguard/events.log" ]
+    [ ! -e "$TMP/etc/tvguard/learning-sessions.csv" ]
+fi
+
+# 3) UCI config backup: current live custom config becomes the durable copy.
+printf 'custom-a\n' > "$TMP/etc/config/tvguard"
+sh "$DST" config-sync
+cmp "$TMP/etc/config/tvguard" "$TMP/mmc/tvguard/config/tvguard"
+[ -f "$TMP/etc/.tvguard-config-v1" ]
+
+# A later admin change updates the durable backup; unchanged config-sync is
+# byte-identical and does not need a different file.
+printf 'custom-b\n' > "$TMP/etc/config/tvguard"
+sh "$DST" config-sync
+grep -qx 'custom-b' "$TMP/mmc/tvguard/config/tvguard"
+
+# If the live config disappears on the same overlay, restore it from mmc.
+rm -f "$TMP/etc/config/tvguard"
+sh "$DST" config-sync
+grep -qx 'custom-b' "$TMP/etc/config/tvguard"
+
+# Simulate a freshly rebuilt firmware overlay: marker gone, package default is
+# present, durable custom backup exists. The backup must win.
+rm -f "$TMP/etc/.tvguard-config-v1"
+cp "$TMP/default-config" "$TMP/etc/config/tvguard"
+sh "$DST" config-sync
+grep -qx 'custom-b' "$TMP/etc/config/tvguard"
+grep -qx 'custom-b' "$TMP/mmc/tvguard/config/tvguard"
+
+# Simulate sysupgrade preserving a non-default, newer admin config but not the
+# overlay marker. That live custom config must win and refresh the backup.
+rm -f "$TMP/etc/.tvguard-config-v1"
+printf 'custom-c\n' > "$TMP/etc/config/tvguard"
+sh "$DST" config-sync
+grep -qx 'custom-c' "$TMP/etc/config/tvguard"
+grep -qx 'custom-c' "$TMP/mmc/tvguard/config/tvguard"
+
+# 4) A later mount outage selects only volatile RAM. Config sync is a no-op
+# for persistent backup while mmc is unavailable.
+: > "$MOUNTS"
+[ "$(sh "$DST" root)" = "$TMP/run/tvguard-data" ]
+printf 'custom-d\n' > "$TMP/etc/config/tvguard"
+sh "$DST" config-sync
+grep -qx 'custom-c' "$TMP/mmc/tvguard/config/tvguard"
+case "$(sh "$DST" status)" in
+    volatile\|"$TMP/run/tvguard-data"\|persistent_mount_unavailable) : ;;
+    *) exit 1 ;;
+esac
+
+# When mmc returns on the same overlay, the current live config is backed up.
+printf '/dev/mmcblk2p4 %s xfs rw,relatime 0 0\n' "$TMP/mmc" > "$MOUNTS"
+sh "$DST" config-sync
+grep -qx 'custom-d' "$TMP/mmc/tvguard/config/tvguard"
+
+echo 'PASS: durable data + UCI config survive overlay rebuilds without duplicate learning data'
+ "$TMP/mmc/tvguard/calibration-v5.csv"
+grep -q '^volatile-v5
+grep -q '^volatile-session$' "$TMP/mmc/tvguard/learning-sessions.csv"
+[ "$(grep -c '^legacy-event$' "$TMP/mmc/tvguard/events.log")" -eq 1 ]
+[ "$(grep -c '^legacy-session$' "$TMP/mmc/tvguard/learning-sessions.csv")" -eq 1 ]
+
+# Known legacy files are removed only after verified migration. If the legacy
+# directory becomes empty it may become a compatibility symlink.
+if [ -L "$TMP/etc/tvguard" ]; then
+    [ "$(readlink "$TMP/etc/tvguard")" = "$TMP/mmc/tvguard" ]
+else
+    [ ! -e "$TMP/etc/tvguard/state" ]
+    [ ! -e "$TMP/etc/tvguard/events.log" ]
+    [ ! -e "$TMP/etc/tvguard/learning-sessions.csv" ]
+fi
+
+# 3) UCI config backup: current live custom config becomes the durable copy.
+printf 'custom-a\n' > "$TMP/etc/config/tvguard"
+sh "$DST" config-sync
+cmp "$TMP/etc/config/tvguard" "$TMP/mmc/tvguard/config/tvguard"
+[ -f "$TMP/etc/.tvguard-config-v1" ]
+
+# A later admin change updates the durable backup; unchanged config-sync is
+# byte-identical and does not need a different file.
+printf 'custom-b\n' > "$TMP/etc/config/tvguard"
+sh "$DST" config-sync
+grep -qx 'custom-b' "$TMP/mmc/tvguard/config/tvguard"
+
+# If the live config disappears on the same overlay, restore it from mmc.
+rm -f "$TMP/etc/config/tvguard"
+sh "$DST" config-sync
+grep -qx 'custom-b' "$TMP/etc/config/tvguard"
+
+# Simulate a freshly rebuilt firmware overlay: marker gone, package default is
+# present, durable custom backup exists. The backup must win.
+rm -f "$TMP/etc/.tvguard-config-v1"
+cp "$TMP/default-config" "$TMP/etc/config/tvguard"
+sh "$DST" config-sync
+grep -qx 'custom-b' "$TMP/etc/config/tvguard"
+grep -qx 'custom-b' "$TMP/mmc/tvguard/config/tvguard"
+
+# Simulate sysupgrade preserving a non-default, newer admin config but not the
+# overlay marker. That live custom config must win and refresh the backup.
+rm -f "$TMP/etc/.tvguard-config-v1"
+printf 'custom-c\n' > "$TMP/etc/config/tvguard"
+sh "$DST" config-sync
+grep -qx 'custom-c' "$TMP/etc/config/tvguard"
+grep -qx 'custom-c' "$TMP/mmc/tvguard/config/tvguard"
+
+# 4) A later mount outage selects only volatile RAM. Config sync is a no-op
+# for persistent backup while mmc is unavailable.
+: > "$MOUNTS"
+[ "$(sh "$DST" root)" = "$TMP/run/tvguard-data" ]
+printf 'custom-d\n' > "$TMP/etc/config/tvguard"
+sh "$DST" config-sync
+grep -qx 'custom-c' "$TMP/mmc/tvguard/config/tvguard"
+case "$(sh "$DST" status)" in
+    volatile\|"$TMP/run/tvguard-data"\|persistent_mount_unavailable) : ;;
+    *) exit 1 ;;
+esac
+
+# When mmc returns on the same overlay, the current live config is backed up.
+printf '/dev/mmcblk2p4 %s xfs rw,relatime 0 0\n' "$TMP/mmc" > "$MOUNTS"
+sh "$DST" config-sync
+grep -qx 'custom-d' "$TMP/mmc/tvguard/config/tvguard"
+
+echo 'PASS: durable data + UCI config survive overlay rebuilds without duplicate learning data'
+ "$TMP/mmc/tvguard/calibration-v5.csv"
+grep -q '^legacy-session
+grep -q '^volatile-session$' "$TMP/mmc/tvguard/learning-sessions.csv"
+[ "$(grep -c '^legacy-event$' "$TMP/mmc/tvguard/events.log")" -eq 1 ]
+[ "$(grep -c '^legacy-session$' "$TMP/mmc/tvguard/learning-sessions.csv")" -eq 1 ]
+
+# Known legacy files are removed only after verified migration. If the legacy
+# directory becomes empty it may become a compatibility symlink.
+if [ -L "$TMP/etc/tvguard" ]; then
+    [ "$(readlink "$TMP/etc/tvguard")" = "$TMP/mmc/tvguard" ]
+else
+    [ ! -e "$TMP/etc/tvguard/state" ]
+    [ ! -e "$TMP/etc/tvguard/events.log" ]
+    [ ! -e "$TMP/etc/tvguard/learning-sessions.csv" ]
+fi
+
+# 3) UCI config backup: current live custom config becomes the durable copy.
+printf 'custom-a\n' > "$TMP/etc/config/tvguard"
+sh "$DST" config-sync
+cmp "$TMP/etc/config/tvguard" "$TMP/mmc/tvguard/config/tvguard"
+[ -f "$TMP/etc/.tvguard-config-v1" ]
+
+# A later admin change updates the durable backup; unchanged config-sync is
+# byte-identical and does not need a different file.
+printf 'custom-b\n' > "$TMP/etc/config/tvguard"
+sh "$DST" config-sync
+grep -qx 'custom-b' "$TMP/mmc/tvguard/config/tvguard"
+
+# If the live config disappears on the same overlay, restore it from mmc.
+rm -f "$TMP/etc/config/tvguard"
+sh "$DST" config-sync
+grep -qx 'custom-b' "$TMP/etc/config/tvguard"
+
+# Simulate a freshly rebuilt firmware overlay: marker gone, package default is
+# present, durable custom backup exists. The backup must win.
+rm -f "$TMP/etc/.tvguard-config-v1"
+cp "$TMP/default-config" "$TMP/etc/config/tvguard"
+sh "$DST" config-sync
+grep -qx 'custom-b' "$TMP/etc/config/tvguard"
+grep -qx 'custom-b' "$TMP/mmc/tvguard/config/tvguard"
+
+# Simulate sysupgrade preserving a non-default, newer admin config but not the
+# overlay marker. That live custom config must win and refresh the backup.
+rm -f "$TMP/etc/.tvguard-config-v1"
+printf 'custom-c\n' > "$TMP/etc/config/tvguard"
+sh "$DST" config-sync
+grep -qx 'custom-c' "$TMP/etc/config/tvguard"
+grep -qx 'custom-c' "$TMP/mmc/tvguard/config/tvguard"
+
+# 4) A later mount outage selects only volatile RAM. Config sync is a no-op
+# for persistent backup while mmc is unavailable.
+: > "$MOUNTS"
+[ "$(sh "$DST" root)" = "$TMP/run/tvguard-data" ]
+printf 'custom-d\n' > "$TMP/etc/config/tvguard"
+sh "$DST" config-sync
+grep -qx 'custom-c' "$TMP/mmc/tvguard/config/tvguard"
+case "$(sh "$DST" status)" in
+    volatile\|"$TMP/run/tvguard-data"\|persistent_mount_unavailable) : ;;
+    *) exit 1 ;;
+esac
+
+# When mmc returns on the same overlay, the current live config is backed up.
+printf '/dev/mmcblk2p4 %s xfs rw,relatime 0 0\n' "$TMP/mmc" > "$MOUNTS"
+sh "$DST" config-sync
+grep -qx 'custom-d' "$TMP/mmc/tvguard/config/tvguard"
+
+echo 'PASS: durable data + UCI config survive overlay rebuilds without duplicate learning data'
+ "$TMP/mmc/tvguard/learning-sessions.csv"
 grep -q '^volatile-session$' "$TMP/mmc/tvguard/learning-sessions.csv"
 [ "$(grep -c '^legacy-event$' "$TMP/mmc/tvguard/events.log")" -eq 1 ]
 [ "$(grep -c '^legacy-session$' "$TMP/mmc/tvguard/learning-sessions.csv")" -eq 1 ]
