@@ -84,7 +84,9 @@ fi
 PKG=com.example.video
 ACT=com.example.video.PlayerActivity
 for label in playing paused; do
-    sid="1794476000-$label"
+    suffix=1
+    [ "$label" = paused ] && suffix=2
+    sid="1794476000-$suffix"
     : > "$V5"
     : > "$CSV"
     i=0
