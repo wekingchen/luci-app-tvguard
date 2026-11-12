@@ -121,6 +121,18 @@ with tempfile.TemporaryDirectory(prefix="tvguard-fusion-") as folder:
                active_floor=100) == (
         "playing", "playing_confirmed_context_learned", 0)
 
+    # Return to the legacy no-profile scenario with a clean chronological
+    # timeline; the profile-specific tests above must not leak state/model.
+    (d / "learning-sessions.csv").unlink()
+    reset()
+    assert run(1, 200, pkg=APP_A, activity=PLAYER_A,
+               pps=160, shadow="unknown",
+               adaptive_state="active", adaptive_score=100,
+               adaptive_reason="clear_current",
+               pause_hint="none", pause_score=0,
+               active_floor=100) == (
+        "playing", "playing_confirmed_context_learned", 0)
+
     # The same learned context may enter pause only after three NEW strong
     # pause-hint reports. Activity name contains no Player/Video keyword.
     # A fresh strong-play sample gets a short bootstrap guard so bursty
