@@ -83,6 +83,8 @@ assert 'learning-sessions.csv' in fusion
 assert 'playing_confirmed_learned_audio_profile' in fusion
 assert 'paused_confirmed_learned_audio_context' in fusion
 assert 'paused_audio_profile_warming' in fusion
+assert 'pause_streak" -ge 2' in fusion
+assert 'pause_streak" -ge 3' in fusion  # legacy network-pause path stays conservative
 assert '$19=="high"' in fusion and '$27+0' in fusion
 
 # Hard isolation from real billing/firewall remains mandatory.
