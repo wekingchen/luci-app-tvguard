@@ -749,7 +749,8 @@ tick() {
     # Conservative formal billing:
     # - true network silence remains free as before;
     # - a fresh Agent bridge may grant free time for explicit system_home /
-    #   app_home, plus only the Fusion state paused_confirmed_learned_context;
+    #   app_home, strictly-confirmed paused, or a three-state learned generic
+    #   nonplaying state when paused/app_home share one exact context;
     # - playing, unknown, ambiguous, stale/missing Agent, malformed hints and
     #   non-confirmed pause holds remain chargeable.
     #
@@ -763,7 +764,7 @@ tick() {
         set -- $home_hint
         if [ "$#" -eq 2 ] && [ "$1" = free ]; then
             case "$2" in
-                system_home|app_home|paused) HOME_FREE_REASON="$2" ;;
+                system_home|app_home|paused|nonplaying) HOME_FREE_REASON="$2" ;;
             esac
         fi
     fi
