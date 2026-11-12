@@ -1,0 +1,433 @@
+#!/bin/sh
+# TVGuard v0.2.8 generic Agent/N1 temporal fusion.
+# No video-app package names or per-app decision branches are allowed here.
+# RAM-only observer: never edits quota, billing state, firewall or persistent data.
+set -eu
+PATH=/usr/sbin:/usr/bin:/sbin:/bin
+export PATH
+
+RAM=/var/run/tvguard-agent-bridge
+STATE="$RAM/fusion.state"
+LOCK="$RAM/fusion.lock"
+
+[ "$#" -eq 15 ] || {
+    echo "unknown invalid_arguments 0"
+    exit 0
+}
+
+now="$1"
+seen="$2"
+seq="$3"
+pkg="$4"
+activity="$5"
+audio="$6"
+screen="$7"
+pps="$8"
+shadow="$9"
+shift 9
+adaptive_state="$1"
+adaptive_score="$2"
+adaptive_reason="$3"
+pause_hint="$4"
+pause_score="$5"
+active_floor="$6"
+
+for n in "$now" "$seen" "$seq" "$audio" "$screen" "$pps" "$adaptive_score" "$pause_score" "$active_floor"; do
+    case "$n" in ''|*[!0-9]*) echo "unknown invalid_numeric 0"; exit 0 ;; esac
+done
+case "$audio:$screen" in 0:0|0:1|1:0|1:1) : ;; *) echo "unknown invalid_bits 0"; exit 0 ;; esac
+case "$shadow" in playing|idle|paused|app_home|system_home|sleep|unknown) : ;; *) shadow=unknown ;; esac
+case "$adaptive_state" in unready|warming|idle|active|ambiguous|unknown) : ;; *) adaptive_state=unknown ;; esac
+case "$adaptive_reason" in
+    none|no_model|need_sessions|overlap_model|need_window|clear_current|active_votes|active_median|stable_low|overlap|unknown) : ;;
+    *) adaptive_reason=unknown ;;
+esac
+case "$pause_hint" in none|idle_overlap|bursty_pause|high_ratio_pause|unknown) : ;; *) pause_hint=unknown ;; esac
+
+mkdir -p "$RAM"
+locked=0
+if mkdir "$LOCK" 2>/dev/null; then
+    locked=1
+else
+    sleep 1
+    if mkdir "$LOCK" 2>/dev/null; then locked=1; fi
+fi
+[ "$locked" -eq 1 ] || { echo "unknown fusion_busy 0"; exit 0; }
+cleanup() { rmdir "$LOCK" 2>/dev/null || :; }
+trap cleanup EXIT HUP INT TERM
+
+# schema v4:
+# schema|last_sig|last_seq|pause_streak|pause_miss|latched|
+# learned_media_pkg|learned_media_activity|home_streak|last_pkg|last_activity|
+# last_strong_seen|burst_gap_max|burst_hits|
+# switch_activity|switch_strong_hits|switch_last_strong_seen
+#
+# burst_* is generic temporal evidence. It learns the cadence of repeated
+# strong-play confirmations in the SAME foreground context. Low-bitrate
+# streaming commonly alternates long low-PPS valleys with periodic download
+# bursts; those valleys must not become "paused" merely because an old pause
+# prototype also looks bursty.
+schema=0
+last_sig=''
+last_seq=0
+pause_streak=0
+pause_miss=0
+latched=none
+media_pkg=''
+media_activity=''
+home_streak=0
+last_pkg=''
+last_activity=''
+last_strong_seen=0
+burst_gap_max=0
+burst_hits=0
+switch_activity=''
+switch_strong_hits=0
+switch_last_strong_seen=0
+extra=''
+if [ -r "$STATE" ]; then
+    oldIFS="$IFS"
+    IFS='|'
+    read -r schema last_sig last_seq pause_streak pause_miss latched \
+        media_pkg media_activity home_streak last_pkg last_activity \
+        last_strong_seen burst_gap_max burst_hits \
+        switch_activity switch_strong_hits switch_last_strong_seen extra < "$STATE" || :
+    IFS="$oldIFS"
+    if [ "$schema" != 4 ]; then
+        last_sig=''; last_seq=0; pause_streak=0; pause_miss=0; latched=none
+        media_pkg=''; media_activity=''; home_streak=0
+        last_pkg=''; last_activity=''
+        last_strong_seen=0; burst_gap_max=0; burst_hits=0
+        switch_activity=''; switch_strong_hits=0; switch_last_strong_seen=0
+    fi
+    case "$last_seq" in ''|*[!0-9]*) last_seq=0 ;; esac
+    case "$pause_streak" in ''|*[!0-9]*) pause_streak=0 ;; esac
+    case "$pause_miss" in ''|*[!0-9]*) pause_miss=0 ;; esac
+    case "$home_streak" in ''|*[!0-9]*) home_streak=0 ;; esac
+    case "$last_strong_seen" in ''|*[!0-9]*) last_strong_seen=0 ;; esac
+    case "$burst_gap_max" in ''|*[!0-9]*) burst_gap_max=0 ;; esac
+    case "$burst_hits" in ''|*[!0-9]*) burst_hits=0 ;; esac
+    case "$switch_strong_hits" in ''|*[!0-9]*) switch_strong_hits=0 ;; esac
+    case "$switch_last_strong_seen" in ''|*[!0-9]*) switch_last_strong_seen=0 ;; esac
+    case "$latched" in none|paused) : ;; *) latched=none ;; esac
+fi
+
+sig="$seq:$seen"
+fresh=1
+[ "$sig" = "$last_sig" ] && fresh=0
+restart=0
+if [ "$fresh" -eq 1 ] && [ "$last_seq" -gt 0 ] && [ "$seq" -lt "$last_seq" ]; then
+    restart=1
+    pause_streak=0
+    pause_miss=0
+    home_streak=0
+    latched=none
+    switch_activity=''
+    switch_strong_hits=0
+    switch_last_strong_seen=0
+fi
+
+context_changed=0
+if [ "$pkg" != "$last_pkg" ] || [ "$activity" != "$last_activity" ]; then
+    context_changed=1
+    pause_streak=0
+    pause_miss=0
+    home_streak=0
+    latched=none
+    # Burst cadence belongs to one exact foreground context. Never transfer it
+    # to another Activity/package.
+    last_strong_seen=0
+    burst_gap_max=0
+    burst_hits=0
+    if [ -n "$media_pkg" ] && [ "$pkg" = "$media_pkg" ] &&
+       [ -n "$media_activity" ] && [ "$activity" != "$media_activity" ]; then
+        switch_activity="$activity"
+    else
+        switch_activity=''
+    fi
+    switch_strong_hits=0
+    switch_last_strong_seen=0
+fi
+
+is_launcher=0
+case "$pkg" in
+    com.mitv.tvhome|com.mitv.home|com.android.tvlauncher|com.google.android.tvlauncher|\
+    com.google.android.apps.tv.launcherx|com.android.launcher|com.android.launcher3|com.miui.tvhome)
+        is_launcher=1 ;;
+esac
+
+strong_play=0
+if [ "$shadow" = playing ]; then
+    strong_play=1
+elif [ "$adaptive_state" = active ] &&
+     { [ "$adaptive_reason" = clear_current ] ||
+       { [ "$active_floor" -gt 0 ] && [ "$pps" -ge "$active_floor" ]; }; }; then
+    strong_play=1
+fi
+
+pause_evidence=0
+if [ "$pause_hint" = high_ratio_pause ] && [ "$pause_score" -ge 90 ]; then
+    pause_evidence=1
+elif [ "$pause_hint" = bursty_pause ] && [ "$pause_score" -ge 75 ]; then
+    pause_evidence=1
+fi
+[ "$strong_play" -eq 0 ] || pause_evidence=0
+
+low_nonplaying=0
+if [ "$audio" -eq 0 ] &&
+   { [ "$shadow" = idle ] ||
+     { [ "$adaptive_state" = idle ] && [ "$adaptive_reason" = stable_low ]; }; }; then
+    low_nonplaying=1
+fi
+
+known_media_context=0
+known_media_package=0
+if [ -n "$media_pkg" ] && [ "$pkg" = "$media_pkg" ]; then
+    known_media_package=1
+    if [ -n "$media_activity" ] && [ "$activity" = "$media_activity" ]; then
+        known_media_context=1
+    fi
+fi
+
+# Generic low-bitrate burst guard.
+#
+# Bootstrap: after one unequivocal play sample, suppress pause votes for 45 s.
+# Once repeated strong-play samples establish a cadence (gap 10..90 s), learn
+# the largest observed gap and guard for gap+20 s, bounded to 45..90 s.
+# This intentionally biases toward P0: unknown/charged is safer than granting
+# paused/free time to real low-bitrate playback. It is shadow-only today.
+burst_guard=0
+burst_guard_window=45
+if [ "$burst_hits" -ge 2 ] && [ "$burst_gap_max" -gt 0 ]; then
+    burst_guard_window=$((burst_gap_max + 20))
+    [ "$burst_guard_window" -ge 45 ] || burst_guard_window=45
+    [ "$burst_guard_window" -le 90 ] || burst_guard_window=90
+fi
+if [ "$known_media_context" -eq 1 ] && [ "$last_strong_seen" -gt 0 ] &&
+   [ "$now" -ge "$last_strong_seen" ] &&
+   [ $((now - last_strong_seen)) -le "$burst_guard_window" ]; then
+    burst_guard=1
+fi
+
+combined=unknown
+candidate=unknown
+
+if [ "$screen" -eq 0 ]; then
+    combined=unknown
+    candidate=sleep_candidate
+    pause_streak=0
+    pause_miss=0
+    home_streak=0
+    latched=none
+
+elif [ "$is_launcher" -eq 1 ]; then
+    combined=system_home
+    candidate=system_home_confirmed
+    pause_streak=0
+    pause_miss=0
+    home_streak=0
+    latched=none
+
+elif [ "$pkg" = unknown ] || [ "$activity" = unknown ] ||
+     [ -z "$pkg" ] || [ -z "$activity" ]; then
+    combined=unknown
+    candidate=foreground_context_unknown
+    pause_streak=0
+    pause_miss=0
+    home_streak=0
+    latched=none
+
+elif [ "$strong_play" -eq 1 ]; then
+    # Once a package already has a learned playback Activity, one strong
+    # loading burst in a DIFFERENT Activity must not overwrite that context.
+    # App home/detail/search pages commonly burst while loading. Require three
+    # fresh strong-play confirmations in the same new Activity before promoting
+    # it to the package's new playback context.
+    if [ "$known_media_package" -eq 1 ] && [ "$known_media_context" -eq 0 ]; then
+        if [ "$switch_activity" != "$activity" ]; then
+            switch_activity="$activity"
+            switch_strong_hits=0
+            switch_last_strong_seen=0
+        fi
+        if [ "$fresh" -eq 1 ]; then
+            if [ "$switch_last_strong_seen" -gt 0 ] &&
+               [ "$now" -gt "$switch_last_strong_seen" ] &&
+               [ $((now - switch_last_strong_seen)) -le 90 ]; then
+                switch_strong_hits=$((switch_strong_hits + 1))
+            else
+                switch_strong_hits=1
+            fi
+            switch_last_strong_seen="$now"
+        fi
+
+        pause_streak=0
+        pause_miss=0
+        home_streak=0
+        latched=none
+        if [ "$switch_strong_hits" -ge 3 ]; then
+            media_activity="$activity"
+            known_media_context=1
+            last_strong_seen="$now"
+            burst_gap_max=0
+            burst_hits=1
+            switch_activity=''
+            switch_strong_hits=0
+            switch_last_strong_seen=0
+            combined=playing
+            candidate=playing_confirmed_context_switched
+        else
+            combined=unknown
+            candidate=media_context_switch_play_warming
+        fi
+    else
+        # First-ever media context, or another strong sample in the already
+        # learned playback context.
+        if [ "$known_media_context" -eq 1 ] && [ "$last_strong_seen" -gt 0 ] &&
+           [ "$now" -gt "$last_strong_seen" ]; then
+            gap=$((now - last_strong_seen))
+            if [ "$gap" -ge 10 ] && [ "$gap" -le 90 ]; then
+                burst_hits=$((burst_hits + 1))
+                [ "$gap" -le "$burst_gap_max" ] || burst_gap_max="$gap"
+            else
+                burst_hits=1
+                burst_gap_max=0
+            fi
+        else
+            burst_hits=1
+            burst_gap_max=0
+        fi
+        last_strong_seen="$now"
+
+        media_pkg="$pkg"
+        media_activity="$activity"
+        known_media_package=1
+        known_media_context=1
+        combined=playing
+        candidate=playing_confirmed_context_learned
+        pause_streak=0
+        pause_miss=0
+        home_streak=0
+        latched=none
+        switch_activity=''
+        switch_strong_hits=0
+        switch_last_strong_seen=0
+    fi
+
+elif [ "$known_media_context" -eq 1 ]; then
+    home_streak=0
+
+    if [ "$burst_guard" -eq 1 ]; then
+        # Critical P0 rule: pause prototypes are allowed to overlap a periodic
+        # low-bitrate download valley. Recent repeated strong-play evidence wins
+        # until the learned burst cadence has actually been missed.
+        combined=unknown
+        candidate=recent_play_burst_guard
+        pause_streak=0
+        pause_miss=0
+        latched=none
+
+    elif [ "$pause_evidence" -eq 1 ]; then
+        if [ "$fresh" -eq 1 ]; then
+            pause_streak=$((pause_streak + 1))
+            pause_miss=0
+        fi
+        if [ "$latched" = paused ] || [ "$pause_streak" -ge 3 ]; then
+            latched=paused
+            combined=paused
+            candidate=paused_confirmed_learned_context
+        else
+            combined=unknown
+            candidate=pause_candidate_learned_context
+        fi
+
+    elif [ "$latched" = paused ]; then
+        if [ "$fresh" -eq 1 ]; then pause_miss=$((pause_miss + 1)); fi
+        if [ "$pause_miss" -le 1 ]; then
+            combined=paused
+            candidate=paused_temporal_hold
+        else
+            latched=none
+            pause_streak=0
+            pause_miss=0
+            combined=unknown
+            candidate=learned_media_context_unresolved
+        fi
+
+    else
+        if [ "$fresh" -eq 1 ]; then
+            pause_streak=0
+            pause_miss=0
+        fi
+        combined=unknown
+        if [ "$pause_hint" = idle_overlap ]; then
+            candidate=learned_media_idle_overlap_unresolved
+        elif [ "$audio" -eq 1 ]; then
+            candidate=learned_media_context_audio_hint_on
+        else
+            candidate=learned_media_context_audio_hint_off
+        fi
+    fi
+
+elif [ "$known_media_package" -eq 1 ]; then
+    pause_streak=0
+    pause_miss=0
+    latched=none
+    if [ "$low_nonplaying" -eq 1 ]; then
+        switch_activity="$activity"
+        switch_strong_hits=0
+        switch_last_strong_seen=0
+        if [ "$fresh" -eq 1 ]; then home_streak=$((home_streak + 1)); fi
+        if [ "$home_streak" -ge 3 ]; then
+            combined=app_home
+            candidate=app_nonplaying_confirmed
+        else
+            combined=unknown
+            candidate=app_nonplaying_warming
+        fi
+    else
+        if [ "$fresh" -eq 1 ]; then home_streak=0; fi
+        combined=unknown
+        if [ "$pause_evidence" -eq 1 ]; then
+            candidate=unlearned_context_pause_hint_ignored
+        else
+            candidate=known_media_app_other_context
+        fi
+    fi
+
+else
+    pause_streak=0
+    pause_miss=0
+    home_streak=0
+    latched=none
+    combined=unknown
+    if [ "$pause_evidence" -eq 1 ]; then
+        candidate=unlearned_package_pause_hint_ignored
+    else
+        candidate=unlearned_foreground_context
+    fi
+fi
+
+if [ "$restart" -eq 1 ]; then
+    pause_streak=0
+    pause_miss=0
+    home_streak=0
+    latched=none
+    case "$combined" in
+        system_home) : ;;
+        playing) candidate=playing_confirmed_context_recovered ;;
+        *) combined=unknown; candidate=agent_process_restart_context_reset ;;
+    esac
+fi
+
+if [ "$fresh" -eq 1 ]; then
+    tmp="$STATE.$$"
+    printf '4|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s\n' \
+        "$sig" "$seq" "$pause_streak" "$pause_miss" "$latched" \
+        "$media_pkg" "$media_activity" "$home_streak" "$pkg" "$activity" \
+        "$last_strong_seen" "$burst_gap_max" "$burst_hits" \
+        "$switch_activity" "$switch_strong_hits" "$switch_last_strong_seen" > "$tmp"
+    chmod 600 "$tmp"
+    mv -f "$tmp" "$STATE"
+fi
+
+printf '%s %s %s\n' "$combined" "$candidate" "$pause_streak"

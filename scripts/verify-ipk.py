@@ -44,7 +44,7 @@ for field in (
     "Package: luci-app-tvguard",
     f"Version: {version}-{release}",
     "Architecture: all",
-    "Depends: luci-base, rpcd",
+    "Depends: luci-base, rpcd, curl",
 ):
     if field not in metadata.splitlines():
         raise SystemExit(f"FAIL: missing opkg metadata {field}")
@@ -65,6 +65,7 @@ for name in (
     "usr/libexec/tvguard-data",
     "usr/libexec/tvguard-soak",
     "usr/libexec/tvguard-soak-report",
+    "usr/libexec/tvguard-daily-report",
     "usr/share/tvguard/default-config",
     "www/luci-static/resources/view/tvguard/overview.js",
 ):

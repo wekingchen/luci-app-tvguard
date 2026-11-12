@@ -12,6 +12,8 @@ SHADOW=/usr/libexec/tvguard-shadow
 ADAPTIVE=/usr/libexec/tvguard-adaptive
 LEARN=/usr/libexec/tvguard-learn
 SOAK=/usr/libexec/tvguard-soak
+AGENT_BILLING=/usr/libexec/tvguard-agent-billing-hint
+BARK_REPORT=/usr/libexec/tvguard-daily-report
 BUILD_ID_FILE=/usr/share/tvguard/build-id
 # P0 safety gate: TX-only idle classifiers remain diagnostic until low-bitrate
 # playback has passed dedicated cross-bitrate/cross-app false-idle validation.
@@ -52,6 +54,12 @@ defaults() {
     MODE=child
     PARENT_UNTIL=0
     USED_S=0
+    WATCH_S=0
+    WATCH_SCOPE=legacy
+    WATCH_SCOPE_UPGRADED=0
+    PREV_DATE=none
+    PREV_WATCH_S=0
+    ROLLED_OVER=0
     BONUS_S=0
     LAST_BONUS_S=0
     LAST_BONUS_ID=0
@@ -147,6 +155,18 @@ load_state() {
     # Once loaded from the currently selected root, normalize the marker to
     # the current mode so the next runtime snapshot is self-consistent.
     DATA_ROOT_MODE="$DATA_MODE"
+    # r18 wrongly counted parent sessions. Child USED_S is authoritative.
+    # Discard any old all-mode previous-day snapshot before Bark can send it.
+    if [ "$WATCH_SCOPE" != child ]; then
+        PREV_DATE=none
+        PREV_WATCH_S=0
+        WATCH_SCOPE_UPGRADED=1
+    fi
+    WATCH_SCOPE=child
+    WATCH_S="$USED_S"
+    case "$WATCH_S" in ''|*[!0-9]*) WATCH_S=0;; esac
+    case "$PREV_WATCH_S" in ''|*[!0-9]*) PREV_WATCH_S=0;; esac
+    case "$PREV_DATE" in none|[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]) :;; *) PREV_DATE=none;; esac
     case "$MODE" in child|parent|locked) :;; *) MODE=locked;; esac
     case "$BILLING_STATE" in charge|idle_verified|idle_grace|idle_silent) :;; *) BILLING_STATE=charge;; esac
     case "$IDLE_REASON" in none|system_home|idle|paused|app_home|adaptive|silent) :;; *) IDLE_REASON=none;; esac
@@ -193,6 +213,10 @@ TODAY=$TODAY
 MODE=$MODE
 PARENT_UNTIL=$PARENT_UNTIL
 USED_S=$USED_S
+WATCH_S=$WATCH_S
+WATCH_SCOPE=$WATCH_SCOPE
+PREV_DATE=$PREV_DATE
+PREV_WATCH_S=$PREV_WATCH_S
 BONUS_S=$BONUS_S
 LAST_BONUS_S=$LAST_BONUS_S
 LAST_BONUS_ID=$LAST_BONUS_ID
@@ -389,8 +413,13 @@ finish_calibration() {
     CAL_DURATION=0
 }
 rollover() {
+    ROLLED_OVER=0
     today="$(date +%Y-%m-%d)"
     if [ "$TODAY" != "$today" ]; then
+        PREV_DATE="$TODAY"
+        PREV_WATCH_S="$USED_S"
+        WATCH_S=0
+        ROLLED_OVER=1
         TODAY="$today"
         USED_S=0
         BONUS_S=0
@@ -644,13 +673,37 @@ tick() {
         ACTIVITY=silent
     fi
 
-    # Adaptive/Shadow still classify traffic for diagnostics and Shadow Soak.
-    # P0 low-bitrate safety: TX-only "idle" is not proof that playback stopped.
-    # While billing authority is disabled, every non-silent child network
-    # window remains chargeable regardless of Adaptive/Shadow label.
+    # Conservative formal billing:
+    # - true network silence remains free as before;
+    # - an optional fresh Agent bridge may grant free time ONLY for an explicit
+    #   system_home or app_home confirmation;
+    # - playing, paused, unknown, ambiguous, stale/missing Agent and malformed
+    #   hints are all chargeable while network activity is present.
+    #
+    # Adaptive/Shadow pause signals remain diagnostic-only. In particular,
+    # "paused" has NO free-time authority.
+    HOME_FREE_REASON=none
+    if [ "$ACTIVITY" = active ] && [ "$dt" -gt 0 ] && [ -x "$AGENT_BILLING" ]; then
+        home_hint="$("$AGENT_BILLING" "$NOW" "$PPS" "$SHADOW_LABEL" \
+            "$ADAPTIVE_STATE" "$ADAPTIVE_SCORE" "$ADAPTIVE_REASON" \
+            "$ADAPTIVE_PAUSE_HINT" "$ADAPTIVE_PAUSE_SCORE" "$ADAPTIVE_ACTIVE_FLOOR" \
+            2>/dev/null || echo 'charge unknown')"
+        set -- $home_hint
+        if [ "$#" -eq 2 ] && [ "$1" = free ]; then
+            case "$2" in
+                system_home|app_home) HOME_FREE_REASON="$2" ;;
+            esac
+        fi
+    fi
+
     if [ "$ACTIVITY" = silent ]; then
         BILLING_STATE=idle_silent
         IDLE_REASON=silent
+        IDLE_STREAK_S=0
+        IDLE_GRACE_S=0
+    elif [ "$HOME_FREE_REASON" != none ]; then
+        BILLING_STATE=idle_verified
+        IDLE_REASON="$HOME_FREE_REASON"
         IDLE_STREAK_S=0
         IDLE_GRACE_S=0
     elif [ "$dt" -gt 0 ] && [ "$TX_IDLE_BILLING_AUTHORITY" != 1 ]; then
@@ -822,19 +875,21 @@ tick() {
         CAL_UNTIL=0
     fi
 
-    # Only the explicit charge state consumes child time. Verified idle,
-    # bounded idle grace, and network silence do not.
+    # Same child quota billing decision. Observation ENFORCE=0 does not
+    # cap used/watch seconds, even after the allowance is exhausted.
     if [ "$MODE" = child ] && [ "$ACTIVITY" = active ] && [ "$dt" -gt 0 ] &&
-       [ "$BILLING_STATE" = charge ]; then
-        if [ "$ENFORCE" != 1 ] || [ "$BLOCKED" != 1 ]; then
-            USED_S=$((USED_S + dt))
-        fi
+       [ "$BILLING_STATE" = charge ] &&
+       { [ "$ENFORCE" != 1 ] || [ "$BLOCKED" != 1 ]; }; then
+        USED_S=$((USED_S + dt))
+        WATCH_S="$USED_S"
     fi
     LAST_EPOCH="$NOW"
     calculate
     apply_gate
     save_runtime
     if [ $((NOW - SAVED_EPOCH)) -ge 60 ] ||
+       [ "$ROLLED_OVER" = 1 ] ||
+       [ "$WATCH_SCOPE_UPGRADED" = 1 ] ||
        [ "$BLOCKED" != "$previous_blocked" ] ||
        [ "$CAL_LAST_FINISHED" != "$previous_finished" ]; then
         persist
@@ -902,6 +957,7 @@ brief() {
             "$ADAPTIVE_ACTIVE_HITS" "$ADAPTIVE_TREND_PCT"
     fi
     printf '用量: %dm%02ds · 剩余 %dm%02ds\n' "$used_m" "$used_r" "$left_m" "$left_r"
+    printf '今日儿童模式累计观看估算: %d 秒（家长模式不计入）\n' "$WATCH_S"
     printf '流量: %s PPS (TCP %s / UDP %s) · %s B/s\n' "$PPS" "$TCP_PPS" "$UDP_PPS" "$BYTES_PER_S"
     printf '控制: gate=%s · enforce=%s · armed=%s\n' "$firewall_state" "$ENFORCE" "$ARMED"
 }
@@ -993,8 +1049,8 @@ status() {
         cal_phase="$CAL_LAST_RESULT"
     fi
 
-    printf '{"date":"%s","mode":"%s","activity":"%s","enforce":%s,"armed":%s,"would_block":%s,"blocked":%s,"firewall_state":"%s","used_seconds":%s,"quota_seconds":%s,"bonus_seconds":%s,"bonus_undo_available":%s,"bonus_limit_seconds":%s,"policy_reason":"%s","remaining_seconds":%s,"parent_until":%s,"last_packet_epoch":%s,"packet_counter":%s,"pps":%s,"tcp_pps":%s,"udp_pps":%s,"bytes_per_second":%s,"reply_observer":"%s","reply_sample_status":"%s","reply_prerouting_pps":%s,"reply_prerouting_bps":%s,"reply_local_pps":%s,"reply_local_bps":%s,"reply_coverage":"unverified","traffic_class":"%s","shadow_label":"%s","shadow_app":"%s","shadow_score":%s,"adaptive_state":"%s","adaptive_score":%s,"adaptive_windows":%s,"adaptive_reason":"%s","adaptive_idle_ceiling":%s,"adaptive_active_floor":%s,"adaptive_window_p50":%s,"adaptive_window_p90":%s,"adaptive_pause_hint":"%s","adaptive_pause_score":%s,"adaptive_bp_p50":%s,"adaptive_bp_p90":%s,"adaptive_active_hits":%s,"adaptive_trend_percent":%s,"billing_state":"%s","idle_reason":"%s","idle_streak_seconds":%s,"idle_grace_seconds":%s,"server_epoch":%s,"calibration_label":"%s","calibration_app":"%s","calibration_session":"%s","calibration_until":%s,"calibration_started":%s,"calibration_samples":%s,"calibration_duration_seconds":%s,"calibration_phase":"%s","calibration_active":%s,"calibration_elapsed_seconds":%s,"calibration_remaining_seconds":%s,"calibration_percent":%s,"calibration_last_label":"%s","calibration_last_app":"%s","calibration_last_session":"%s","calibration_last_samples":%s,"calibration_last_duration_seconds":%s,"calibration_last_finished":%s,"calibration_last_result":"%s"}\n' \
-        "$TODAY" "$MODE" "$ACTIVITY" "$ENFORCE" "$ARMED" "$BLOCKED" "$actual" "$firewall_state" \
+    printf '{"watch_seconds":%s,"previous_day_date":"%s","previous_day_seconds":%s,"date":"%s","mode":"%s","activity":"%s","enforce":%s,"armed":%s,"would_block":%s,"blocked":%s,"firewall_state":"%s","used_seconds":%s,"quota_seconds":%s,"bonus_seconds":%s,"bonus_undo_available":%s,"bonus_limit_seconds":%s,"policy_reason":"%s","remaining_seconds":%s,"parent_until":%s,"last_packet_epoch":%s,"packet_counter":%s,"pps":%s,"tcp_pps":%s,"udp_pps":%s,"bytes_per_second":%s,"reply_observer":"%s","reply_sample_status":"%s","reply_prerouting_pps":%s,"reply_prerouting_bps":%s,"reply_local_pps":%s,"reply_local_bps":%s,"reply_coverage":"unverified","traffic_class":"%s","shadow_label":"%s","shadow_app":"%s","shadow_score":%s,"adaptive_state":"%s","adaptive_score":%s,"adaptive_windows":%s,"adaptive_reason":"%s","adaptive_idle_ceiling":%s,"adaptive_active_floor":%s,"adaptive_window_p50":%s,"adaptive_window_p90":%s,"adaptive_pause_hint":"%s","adaptive_pause_score":%s,"adaptive_bp_p50":%s,"adaptive_bp_p90":%s,"adaptive_active_hits":%s,"adaptive_trend_percent":%s,"billing_state":"%s","idle_reason":"%s","idle_streak_seconds":%s,"idle_grace_seconds":%s,"server_epoch":%s,"calibration_label":"%s","calibration_app":"%s","calibration_session":"%s","calibration_until":%s,"calibration_started":%s,"calibration_samples":%s,"calibration_duration_seconds":%s,"calibration_phase":"%s","calibration_active":%s,"calibration_elapsed_seconds":%s,"calibration_remaining_seconds":%s,"calibration_percent":%s,"calibration_last_label":"%s","calibration_last_app":"%s","calibration_last_session":"%s","calibration_last_samples":%s,"calibration_last_duration_seconds":%s,"calibration_last_finished":%s,"calibration_last_result":"%s"}\n' \
+        "$WATCH_S" "$PREV_DATE" "$PREV_WATCH_S" "$TODAY" "$MODE" "$ACTIVITY" "$ENFORCE" "$ARMED" "$BLOCKED" "$actual" "$firewall_state" \
         "$USED_S" "$LIMIT_S" "$BONUS_S" "$bonus_undo_available" "$bonus_limit_seconds" "$policy_reason" "$left" "$PARENT_UNTIL" \
         "$LAST_PACKET_EPOCH" "$LAST_COUNT" "$PPS" "$TCP_PPS" "$UDP_PPS" \
         "$BYTES_PER_S" "$RX_STATE" "$RX_SAMPLE_STATUS" "$RX_LAN_PPS" "$RX_LAN_BPS" \
@@ -1035,7 +1091,7 @@ case "${1:-}" in
     learning)
         cat "$DIR/learning-last.txt" 2>/dev/null || echo "暂无学习分析"
         exit 0 ;;
-    tick|mode|bonus|enforce|sync|calibrate)
+    tick|mode|bonus|enforce|sync|calibrate|bark-test)
         lock
         load_state
         NOW="$(date +%s)"
@@ -1044,7 +1100,7 @@ case "${1:-}" in
             event recovery_lock "持久状态缺失，强制锁定直至家长确认"
         fi
         ;;
-    *) echo "usage: tvguardctl {status|brief|evidence|log|calibration|calibration-v4|learning|tick|sync|mode|bonus|calibrate|enforce}" >&2; exit 2 ;;
+    *) echo "usage: tvguardctl {status|brief|evidence|log|calibration|calibration-v4|learning|tick|sync|mode|bonus|calibrate|enforce|bark-test}" >&2; exit 2 ;;
 esac
 
 case "$1" in
@@ -1063,6 +1119,19 @@ case "$1" in
         save_runtime
         persist
         "$FW" sync
+        ;;
+    bark-test)
+        # Authorized LuCI write action: refresh the packet sample under the
+        # existing controller lock, then persist the exact child-only count
+        # BEFORE asking the report worker to read it. Never touch daily dedup.
+        hook_state="$("$FW" inspect 2>/dev/null || echo absent)"
+        case "$hook_state" in
+            allowed|blocked) : ;;
+            *) "$FW" sync ;;
+        esac
+        tick
+        persist
+        "$BARK_REPORT" test
         ;;
     mode)
         case "${2:-}" in

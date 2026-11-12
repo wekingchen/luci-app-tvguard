@@ -6,7 +6,7 @@ set -eu
 
 ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
 VERSION="${1:-0.1.13}"
-RELEASE="${2:-16}"
+RELEASE="${2:-21}"
 OUT="$ROOT/dist"
 PACKAGE="luci-app-tvguard"
 ARCH="all"
@@ -32,7 +32,8 @@ for f in \
     usr/libexec/tvguard-retention \
     usr/libexec/tvguard-data \
     usr/libexec/tvguard-soak \
-    usr/libexec/tvguard-soak-report; do
+    usr/libexec/tvguard-soak-report \
+    usr/libexec/tvguard-daily-report; do
     chmod 755 "$WORK/data/$f"
 done
 
@@ -54,7 +55,7 @@ Maintainer: TV Guard contributors
 Section: luci
 Priority: optional
 Installed-Size: $INSTALLED_SIZE
-Depends: luci-base, rpcd
+Depends: luci-base, rpcd, curl
 Description: TV Guard LuCI and shadow time-control service for firewall3 / iptables-legacy
 EOF
 

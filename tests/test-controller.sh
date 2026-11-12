@@ -82,6 +82,27 @@ EOSOAK
 chmod +x "$TMP/soak"
 export TVGUARD_TEST_SOAK=none
 
+cat > "$TMP/agent-billing" <<'EOAGENTBILL'
+#!/bin/sh
+case "${TVGUARD_TEST_AGENT_BILLING:-charge}" in
+    system_home) echo 'free system_home' ;;
+    app_home) echo 'free app_home' ;;
+    paused) echo 'charge paused' ;;
+    playing) echo 'charge playing' ;;
+    *) echo 'charge unknown' ;;
+esac
+EOAGENTBILL
+chmod +x "$TMP/agent-billing"
+export TVGUARD_TEST_AGENT_BILLING=charge
+
+cat > "$TMP/bark-report" <<'EOBARK'
+#!/bin/sh
+[ "$1" = test ] || exit 2
+awk -F= '$1=="USED_S" {print $2}' "$TVGUARD_TEST_STATE/state" >> "$TVGUARD_TEST_BARK_LOG"
+echo '测试推送已发送'
+EOBARK
+chmod +x "$TMP/bark-report"
+
 cat > "$TMP/data" <<'EODATA'
 #!/bin/sh
 mode="${TVGUARD_TEST_DATA_MODE:-persistent}"
@@ -121,6 +142,8 @@ exit 0
 EOLEARN
 chmod +x "$TMP/learn"
 : > "$TMP/learn.log"
+: > "$TMP/bark.log"
+export TVGUARD_TEST_BARK_LOG="$TMP/bark.log"
 export TVGUARD_TEST_LEARN_LOG="$TMP/learn.log"
 export TVGUARD_TEST_STATE="$TMP/state"
 export TVGUARD_TEST_VOLATILE="$TMP/volatile"
@@ -153,6 +176,8 @@ mapping={
     'ADAPTIVE=/usr/libexec/tvguard-adaptive': 'ADAPTIVE='+root+'/adaptive',
     'LEARN=/usr/libexec/tvguard-learn': 'LEARN='+root+'/learn',
     'SOAK=/usr/libexec/tvguard-soak': 'SOAK='+root+'/soak',
+    'AGENT_BILLING=/usr/libexec/tvguard-agent-billing-hint': 'AGENT_BILLING='+root+'/agent-billing',
+    'BARK_REPORT=/usr/libexec/tvguard-daily-report': 'BARK_REPORT='+root+'/bark-report',
     'TX_IDLE_BILLING_AUTHORITY=0': 'TX_IDLE_BILLING_AUTHORITY="${TVGUARD_TEST_TX_IDLE_AUTHORITY:-0}"',
     'DATA=/usr/libexec/tvguard-data': 'DATA='+root+'/data',
     'RUN=/var/run/tvguard.state': 'RUN='+root+'/run/runtime',
@@ -278,6 +303,7 @@ echo '1500 240000 170 27000 1280 193000' > "$TMP/sample"
 sh "$CTL" tick
 status
 check 'assert s["used_seconds"] >= 9 and s["used_seconds"] <= 11, s'
+check 'assert s["watch_seconds"] == s["used_seconds"] and s["previous_day_date"] == "none", s'
 check 'assert s["pps"] > 0 and s["tcp_pps"] > 0 and s["udp_pps"] > 0, s'
 check 'assert s["traffic_class"] in ("high_traffic","medium_traffic","low_traffic")'
 check 'assert s["calibration_label"] == "playing" and s["calibration_app"] == "tencent" and s["calibration_session"] != "none"'
@@ -495,6 +521,78 @@ delta_p0_shadow=$((after_p0_shadow-before_p0_shadow))
 [ "$delta_p0_shadow" -ge 9 ] && [ "$delta_p0_shadow" -le 11 ]
 check 'assert s["shadow_label"]=="system_home" and s["adaptive_state"]=="unready", s'
 check 'assert s["billing_state"]=="charge" and s["idle_reason"]=="none", s'
+
+# Conservative Agent-assisted formal billing: ONLY explicit homes are free.
+# All other bridge states, including paused, remain chargeable.
+export TVGUARD_TEST_TX_IDLE_AUTHORITY=0
+export TVGUARD_TEST_ADAPTIVE=ambiguous
+export TVGUARD_TEST_SHADOW=unknown
+
+# Explicit system_home: active network traffic is present, but child time does not increase.
+export TVGUARD_TEST_AGENT_BILLING=system_home
+python3 - "$TMP/run/runtime" <<'PY'
+from pathlib import Path
+import sys,time
+p=Path(sys.argv[1])
+lines=p.read_text().splitlines()
+now=int(time.time())
+p.write_text('\n'.join(
+    'LAST_EPOCH='+str(now-10) if line.startswith('LAST_EPOCH=') else line
+    for line in lines
+)+'\n')
+PY
+set -- $(cat "$TMP/sample")
+echo "$(($1 + 400)) $(($2 + 80000)) $(($3 + 40)) $(($4 + 8000)) $(($5 + 360)) $(($6 + 72000))" > "$TMP/sample"
+before_home="$(sh "$CTL" status | python3 -c 'import json,sys; print(json.load(sys.stdin)["used_seconds"])')"
+sh "$CTL" tick
+status
+after_home="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["used_seconds"])' "$TMP/status.json")"
+[ "$after_home" = "$before_home" ]
+check 'assert s["activity"]=="active" and s["billing_state"]=="idle_verified" and s["idle_reason"]=="system_home", s'
+
+# Explicit app_home: same narrow exemption.
+export TVGUARD_TEST_AGENT_BILLING=app_home
+python3 - "$TMP/run/runtime" <<'PY'
+from pathlib import Path
+import sys,time
+p=Path(sys.argv[1])
+lines=p.read_text().splitlines()
+now=int(time.time())
+p.write_text('\n'.join(
+    'LAST_EPOCH='+str(now-10) if line.startswith('LAST_EPOCH=') else line
+    for line in lines
+)+'\n')
+PY
+set -- $(cat "$TMP/sample")
+echo "$(($1 + 300)) $(($2 + 60000)) $(($3 + 30)) $(($4 + 6000)) $(($5 + 270)) $(($6 + 54000))" > "$TMP/sample"
+sh "$CTL" tick
+status
+after_app_home="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["used_seconds"])' "$TMP/status.json")"
+[ "$after_app_home" = "$after_home" ]
+check 'assert s["billing_state"]=="idle_verified" and s["idle_reason"]=="app_home", s'
+
+# Even a bridge-confirmed paused state MUST charge under the simplified policy.
+export TVGUARD_TEST_AGENT_BILLING=paused
+python3 - "$TMP/run/runtime" <<'PY'
+from pathlib import Path
+import sys,time
+p=Path(sys.argv[1])
+lines=p.read_text().splitlines()
+now=int(time.time())
+p.write_text('\n'.join(
+    'LAST_EPOCH='+str(now-10) if line.startswith('LAST_EPOCH=') else line
+    for line in lines
+)+'\n')
+PY
+set -- $(cat "$TMP/sample")
+echo "$(($1 + 200)) $(($2 + 40000)) $(($3 + 20)) $(($4 + 4000)) $(($5 + 180)) $(($6 + 36000))" > "$TMP/sample"
+sh "$CTL" tick
+status
+after_paused="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["used_seconds"])' "$TMP/status.json")"
+delta_paused=$((after_paused-after_app_home))
+[ "$delta_paused" -ge 9 ] && [ "$delta_paused" -le 11 ]
+check 'assert s["billing_state"]=="charge" and s["idle_reason"]=="none", s'
+export TVGUARD_TEST_AGENT_BILLING=charge
 
 # Keep the previous smart-idle state machine covered as dormant code. Tests may
 # opt it back in, but production r12 has the gate hardcoded off.
@@ -766,5 +864,129 @@ export TVGUARD_TEST_DATA_MODE=persistent
 status
 check 'assert s["mode"]=="parent" and s["parent_until"]==0, s'
 grep -qx 'MODE=parent' "$TMP/state/state"
+# status only reads durable state; recreate the active runtime before editing.
+sh "$CTL" sync
 
-echo "PASS: modes, billing, telemetry, calibration, data-root switching and two-key enforcement safety"
+# Parent mode must leave child viewing and child quota unchanged.
+export TVGUARD_TEST_AGENT_BILLING=charge
+set -- $(sh "$CTL" status | python3 -c 'import json,sys; s=json.load(sys.stdin);print(s["used_seconds"],s["watch_seconds"])')
+old_child="$1"; old_watch="$2"
+python3 - "$TMP/run/runtime" <<'PY'
+from pathlib import Path
+import sys,time
+p=Path(sys.argv[1])
+lines=p.read_text().splitlines()
+p.write_text('\n'.join('LAST_EPOCH='+str(int(time.time())-10) if x.startswith('LAST_EPOCH=') else x for x in lines)+'\n')
+PY
+set -- $(cat "$TMP/sample")
+echo "$(($1+500)) $(($2+100000)) $(($3+250)) $(($4+50000)) $(($5+250)) $(($6+50000))" > "$TMP/sample"
+sh "$CTL" tick
+set -- $(sh "$CTL" status | python3 -c 'import json,sys; s=json.load(sys.stdin);print(s["used_seconds"],s["watch_seconds"])')
+[ "$1" -eq "$old_child" ]
+[ "$2" -eq "$old_watch" ]
+
+# The current Agent home exemption applies to the child-mode counter too.
+old_watch="$2"
+export TVGUARD_TEST_AGENT_BILLING=app_home
+python3 - "$TMP/run/runtime" <<'PY'
+from pathlib import Path
+import sys,time
+p=Path(sys.argv[1])
+lines=p.read_text().splitlines()
+p.write_text('\n'.join('LAST_EPOCH='+str(int(time.time())-10) if x.startswith('LAST_EPOCH=') else x for x in lines)+'\n')
+PY
+set -- $(cat "$TMP/sample")
+echo "$(($1+500)) $(($2+100000)) $(($3+250)) $(($4+50000)) $(($5+250)) $(($6+50000))" > "$TMP/sample"
+sh "$CTL" tick
+status
+check 'assert s["billing_state"]=="idle_verified" and s["idle_reason"]=="app_home",s'
+[ "$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["watch_seconds"])' "$TMP/status.json")" -eq "$old_watch" ]
+
+# Observation mode: keep counting when child usage already exceeds quota.
+sh "$CTL" mode child
+export TVGUARD_TEST_AGENT_BILLING=charge
+quota="$(sh "$CTL" status | python3 -c 'import json,sys;print(json.load(sys.stdin)["quota_seconds"])')"
+python3 - "$TMP/run/runtime" "$quota" <<'PY'
+from pathlib import Path
+import sys,time
+p=Path(sys.argv[1])
+quota=int(sys.argv[2])
+lines=p.read_text().splitlines()
+out=[]
+for x in lines:
+    if x.startswith('LAST_EPOCH='): x='LAST_EPOCH='+str(int(time.time())-10)
+    if x.startswith('USED_S='): x='USED_S='+str(quota+120)
+    if x.startswith('WATCH_S='): x='WATCH_S='+str(quota+120)
+    out.append(x)
+p.write_text('\n'.join(out)+'\n')
+PY
+set -- $(cat "$TMP/sample")
+echo "$(($1+500)) $(($2+100000)) $(($3+250)) $(($4+50000)) $(($5+250)) $(($6+50000))" > "$TMP/sample"
+sh "$CTL" tick
+status
+check 'assert s["enforce"]==0 and s["used_seconds"]>s["quota_seconds"] and s["watch_seconds"]==s["used_seconds"],s'
+
+# Day boundary archives only child-mode viewing and resets today's total.
+python3 - "$TMP/run/runtime" <<'PY'
+from pathlib import Path
+import sys
+p=Path(sys.argv[1])
+lines=p.read_text().splitlines()
+out=[]
+for x in lines:
+    if x.startswith('TODAY='): x='TODAY=2026-11-10'
+    if x.startswith('WATCH_S='): x='WATCH_S=1234'
+    if x.startswith('USED_S='): x='USED_S=1234'
+    out.append(x)
+p.write_text('\n'.join(out)+'\n')
+PY
+sh "$CTL" sync
+status
+check 'assert s["watch_seconds"]==0 and s["previous_day_date"]=="2026-11-10" and s["previous_day_seconds"]==1234,s'
+
+# Older r18 all-mode summaries must not be mistaken for child-only viewing.
+python3 - "$TMP/run/runtime" <<'PY'
+from pathlib import Path
+import sys
+p=Path(sys.argv[1])
+lines=p.read_text().splitlines()
+out=[]
+for x in lines:
+    if x.startswith('WATCH_SCOPE='): x='WATCH_SCOPE=legacy'
+    if x.startswith('WATCH_S='): x='WATCH_S=9999'
+    if x.startswith('USED_S='): x='USED_S=125'
+    if x.startswith('PREV_DATE='): x='PREV_DATE=2026-11-09'
+    if x.startswith('PREV_WATCH_S='): x='PREV_WATCH_S=9999'
+    out.append(x)
+p.write_text('\n'.join(out)+'\n')
+PY
+sh "$CTL" sync
+status
+check 'assert s["watch_seconds"]==125 and s["used_seconds"]==125 and s["previous_day_date"]=="none" and s["previous_day_seconds"]==0,s'
+
+# The admin's live test refreshes counters and saves the exact child-only
+# snapshot before it invokes Bark; it cannot enable enforcement.
+sh "$CTL" mode child
+export TVGUARD_TEST_AGENT_BILLING=charge
+python3 - "$TMP/run/runtime" <<'PY'
+from pathlib import Path
+import sys,time
+p=Path(sys.argv[1])
+s=p.read_text()
+p.write_text('\n'.join(
+    'LAST_EPOCH='+str(int(time.time())-10) if x.startswith('LAST_EPOCH=') else x
+    for x in s.splitlines()
+)+'\n')
+PY
+set -- $(cat "$TMP/sample")
+echo "$(($1+500)) $(($2+100000)) $(($3+250)) $(($4+50000)) $(($5+250)) $(($6+50000))" > "$TMP/sample"
+previous="$(sh "$CTL" status | python3 -c 'import json,sys;print(json.load(sys.stdin)["used_seconds"])')"
+sh "$CTL" bark-test > "$TMP/bark-response"
+grep -q '测试推送已发送' "$TMP/bark-response"
+reported="$(tail -n 1 "$TMP/bark.log")"
+[ "$reported" -ge "$((previous+9))" ] && [ "$reported" -le "$((previous+11))" ]
+status
+check 'assert s["used_seconds"]==s["watch_seconds"] and s["enforce"]==0,s'
+[ "$(cat "$TMP/gate")" = 0 ]
+
+echo "PASS: child-only watching, uncapped quota, live Bark snapshot and migration safety"

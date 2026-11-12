@@ -1,0 +1,50 @@
+name: TVGuard Agent integration gate
+
+on:
+  # Development commits stay quiet. The assistant updates exactly one marker
+  # after a batch is ready, which triggers one integrated gate run.
+  push:
+    branches: [feat/v0.1.13-agent-integration]
+    paths:
+      - '.github/ci/tvguard-agent-integration.trigger'
+  workflow_dispatch:
+  pull_request:
+    branches: [feat/v0.1.13-smart-billing]
+    types: [ready_for_review, reopened]
+    paths:
+      - 'tvguard-agent/**'
+      - 'bridge/**'
+      - 'root/**'
+      - 'htdocs/**'
+      - 'ipkg/**'
+      - 'tests/**'
+      - 'scripts/build-ipk.sh'
+      - 'scripts/build-agent-bridge-ipk.sh'
+      - 'scripts/verify-ipk.py'
+      - '.github/workflows/ci.yml'
+      - '.github/workflows/tvguard-agent.yml'
+      - '.github/workflows/tvguard-agent-bridge.yml'
+      - '.github/workflows/tvguard-agent-integration-gate.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tvguard-agent-integration-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  core-tvguard:
+    uses: ./.github/workflows/ci.yml
+
+  android6-agent:
+    if: github.event_name != 'pull_request'
+    uses: ./.github/workflows/tvguard-agent.yml
+    secrets: inherit
+
+  android6-agent-pr:
+    if: github.event_name == 'pull_request'
+    uses: ./.github/workflows/tvguard-agent.yml
+
+  n1-bridge:
+    uses: ./.github/workflows/tvguard-agent-bridge.yml

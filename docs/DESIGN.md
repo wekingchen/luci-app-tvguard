@@ -8,7 +8,7 @@
 - 电视 MAC `B0:41:1D:65:8B:94`；已在 N1 配 DHCP 静态规则，但不代表电视不能手动改网关/IP
 - SSR 使用 `nat PREROUTING REDIRECT` 和 `mangle PREROUTING TPROXY`：FORWARD 不能覆盖所有代理接管流量
 - N1 的 `send_redirects` 曾为 1；实际运行时须校验。即使关闭 ICMP Redirect，也无法阻止电视手动直连主路由
-- 不增加智能插座、不依赖电视 App
+- 不增加智能插座；基础控制/统计不依赖电视端 App。r21 的高可信 `system_home/app_home` 免计时由可选电视 Agent + N1 bridge 提供
 
 ## 实测数据（2026-11-08）
 
@@ -23,11 +23,14 @@
 
 ## 默认策略：智能平衡
 
-- 可靠确认观看：计时。
-- 可靠确认系统首页、视频 App 首页、暂停、熄屏待机：不计时。
-- 不能确认：计时（防止误判绕过）。
+- 明确正常播放：计时。
+- fresh Agent + Fusion 明确系统首页：不计时。
+- fresh Agent + Fusion 明确视频 App 首页：不计时。
+- 暂停：正式策略继续计时；暂停识别只保留为 Shadow 研究。
+- 不能确认 / ambiguous / Agent 失联或过期：计时（防止误判绕过）。
+- 网络真正静默：沿用 `idle_silent` 不计时。
 - 家长模式：不扣儿童额度、不受儿童允许时段限制，并持续生效直到手动切回儿童模式；锁定模式禁联网。
-- v0.1.12 稳定基线仍只按联网会话计时；v0.1.13 开始接入保守闲置免计时，但仍**绝不自动把低 PPS 当作闲置**。系统首页需重复设备级证据并与播放特征分离；App 首页/暂停需跨应用证据；连续确认 30 秒后才暂停扣时。
+- r21 仍**绝不自动把低 PPS 当作首页或暂停**；Home-only 免费时间必须来自 fresh Agent + generic Fusion 的明确 `system_home/app_home`。
 - `enforce=0` 默认只记录；在现场验证后须家长主动启用真实阻断。
 
 ## 数据路径
@@ -316,3 +319,45 @@ r15 不修改 `TX_IDLE_BILLING_AUTHORITY=0`、controller billing、firewall gate
 r15 重启后的干净 RAM ring 显示前 10 个窗口均为 `PPS=0`；按原条件，满 12 窗后纯静默也会满足低位稳定平台。纯静默已有 `activity=silent / billing_state=idle_silent` 专门处理，不应重复计入 `stable_low_plateau` 研究样本。
 
 r16 在 Shadow-only 条件中增加 `TEMPORAL_P50 > 0`：纯静默以及“11 个静默窗 + 1 个零星包”的近静默历史均不得进入候选；已确认系统首页、真实暂停正例和两段 576p 播放反例保持原有判定。该修改不改变 `TX_IDLE_BILLING_AUTHORITY=0`、controller billing、firewall gate、NAT/mangle/route。
+
+
+## r17 保守 Home-only 正式计时（2026-11-11）
+
+真机已证明：576p 正常播放与真实暂停后的预取/缓存流量高度重叠，PPS/BPS/UDP 占比均不足以可靠区分；Android `audio_active=0` 在恢复播放后也可能继续出现。因此正式计时不再追求“必须识别 paused”。
+
+r17 的正式规则收敛为：
+
+- `ACTIVITY=silent`：沿用现有网络静默边界，不扣儿童额度；
+- fresh Agent + generic fusion 明确 `system_home`：不扣；
+- fresh Agent + generic fusion 明确 `app_home`：不扣；
+- `playing / paused / unknown / ambiguous`：只要网络活动存在，一律扣；
+- Agent missing/stale/invalid、bridge 缺失或 billing hint 异常：fail-closed，网络活动存在则扣；
+- Adaptive pause hints、burst guard、pause streak 继续只做 Shadow 研究，不具备免计时授权。
+
+实现上由独立 `tvguard-agent-billing-hint` 输出唯一窄接口：`free system_home`、`free app_home` 或 `charge <state>`。它不读取/修改 USED_S、BILLING_STATE、iptables、UCI；核心 `tvguardctl` 是唯一正式计时写入方。
+
+
+## r21 设置页与双 Bark 接收设备（2026-11-11）
+
+- LuCI 顶部页签“时间规则”改名为“设置”，页面标题同步为“TV Guard · 设置”。
+- 保留原有 `bark_key` 作为第 1 个推送 ID，新增可选 `bark_key2`，最多同时向两台 Bark 设备发送同一份日报/测试消息。
+- 两个 ID 相同会自动去重，只发送一次；只填写任意一个 ID 也可正常工作。
+- 定时日报按设备分别保存当天送达标记。一台成功、一台失败时，5 分钟后只重试失败设备，避免成功设备收到重复日报。
+- 手动测试会向所有已填写设备发送，并明确返回“成功/失败设备数”；测试不会写入正式日报去重标记。
+- 两个 Bark ID 都不会通过状态接口或操作记录输出。
+
+
+## r21 + bridge 0.2.8-r4 真机验收（2026-11-12）
+
+N1 / 小米电视实机完成 Home-only 正式计时闭环：
+
+- 系统首页：Agent/Fusion = `system_home / system_home_confirmed`；核心 = `idle_verified / system_home`；
+- App 首页：`ChannelHomeActivity` 经 r4 通用 Activity-switch guard 后稳定进入 `app_home / app_nonplaying_confirmed`；核心 = `idle_verified / app_home`；
+- 儿童模式 App 首页连续 30 秒：`watch_seconds/used_seconds = 117 → 117`；
+- 儿童模式正常播放：`117 → 170`，核心 `billing_state=charge`；
+- 同一播放器暂停：继续 `charge`，累计时间继续增长，符合“暂停无法可靠区分则计时”的正式策略；
+- 回到系统首页后连续 30 秒：`297 → 297`；
+- bridge r4 的 fusion schema 为 v4，已验证 learned media Activity 保持播放器 `VodDynamicActivity`，首页加载突发不会再把 `ChannelHomeActivity` 污染成播放上下文；
+- r21 LuCI「设置」页、两个 Bark 推送 ID、00:05 前一日儿童观看日报及双设备测试推送均已真机验证。
+
+因此正式产品语义固定为 **Home-only free / uncertain charge**；paused 的更精细免计时属于后续优化，不是 r21 合入门槛。

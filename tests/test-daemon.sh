@@ -36,13 +36,19 @@ printf 'logger:%s\n' "$*" >> "$TVG_DAEMON_LOG"
 exit 0
 SH
 
+cat > "$TMP/report" <<'SH'
+#!/bin/sh
+printf 'report:%s\n' "$*" >> "$TVG_DAEMON_LOG"
+exit 0
+SH
+
 cat > "$TMP/sleep" <<'SH'
 #!/bin/sh
 printf 'sleep:%s\n' "$*" >> "$TVG_DAEMON_LOG"
 exit 0
 SH
 
-chmod +x "$TMP/ctl" "$TMP/data" "$TMP/retention" "$TMP/logger" "$TMP/sleep"
+chmod +x "$TMP/ctl" "$TMP/data" "$TMP/retention" "$TMP/logger" "$TMP/report" "$TMP/sleep"
 export TVG_DAEMON_LOG="$LOG"
 export TVG_DATA_PREPARE_EXIT=0
 export TVG_DATA_CONFIG_EXIT=0
@@ -57,6 +63,7 @@ text=Path(src).read_text()
 text=text.replace('/usr/libexec/tvguardctl', tmp+'/ctl')
 text=text.replace('/usr/libexec/tvguard-data', tmp+'/data')
 text=text.replace('/usr/libexec/tvguard-retention', tmp+'/retention')
+text=text.replace('/usr/libexec/tvguard-daily-report', tmp+'/report')
 text=text.replace('logger -t tvguard', tmp+'/logger -t tvguard')
 text=text.replace('sleep 10', tmp+'/sleep 10')
 text=text.replace('while :; do', 'for _tvg_once in 1; do', 1)
@@ -73,6 +80,7 @@ sh "$DAEMON"
 [ "$(grep -c '^data:config-sync$' "$LOG")" -eq 2 ]
 [ "$(grep -c '^retention:trim$' "$LOG")" -eq 1 ]
 [ "$(grep -c '^ctl:tick$' "$LOG")" -eq 1 ]
+grep -qx 'report:tick' "$LOG"
 grep -qx 'sleep:10' "$LOG"
 ! grep -q '^logger:' "$LOG"
 
@@ -81,6 +89,7 @@ export TVG_TICK_EXIT=7
 : > "$LOG"
 sh "$DAEMON"
 grep -qx 'ctl:tick' "$LOG"
+! grep -q '^report:' "$LOG"
 grep -qx 'logger:-t tvguard sample/update failed; keeping existing firewall gate' "$LOG"
 grep -qx 'sleep:10' "$LOG"
 
