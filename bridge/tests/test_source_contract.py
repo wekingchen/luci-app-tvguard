@@ -68,6 +68,8 @@ assert 'burst_gap_max' in fusion and 'burst_hits' in fusion
 assert 'media_context_switch_play_warming' in fusion
 assert 'playing_confirmed_context_switched' in fusion
 assert 'switch_strong_hits' in fusion and 'switch_activity' in fusion
+assert "printf '4|%s|%s|%s" in fusion
+assert 'switch_last_strong_seen extra < "$STATE"' in fusion
 assert 'app_nonplaying_confirmed' in fusion
 assert 'unlearned_package_pause_hint_ignored' in fusion
 assert 'media_pkg' in fusion and 'media_activity' in fusion
