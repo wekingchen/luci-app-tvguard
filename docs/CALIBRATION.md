@@ -222,3 +222,28 @@ Shadow Soak 不产生新的模型权重，也不改变 paused/playing 分类边�
 
 当前一个值得验证但尚未成立的假设：已知腾讯高吞吐暂停样本多为 UDP 主导，而芒果 576p 假阳性窗口至少观察到明显 TCP 成分。该假设只作为 Soak v2 的研究方向，未进入 billing classifier。
 
+
+
+## v0.1.14-r2：只有“当前明确确认暂停”获得免计时权限
+
+r2 根据当前产品策略，把已有 Fusion 的严格暂停确认态接入正式计时，但**不**开放泛化 idle/pause hint 权限。
+
+允许免计时的暂停必须同时满足：
+
+1. 当前 package/Activity 已经由强播放证据学习为媒体上下文；
+2. 当前不处于 recent-play burst guard；
+3. 连续 3 个新的 Agent report 满足 Fusion 的强暂停证据；
+4. Fusion 当前 candidate 必须精确为 `paused_confirmed_learned_context`。
+
+只有这个 candidate 返回 `free paused`，核心记录为 `billing_state=idle_verified / idle_reason=paused`。
+
+以下全部继续计时并继续作为学习/研究证据：
+
+- `paused_temporal_hold`；
+- `high_ratio_pause / bursty_pause / idle_overlap`；
+- `stable_low` 或 Adaptive idle；
+- 单独的低 PPS、高 B/P、audio off；
+- `unknown / ambiguous`；
+- Agent stale / missing / invalid。
+
+这不是把“暂停画像”整体升格为正式计费依据，而是只给已有严格确认态一个窄授权。后续暂停研究继续用于扩大可确认覆盖面、减少 unknown，并验证不同 App / 码率下的假阳性；任何新状态都不能自动继承免计时权限。
