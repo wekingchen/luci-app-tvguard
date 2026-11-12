@@ -141,6 +141,14 @@ final class BridgeClient {
                           boolean audio, boolean screen, long wallTimeMs,
                           String usageAccess, String foregroundSource,
                           String foregroundStatus) {
+        maybeSend(ctx, pkg, cls, audio, screen, wallTimeMs,
+                usageAccess, foregroundSource, foregroundStatus, "none");
+    }
+
+    static void maybeSend(Context ctx, String pkg, String cls,
+                          boolean audio, boolean screen, long wallTimeMs,
+                          String usageAccess, String foregroundSource,
+                          String foregroundStatus, String activityTrail) {
         long now = SystemClock.elapsedRealtime();
         if (sentElapsed != 0 && now >= sentElapsed && now - sentElapsed < 10000L) return;
         sentElapsed = now;
@@ -148,8 +156,8 @@ final class BridgeClient {
         if (!BridgeProtocol.validEndpoint(endpoint) || !BridgeProtocol.validKey(token)) {
             state = "未配对"; return;
         }
-        String body = BridgeProtocol.body(token, ++sequence, pkg, cls, audio, screen,
-                wallTimeMs, usageAccess, foregroundSource, foregroundStatus);
+        String body = BridgeProtocol.bodyV3(token, ++sequence, pkg, cls, audio, screen,
+                wallTimeMs, usageAccess, foregroundSource, foregroundStatus, activityTrail);
         HttpURLConnection conn = null;
         try {
             conn = (HttpURLConnection) new URL(endpoint).openConnection(Proxy.NO_PROXY);
