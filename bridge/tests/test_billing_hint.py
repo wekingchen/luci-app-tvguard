@@ -14,10 +14,31 @@ BROWSE = "com.example.media.Browse"
 
 with tempfile.TemporaryDirectory(prefix="tvguard-billing-hint-") as folder:
     d = Path(folder)
+    data = d / "tvguard-data"
+    data.write_text("#!/bin/sh\n[ \"$1\" = root ] && printf '%s\\n' \"$(dirname \"$0\")\"\n")
+    data.chmod(0o755)
+
     fusion = d / "fusion"
-    fusion.write_text(fusion_source.replace(
-        "RAM=/var/run/tvguard-agent-bridge", f"RAM={d}"))
+    fusion_text = fusion_source.replace(
+        "RAM=/var/run/tvguard-agent-bridge", f"RAM={d}")
+    fusion_text = fusion_text.replace(
+        "DATA=/usr/libexec/tvguard-data", f"DATA={data}")
+    fusion.write_text(fusion_text)
     fusion.chmod(0o755)
+
+    def write_audio_profile(pkg=PKG, activity=PLAYER,
+                            play_audio=100, pause_audio=0):
+        def row(sid, label, audio):
+            return ",".join(map(str, [
+                1000, sid, label, "general", 120, "completed", 12, 120,
+                100, 10, 20, 30, 1, 19, 10000, 20000, "stable", "high",
+                "high", 100, 100, 100, pkg, 100, activity, 100,
+                audio, 100, 0,
+            ]))
+        (d / "learning-sessions.csv").write_text(
+            row("1-play", "playing", play_audio) + "\n" +
+            row("2-pause", "paused", pause_audio) + "\n"
+        )
 
     hint = d / "billing-hint"
     text = hint_source.replace(
@@ -78,6 +99,28 @@ with tempfile.TemporaryDirectory(prefix="tvguard-billing-hint-") as folder:
                adaptive_score=95, adaptive_reason="stable_low",
                pause_hint="idle_overlap", pause_score=60) == (
         "free", "app_home")
+
+    # Paired manual Agent learning grants a second strict pause path. Even a
+    # high network burst cannot override three fresh audio-off reports in the
+    # exact human-labelled playing/paused context.
+    write_audio_profile()
+    for seq, now in ((14, 340), (15, 350)):
+        put(seq, now, PKG, PLAYER, audio=0)
+        assert run(now, pps=300, shadow="playing", adaptive_state="active",
+                   adaptive_score=100, adaptive_reason="clear_current",
+                   pause_hint="none", pause_score=0) == (
+            "charge", "unknown")
+    put(16, 360, PKG, PLAYER, audio=0)
+    assert run(360, pps=300, shadow="playing", adaptive_state="active",
+               adaptive_score=100, adaptive_reason="clear_current",
+               pause_hint="none", pause_score=0) == (
+        "free", "paused")
+    put(17, 370, PKG, PLAYER, audio=1)
+    assert run(370, pps=5, shadow="idle", adaptive_state="ambiguous",
+               adaptive_score=50, adaptive_reason="overlap",
+               pause_hint="none", pause_score=0) == (
+        "charge", "playing")
+    (d / "learning-sessions.csv").unlink()
 
     # A paused state is free only after the strict learned-context Fusion
     # confirmation path has fired on three fresh reports.
