@@ -15,10 +15,28 @@ PLAYER_B = "com.example.videob.ui.WatchScreen"
 
 with tempfile.TemporaryDirectory(prefix="tvguard-fusion-") as folder:
     d = Path(folder)
+    data = d / "tvguard-data"
+    data.write_text("#!/bin/sh\n[ \"$1\" = root ] && printf '%s\\n' \"$(dirname \"$0\")\"\n")
+    data.chmod(0o755)
     script = source.replace("RAM=/var/run/tvguard-agent-bridge", f"RAM={d}")
+    script = script.replace("DATA=/usr/libexec/tvguard-data", f"DATA={data}")
     target = d / "fusion"
     target.write_text(script)
     target.chmod(0o755)
+
+    def write_audio_profile(pkg=APP_A, activity=PLAYER_A,
+                            play_audio=100, pause_audio=0):
+        def row(sid, label, audio):
+            return ",".join(map(str, [
+                1000, sid, label, "general", 120, "completed", 12, 120,
+                100, 10, 20, 30, 1, 19, 10000, 20000, "stable", "high",
+                "high", 100, 100, 100, pkg, 100, activity, 100,
+                audio, 100, 0,
+            ]))
+        (d / "learning-sessions.csv").write_text(
+            row("1-play", "playing", play_audio) + "\n" +
+            row("2-pause", "paused", pause_audio) + "\n"
+        )
 
     def reset():
         for name in ("fusion.state", "fusion.lock"):
@@ -57,6 +75,48 @@ with tempfile.TemporaryDirectory(prefix="tvguard-fusion-") as folder:
                pps=160, shadow="unknown",
                adaptive_state="active", adaptive_score=100,
                adaptive_reason="clear_current",
+               pause_hint="none", pause_score=0,
+               active_floor=100) == (
+        "playing", "playing_confirmed_context_learned", 0)
+
+    # Human-labelled paired sessions teach exact-context audio semantics.
+    # Low-bitrate audio-active playback must charge/play even below the network
+    # floor, while sustained audio-off pause must survive a high-PPS burst.
+    reset()
+    write_audio_profile()
+    assert run(1, 300, pkg=APP_A, activity=PLAYER_A, audio=1,
+               pps=8, shadow="idle", adaptive_state="idle",
+               adaptive_score=95, adaptive_reason="stable_low",
+               pause_hint="idle_overlap", pause_score=60,
+               active_floor=100) == (
+        "playing", "playing_confirmed_learned_audio_profile", 0)
+    for seq, seen in ((2, 310), (3, 320)):
+        assert run(seq, seen, pkg=APP_A, activity=PLAYER_A, audio=0,
+                   pps=300, shadow="playing", adaptive_state="active",
+                   adaptive_score=100, adaptive_reason="clear_current",
+                   pause_hint="none", pause_score=0,
+                   active_floor=100) == (
+            "unknown", "paused_audio_profile_warming", seq - 1)
+    assert run(4, 330, pkg=APP_A, activity=PLAYER_A, audio=0,
+               pps=300, shadow="playing", adaptive_state="active",
+               adaptive_score=100, adaptive_reason="clear_current",
+               pause_hint="none", pause_score=0,
+               active_floor=100) == (
+        "paused", "paused_confirmed_learned_audio_context", 3)
+    assert run(5, 340, pkg=APP_A, activity=PLAYER_A, audio=1,
+               pps=5, shadow="idle", adaptive_state="ambiguous",
+               adaptive_score=50, adaptive_reason="overlap",
+               pause_hint="none", pause_score=0,
+               active_floor=100) == (
+        "playing", "playing_confirmed_learned_audio_profile", 0)
+
+    # Without strong playing-vs-paused audio separation, the model has no
+    # authority and the conservative legacy path remains in force.
+    reset()
+    write_audio_profile(play_audio=55, pause_audio=20)
+    assert run(1, 400, pkg=APP_A, activity=PLAYER_A, audio=0,
+               pps=300, shadow="playing", adaptive_state="active",
+               adaptive_score=100, adaptive_reason="clear_current",
                pause_hint="none", pause_score=0,
                active_floor=100) == (
         "playing", "playing_confirmed_context_learned", 0)
