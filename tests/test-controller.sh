@@ -414,6 +414,7 @@ echo '1650 270000 200 33000 1400 220000' > "$TMP/sample"
 echo '240 31000 330 42000' > "$TMP/reply"
 sh "$CTL" tick
 test -s "$TMP/state/calibration-v4.csv"
+grep -q ',app_home,com.example.video,' "$TMP/state/calibration-v3.csv"
 awk -F, 'NF!=12 {exit 1} $3=="app_home" && $4=="general" {found=1} END {exit !found}'     "$TMP/state/calibration-v4.csv"
 sh "$CTL" calibration-v4 | grep -q ',app_home,general,'
 sh "$CTL" calibrate stop
