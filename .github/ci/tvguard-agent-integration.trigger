@@ -14,3 +14,5 @@ reason=Re-run after BusyBox postinst contract and billing-hint executable permis
 # r21 fix: preserve live-test wording and allow menu rename in integration boundary
 
 # bridge r4: protect learned playback Activity from one-off app-home loading bursts
+
+# bridge r4 fix2: persist fusion schema v4 switch-learning state correctly
