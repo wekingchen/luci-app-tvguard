@@ -1,5 +1,5 @@
 #!/bin/sh
-# Bounded RAM-only v0.2.8 generic fusion ring. No quota, firewall or persistence writes.
+# Bounded RAM-only v0.2.9 generic fusion ring. No quota, firewall or persistence writes.
 # Distinguishes new TV reports from repeated N1 reads of the same report.
 set -eu
 PATH=/usr/sbin:/usr/bin:/sbin:/bin
@@ -19,7 +19,14 @@ if [ -s "$DATA" ]; then
     esac
 fi
 
-trap 'exit 0' TERM INT
+child_pid=''
+stop_now() {
+    if [ -n "$child_pid" ]; then
+        kill "$child_pid" 2>/dev/null || :
+    fi
+    exit 0
+}
+trap 'stop_now' TERM INT
 
 while :; do
     if [ -s "$RAM/latest" ]; then
@@ -103,5 +110,8 @@ while :; do
             fi
         fi
     fi
-    sleep 10
+    sleep 10 &
+    child_pid=$!
+    wait "$child_pid" 2>/dev/null || :
+    child_pid=''
 done
