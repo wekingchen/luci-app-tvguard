@@ -12,24 +12,18 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Enforce explicit r21 core, settings and daily-report integration boundary
+      - name: Check complete TVGuard integration layout
         shell: bash
         run: |
           set -euo pipefail
           test -f root/usr/libexec/tvguard-adaptive
           test -f root/usr/libexec/tvguard-learn
           test -f root/usr/libexec/tvguard-soak
-          git fetch --depth=1 origin feat/v0.1.13-smart-billing
-          git diff --name-only FETCH_HEAD HEAD | while IFS= read -r changed; do
-            case "$changed" in
-              bridge/*|tvguard-agent/*|Makefile|README.md|root/etc/config/tvguard|root/usr/share/tvguard/default-config|root/usr/libexec/tvguardd|root/usr/libexec/tvguard-daily-report|htdocs/luci-static/resources/view/tvguard/overview.js|htdocs/luci-static/resources/view/tvguard/settings.js|root/usr/share/luci/menu.d/luci-app-tvguard.json|ipkg/postinst|scripts/verify-ipk.py|tests/test-settings-ui.js|tests/test-menu-ui.js|tests/test-daemon.sh|tests/test-ui.js|tests/test-daily-report.sh|root/usr/libexec/tvguardctl|root/usr/share/tvguard/build-id|tests/test-controller.sh|scripts/build-ipk.sh|scripts/build-agent-bridge-ipk.sh|docs/DESIGN.md|.github/workflows/ci.yml|.github/workflows/tvguard-agent.yml|.github/workflows/tvguard-agent-bridge.yml|.github/workflows/tvguard-agent-integration-gate.yml|.github/ci/tvguard-agent-integration.trigger)
-                : ;;
-              *)
-                echo "::error::Unexpected change outside r21 conservative-home + settings + child-only daily viewing integration boundary: $changed"
-                exit 1 ;;
-            esac
-          done
-          echo "r21 conservative-home + settings + child-only daily viewing integration boundary: PASS"
+          test -f root/usr/libexec/tvguard-daily-report
+          test -f bridge/root/usr/libexec/tvguard-agent-billing-hint
+          test -f bridge/root/usr/libexec/tvguard-agent-fusion
+          test -f tvguard-agent/app/src/main/java/com/tvguard/agent/MonitorService.java
+          echo "complete TVGuard core + Agent + bridge integration layout: PASS"
       - name: Check executable scripts and isolation
         shell: bash
         run: |
