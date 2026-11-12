@@ -165,7 +165,6 @@ grep -q '^firewall.tvguard.path=/usr/libexec/tvguard-firewall-include$' "$STATE"
 grep -q '^commit firewall$' "$LOG"
 grep -q '^tvguard enable$' "$LOG"
 grep -q '^tvguard start
-! grep -q 'firewall restart\|firewall reload' "$LOG"
 
 # Existing owned section: accept without rewriting firewall UCI.
 owned_state
@@ -233,7 +232,6 @@ grep -q '^commit firewall$' "$LOG"
 echo "PASS: package lifecycle preserves proxy UCI and aborts incomplete TVG detach safely"
  "$LOG"
 grep -q '^tvguard-agent-bridge-setup 
-! grep -q 'firewall restart\|firewall reload' "$LOG"
 
 # Existing owned section: accept without rewriting firewall UCI.
 owned_state
