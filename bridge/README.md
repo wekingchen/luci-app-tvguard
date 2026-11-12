@@ -4,7 +4,7 @@
 
 用户 N1 真机当前基线为 `v0.1.13-r16-temporal-nonsilent`；下一候选为 `v0.1.13-r17-agent-home-billing`。**不可用更早源码生成的 luci-app-tvguard 覆盖真机。**
 
-当前 companion 为 **`tvguard-agent-bridge_0.2.8-3_all.ipk`**。它安装独立 CGI、融合/观察脚本、Home-only billing hint 和一次生成的配对密钥；不覆盖 `tvguardctl`、`tvguardd`、LuCI、iptables、防火墙、代理、配额和奖励。billing hint 本身只返回状态，不写额度；只有 r17 核心会消费其中 `system_home/app_home` 两种免计结果。
+当前 companion 为 **`tvguard-agent-bridge_0.2.8-4_all.ipk`**。它安装独立 CGI、融合/观察脚本、Home-only billing hint 和一次生成的配对密钥；不覆盖 `tvguardctl`、`tvguardd`、LuCI、iptables、防火墙、代理、配额和奖励。billing hint 本身只返回状态，不写额度；只有 r17 核心会消费其中 `system_home/app_home` 两种免计结果。
 
 ## 链路与安全
 
@@ -246,3 +246,18 @@ r2 不增加 App 特判，而是在同一 learned media context 内学习**强�
 - 其他任何情况均为 `charge <state>`
 
 其中 `paused` 即使在 Shadow Fusion 中被确认，也仍返回 `charge paused`。Agent 丢失、超过 20 秒、输入异常或 fusion 不可用均返回 `charge unknown`。该 helper 本身不修改额度或防火墙；只有 r17 核心显式消费上述 Home-only 结果。
+
+
+## v0.2.8-r4 · 防止 App 首页加载突发污染播放 Activity
+
+真机验证发现：已学习媒体 App 从播放器切回首页后，首页启动阶段的一次强网络突发会被旧逻辑立即当成“新的播放 Activity”，从而覆盖原本正确的播放上下文。之后即使首页持续低流量，也因为 Activity 已被错误标成播放上下文而无法进入 `app_home`。
+
+r4 采用通用保护，不增加任何 App/包名特判：
+
+1. 第一次学习某个媒体 App 的播放 Activity 规则不变；
+2. 同一个已学习媒体 App 切到不同 Activity 后，单次 strong-play 只进入 `media_context_switch_play_warming`；
+3. 新 Activity 必须连续获得 3 次新的强播放确认，才允许晋升为新的播放 Activity；
+4. 如果加载突发后转为持续低流量 + audio off，则清除切换候选，并按原逻辑累计 3 个新报告确认 `app_home`；
+5. 该保护只影响 RAM-only Fusion 学习，不改变 firewall、奖励或其他核心策略。
+
+升级到 r4 会因 fusion state schema v3→v4 自动丢弃旧的 RAM 学习状态，避免把已经污染的 Activity 继续带入新模型；重启或升级后需要一次真实播放重新建立媒体上下文。
