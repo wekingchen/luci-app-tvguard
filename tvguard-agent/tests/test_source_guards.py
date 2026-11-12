@@ -38,9 +38,11 @@ assert "不维护视频 App 白名单" in main_activity
 assert "isVideoPackage" not in main_activity
 assert "if (MonitorService.isEnabled(this))" in main_activity
 assert "startService(new Intent(this, MonitorService.class))" in main_activity
-assert '事件超限，前台待确认' in service
+assert '"event_overflow"' in service
+assert '"package_only_after_overflow"' in service
 assert 'SamplingWindow.plan(now, lastScanEnd)' in service
-assert 'before.sampledMs' in service
+assert 'Snapshot.diagnostic(' in service
+assert 'usageAccessState(MonitorService.this)' in service
 assert "GET_USAGE_STATS" in service
 assert "MODE_ALLOWED" in service
 assert "getBoolean(\"enabled\", false)" in service
@@ -51,7 +53,12 @@ assert "BridgeClient.maybeSend" in service
 assert "REPORT_INTERVAL_MS = 10000L" in service
 assert 'new HandlerThread("tvguard-uplink"' in service
 assert 'HeartbeatState.isFresh(now, sample.sampledMs)' in service
-assert 'fresh ? sample.currentPackage : "unknown"' in service
+assert "fallbackPackage(UsageStatsManager manager" in service
+assert '"usage_stats"' in service
+assert '"usage_events"' in service
+assert '"permission_unconfirmed"' in service
+assert "sample.currentPackage.length() != 0" in service
+assert "sample.currentClass.length() != 0" in service
 assert service.index('BridgeClient.maybeSend(') < service.index('private void sampleOnce()')
 assert "reportHandler.removeCallbacksAndMessages(null)" in service
 bridge_client = (src / "java/com/tvguard/agent/BridgeClient.java").read_text()
