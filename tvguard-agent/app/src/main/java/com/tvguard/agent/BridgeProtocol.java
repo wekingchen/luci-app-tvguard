@@ -2,7 +2,7 @@ package com.tvguard.agent;
 
 import java.net.URI;
 
-/** Wire schema shared by phone-side publisher and N1 CGI; no Android deps. */
+/** Wire schema shared by TV Agent publisher and N1 CGI; no Android deps. */
 final class BridgeProtocol {
     private BridgeProtocol() { }
 
@@ -48,10 +48,15 @@ final class BridgeProtocol {
     }
 
     static String body(String key, long seq, String pkg, String cls,
-                       boolean audio, boolean screen, long wallTimeMs) {
+                       boolean audio, boolean screen, long wallTimeMs,
+                       String usageAccess, String foregroundSource,
+                       String foregroundStatus) {
         if (!validKey(key)) throw new IllegalArgumentException("Invalid key");
-        return "TVG1|" + key + "|" + seq + "|" + sanitize(pkg, 128) + "|"
+        return "TVG2|" + key + "|" + seq + "|" + sanitize(pkg, 128) + "|"
                 + sanitize(cls, 160) + "|" + (audio ? 1 : 0) + "|"
-                + (screen ? 1 : 0) + "|" + wallTimeMs + "\n";
+                + (screen ? 1 : 0) + "|" + wallTimeMs + "|"
+                + sanitize(usageAccess, 24) + "|"
+                + sanitize(foregroundSource, 32) + "|"
+                + sanitize(foregroundStatus, 48) + "\n";
     }
 }

@@ -1,5 +1,5 @@
 #!/bin/sh
-# TVGuard v0.2.8 generic Agent/N1 temporal fusion.
+# TVGuard v0.2.9 generic Agent/N1 temporal fusion.
 # No video-app package names or per-app decision branches are allowed here.
 # RAM-only observer: never edits quota, billing state, firewall or persistent data.
 set -eu
@@ -127,8 +127,16 @@ if [ "$fresh" -eq 1 ] && [ "$last_seq" -gt 0 ] && [ "$seq" -lt "$last_seq" ]; th
     switch_last_strong_seen=0
 fi
 
+pkg_known=1
+activity_known=1
+case "$pkg" in ''|unknown) pkg_known=0 ;; esac
+case "$activity" in ''|unknown) activity_known=0 ;; esac
+full_context=0
+if [ "$pkg_known" -eq 1 ] && [ "$activity_known" -eq 1 ]; then full_context=1; fi
+
 context_changed=0
-if [ "$pkg" != "$last_pkg" ] || [ "$activity" != "$last_activity" ]; then
+if [ "$full_context" -eq 1 ] &&
+   { [ "$pkg" != "$last_pkg" ] || [ "$activity" != "$last_activity" ]; }; then
     context_changed=1
     pause_streak=0
     pause_miss=0
@@ -145,6 +153,16 @@ if [ "$pkg" != "$last_pkg" ] || [ "$activity" != "$last_activity" ]; then
     else
         switch_activity=''
     fi
+    switch_strong_hits=0
+    switch_last_strong_seen=0
+elif [ "$full_context" -eq 0 ]; then
+    # Incomplete foreground evidence may never preserve a free-time latch.
+    # Keep learned exact context in RAM for later recovery, but clear votes.
+    pause_streak=0
+    pause_miss=0
+    home_streak=0
+    latched=none
+    switch_activity=''
     switch_strong_hits=0
     switch_last_strong_seen=0
 fi
@@ -220,7 +238,7 @@ if [ "$screen" -eq 0 ]; then
     home_streak=0
     latched=none
 
-elif [ "$is_launcher" -eq 1 ]; then
+elif [ "$is_launcher" -eq 1 ] && [ "$full_context" -eq 1 ]; then
     combined=system_home
     candidate=system_home_confirmed
     pause_streak=0
@@ -228,14 +246,26 @@ elif [ "$is_launcher" -eq 1 ]; then
     home_streak=0
     latched=none
 
-elif [ "$pkg" = unknown ] || [ "$activity" = unknown ] ||
-     [ -z "$pkg" ] || [ -z "$activity" ]; then
-    combined=unknown
-    candidate=foreground_context_unknown
-    pause_streak=0
-    pause_miss=0
-    home_streak=0
-    latched=none
+elif [ "$pkg_known" -eq 0 ]; then
+    if [ "$strong_play" -eq 1 ] && [ "$audio" -eq 1 ]; then
+        combined=playing
+        candidate=playing_network_audio_fallback
+    else
+        combined=unknown
+        candidate=foreground_package_unknown
+    fi
+
+elif [ "$activity_known" -eq 0 ]; then
+    if [ "$strong_play" -eq 1 ] && [ "$audio" -eq 1 ]; then
+        combined=playing
+        candidate=playing_package_only_fallback
+    elif [ "$is_launcher" -eq 1 ]; then
+        combined=unknown
+        candidate=launcher_context_incomplete
+    else
+        combined=unknown
+        candidate=package_only_context_unresolved
+    fi
 
 elif [ "$strong_play" -eq 1 ]; then
     # Once a package already has a learned playback Activity, one strong
@@ -414,16 +444,25 @@ if [ "$restart" -eq 1 ]; then
     latched=none
     case "$combined" in
         system_home) : ;;
-        playing) candidate=playing_confirmed_context_recovered ;;
+        playing)
+            case "$candidate" in
+                playing_network_audio_fallback|playing_package_only_fallback) : ;;
+                *) candidate=playing_confirmed_context_recovered ;;
+            esac
+            ;;
         *) combined=unknown; candidate=agent_process_restart_context_reset ;;
     esac
 fi
 
 if [ "$fresh" -eq 1 ]; then
-    tmp="$STATE.$$"
+    if [ "$full_context" -eq 1 ]; then
+        last_pkg="$pkg"
+        last_activity="$activity"
+    fi
+    tmp="$STATE.$"
     printf '4|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s\n' \
         "$sig" "$seq" "$pause_streak" "$pause_miss" "$latched" \
-        "$media_pkg" "$media_activity" "$home_streak" "$pkg" "$activity" \
+        "$media_pkg" "$media_activity" "$home_streak" "$last_pkg" "$last_activity" \
         "$last_strong_seen" "$burst_gap_max" "$burst_hits" \
         "$switch_activity" "$switch_strong_hits" "$switch_last_strong_seen" > "$tmp"
     chmod 600 "$tmp"

@@ -56,7 +56,7 @@ public final class MainActivity extends Activity {
         panel.setOrientation(LinearLayout.VERTICAL);
         panel.setPadding(36, 30, 36, 30);
         scroller.addView(panel);
-        addText(panel, "TVGuard 助手 · 0.2.8", 27, 0xFFFFFFFF);
+        addText(panel, "TVGuard 助手 · 0.2.9", 27, 0xFFFFFFFF);
         addText(panel, "Android 6 前台上下文观察验证版", 17, 0xFFB8C9D5);
         toggle = new Button(this);
         toggle.setAllCaps(false);
@@ -170,11 +170,10 @@ public final class MainActivity extends Activity {
     private void showSnapshot() {
         MonitorService.Snapshot state = MonitorService.snapshot();
         boolean enabled = MonitorService.isEnabled(this);
-        boolean access = MonitorService.hasUsageAccess(this);
+        String accessState = MonitorService.usageAccessState(this);
+        boolean access = "allowed".equals(accessState);
         long elapsed = state.sampledMs == 0 ? -1 : System.currentTimeMillis() - state.sampledMs;
-        boolean healthy = enabled && access && elapsed >= 0 && elapsed < 20000L
-                && ("监测中".equals(state.state)
-                    || "监测中（前台待确认）".equals(state.state));
+        boolean healthy = enabled && elapsed >= 0 && elapsed < 20000L;
         String freshness = healthy ? "采样正常"
                 : "未确认正常采样（请查看状态与权限）";
         if (healthSummary != null) healthSummary.setText(
@@ -186,10 +185,12 @@ public final class MainActivity extends Activity {
                 "  · 最近接收：" + (ack == 0 ? "尚无" : time(ack)));
         ForegroundActivityHistory.Event meaningful = state.recentNonLauncher;
         StringBuilder info = new StringBuilder();
-        info.append("\n权限：").append(access ? "已允许" : "未授权")
+        info.append("\n使用情况权限判断：").append(accessState)
                 .append("\n监测开关：").append(enabled ? "已开启" : "未开启")
                 .append("\n状态：").append(state.state)
-                .append("\n采样：").append(freshness);
+                .append("\n采样：").append(freshness)
+                .append("\n前台来源：").append(state.foregroundSource)
+                .append("\n前台诊断：").append(state.foregroundStatus);
         info.append("\n\n【最近非桌面 App】")
                 .append("\n应用：").append(meaningful == null ? "暂无" :
                         applicationName(meaningful.packageName))
@@ -208,10 +209,17 @@ public final class MainActivity extends Activity {
         }
         info.append("\n");
         details.setText(info.toString());
-        guidance.setText(access ? "助手只上报前台上下文，不维护视频 App 白名单。播放/暂停由 N1 根据网络与时序证据统一学习；页面名称本身不等于播放状态。"
-                : "请首次开启 ADB，在电脑执行：\n"
-                + "adb shell appops set com.tvguard.agent GET_USAGE_STATS allow\n"
-                + "授权后无需常驻 ADB。");
+        if ("usage_events".equals(state.foregroundSource)) {
+            guidance.setText("已取得 UsageEvents 前台上下文。助手不维护视频 App 白名单；播放/暂停仍由 N1 根据网络与时序证据统一学习。");
+        } else if ("usage_stats".equals(state.foregroundSource)) {
+            guidance.setText("当前仅取得应用包名，Activity 未确认。N1 只会把它用于播放方向辅助，不会据此判定首页或暂停免计时。");
+        } else if (!access) {
+            guidance.setText("系统权限判断为 " + accessState + "。可在方便连接 ADB 时执行：\n"
+                    + "adb shell appops set com.tvguard.agent GET_USAGE_STATS allow\n"
+                    + "未确认权限期间 N1 仍会保守计时。");
+        } else {
+            guidance.setText("Agent 在线，但当前没有可靠前台上下文。诊断会随心跳上报 N1，不写电视本地日志。");
+        }
     }
 
     private String blank(String value) {

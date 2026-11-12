@@ -1,6 +1,5 @@
 #!/bin/sh
-# TVGuard Agent bridge v1: isolated shadow-only ingress. Never touches billing.
-# Requires stock OpenWrt uhttpd CGI (/cgi-bin/) and a single pairing token.
+# TVGuard Agent bridge: TVG1 legacy + TVG2 diagnostic ingress, RAM-only.
 set -eu
 umask 077
 PATH=/usr/sbin:/usr/bin:/sbin:/bin
@@ -21,16 +20,11 @@ TV_IP="$(uci -q get tvguard.main.ip 2>/dev/null || :)"
 [ -n "$TV_IP" ] && [ "${REMOTE_ADDR:-}" = "$TV_IP" ] || forbidden
 [ -r "$KEY_FILE" ] || forbidden
 IFS= read -r expected < "$KEY_FILE" || :
-case "$expected" in
-    ''|*[!0-9a-f]*) forbidden ;;
-esac
+case "$expected" in ''|*[!0-9a-f]*) forbidden ;; esac
 [ "${#expected}" -eq 32 ] || forbidden
-# Protocol: TVG1|token|seq|pkg|activity|audio|screen|client_epoch_ms
 IFS= read -r line || [ -n "${line:-}" ] || bad
 [ "${#line}" -le 512 ] || bad
 if [ "$line" = PAIR1 ]; then
-    # Same TV source IP whitelist as normal reporting. Root explicitly opened
-    # a one-time window; atomic claim prevents two concurrent token requests.
     WINDOW="$RAM_DIR/pair-window"
     CLAIM="$RAM_DIR/pair-claim"
     [ -r "$WINDOW" ] || forbidden
@@ -49,14 +43,26 @@ if [ "$line" = PAIR1 ]; then
     printf 'Status: 200 OK\r\nContent-Type: text/plain; charset=us-ascii\r\nCache-Control: no-store\r\n\r\nTOKEN1|%s\n' "$expected"
     exit 0
 fi
+
 oldIFS="$IFS"
 IFS='|'
-read -r version token seq pkg activity audio screen client_ms extra <<EOF
+read -r version token seq pkg activity audio screen client_ms usage_access foreground_source foreground_status extra <<EOF
 $line
 EOF
 IFS="$oldIFS"
-[ "$version" = TVG1 ] && [ "$token" = "$expected" ] || forbidden
-[ -z "${extra:-}" ] || bad
+case "$version" in
+    TVG1)
+        [ -z "${usage_access:-}${foreground_source:-}${foreground_status:-}${extra:-}" ] || bad
+        usage_access=legacy
+        foreground_source=legacy
+        foreground_status=legacy
+        ;;
+    TVG2)
+        [ -z "${extra:-}" ] || bad
+        ;;
+    *) bad ;;
+esac
+[ "$token" = "$expected" ] || forbidden
 for number in "$seq" "$client_ms"; do
     case "$number" in ''|*[!0-9]*) bad ;; esac
     [ "${#number}" -le 16 ] || bad
@@ -67,11 +73,17 @@ done
 case "$pkg" in ''|*[!A-Za-z0-9._]*) bad ;; esac
 case "$activity" in ''|*[!A-Za-z0-9._\$]*) bad ;; esac
 [ "${#pkg}" -le 128 ] && [ "${#activity}" -le 160 ] || bad
-# Ephemeral, atomic latest-sample replacement. No event log / append queue.
+for diag in "$usage_access" "$foreground_source" "$foreground_status"; do
+    case "$diag" in ''|*[!A-Za-z0-9._]*) bad ;; esac
+done
+[ "${#usage_access}" -le 24 ] &&
+[ "${#foreground_source}" -le 32 ] &&
+[ "${#foreground_status}" -le 48 ] || bad
+
 mkdir -p "$RAM_DIR" || { send '503 Service Unavailable' 'unavailable'; exit 0; }
 now="$(date +%s)"
 tmp="$RAM_DIR/latest.$$"
-if printf '%s|%s|%s|%s|%s|%s|%s\n' "$now" "$pkg" "$activity" "$audio" "$screen" "$client_ms" "$seq" > "$tmp" &&
+if printf '%s|%s|%s|%s|%s|%s|%s|%s|%s|%s\n'         "$now" "$pkg" "$activity" "$audio" "$screen" "$client_ms" "$seq"         "$usage_access" "$foreground_source" "$foreground_status" > "$tmp" &&
    mv -f "$tmp" "$OUT"; then
     send '200 OK' 'ok'
 else
