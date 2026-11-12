@@ -15,6 +15,7 @@ on:
       - 'scripts/build-ipk.sh'
       - 'scripts/build-agent-bridge-ipk.sh'
       - 'scripts/verify-ipk.py'
+      - 'Makefile'
       - '.github/workflows/ci.yml'
       - '.github/workflows/tvguard-agent.yml'
       - '.github/workflows/tvguard-agent-bridge.yml'
@@ -39,6 +40,7 @@ jobs:
   android6-agent-pr:
     if: github.event_name == 'pull_request'
     uses: ./.github/workflows/tvguard-agent.yml
+    secrets: inherit
 
   integrated-n1-bridge:
     uses: ./.github/workflows/tvguard-agent-bridge.yml
