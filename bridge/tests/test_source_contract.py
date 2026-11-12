@@ -94,7 +94,9 @@ print('bridge v0.2.8 generic-context / isolation / freshness / pairing checks PA
 # for explicit system/app home states. It never mutates core accounting.
 assert 'free system_home' in billing
 assert 'free app_home' in billing
-assert 'playing|paused|unknown' in billing
+assert 'free paused' in billing
+assert 'paused_confirmed_learned_context' in billing
+assert 'playing|unknown' in billing
 assert 'charge $1' in billing
 assert 'USED_S' not in billing
 assert 'BILLING_STATE' not in billing
