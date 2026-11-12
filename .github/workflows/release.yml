@@ -190,7 +190,8 @@ jobs:
             feat/initial-shadow-mvp \
             feat/v0.1.13-agent-integration \
             feat/v0.1.13-smart-billing \
-            feat/v0.1.14-integrated-agent-bridge; do
+            feat/v0.1.14-integrated-agent-bridge \
+            chore/v0.1.14-release-refresh; do
             encoded="${branch//\//%2F}"
             # Best-effort cleanup only; release success must not depend on an
             # already-deleted development branch.
