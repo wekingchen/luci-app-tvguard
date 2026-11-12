@@ -90,7 +90,8 @@ if [ -r "$STATE" ]; then
     IFS='|'
     read -r schema last_sig last_seq pause_streak pause_miss latched \
         media_pkg media_activity home_streak last_pkg last_activity \
-        last_strong_seen burst_gap_max burst_hits extra < "$STATE" || :
+        last_strong_seen burst_gap_max burst_hits \
+        switch_activity switch_strong_hits switch_last_strong_seen extra < "$STATE" || :
     IFS="$oldIFS"
     if [ "$schema" != 4 ]; then
         last_sig=''; last_seq=0; pause_streak=0; pause_miss=0; latched=none
@@ -420,10 +421,11 @@ fi
 
 if [ "$fresh" -eq 1 ]; then
     tmp="$STATE.$$"
-    printf '3|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s\n' \
+    printf '4|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s\n' \
         "$sig" "$seq" "$pause_streak" "$pause_miss" "$latched" \
         "$media_pkg" "$media_activity" "$home_streak" "$pkg" "$activity" \
-        "$last_strong_seen" "$burst_gap_max" "$burst_hits" > "$tmp"
+        "$last_strong_seen" "$burst_gap_max" "$burst_hits" \
+        "$switch_activity" "$switch_strong_hits" "$switch_last_strong_seen" > "$tmp"
     chmod 600 "$tmp"
     mv -f "$tmp" "$STATE"
 fi
