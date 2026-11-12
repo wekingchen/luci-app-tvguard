@@ -8,7 +8,7 @@
 - 电视 MAC `B0:41:1D:65:8B:94`；已在 N1 配 DHCP 静态规则，但不代表电视不能手动改网关/IP
 - SSR 使用 `nat PREROUTING REDIRECT` 和 `mangle PREROUTING TPROXY`：FORWARD 不能覆盖所有代理接管流量
 - N1 的 `send_redirects` 曾为 1；实际运行时须校验。即使关闭 ICMP Redirect，也无法阻止电视手动直连主路由
-- 不增加智能插座、不依赖电视 App
+- 不增加智能插座；基础控制/统计不依赖电视端 App。r21 的高可信 `system_home/app_home` 免计时由可选电视 Agent + N1 bridge 提供
 
 ## 实测数据（2026-11-08）
 
@@ -23,11 +23,14 @@
 
 ## 默认策略：智能平衡
 
-- 可靠确认观看：计时。
-- 可靠确认系统首页、视频 App 首页、暂停、熄屏待机：不计时。
-- 不能确认：计时（防止误判绕过）。
+- 明确正常播放：计时。
+- fresh Agent + Fusion 明确系统首页：不计时。
+- fresh Agent + Fusion 明确视频 App 首页：不计时。
+- 暂停：正式策略继续计时；暂停识别只保留为 Shadow 研究。
+- 不能确认 / ambiguous / Agent 失联或过期：计时（防止误判绕过）。
+- 网络真正静默：沿用 `idle_silent` 不计时。
 - 家长模式：不扣儿童额度、不受儿童允许时段限制，并持续生效直到手动切回儿童模式；锁定模式禁联网。
-- v0.1.12 稳定基线仍只按联网会话计时；v0.1.13 开始接入保守闲置免计时，但仍**绝不自动把低 PPS 当作闲置**。系统首页需重复设备级证据并与播放特征分离；App 首页/暂停需跨应用证据；连续确认 30 秒后才暂停扣时。
+- r21 仍**绝不自动把低 PPS 当作首页或暂停**；Home-only 免费时间必须来自 fresh Agent + generic Fusion 的明确 `system_home/app_home`。
 - `enforce=0` 默认只记录；在现场验证后须家长主动启用真实阻断。
 
 ## 数据路径
@@ -342,3 +345,19 @@ r17 的正式规则收敛为：
 - 定时日报按设备分别保存当天送达标记。一台成功、一台失败时，5 分钟后只重试失败设备，避免成功设备收到重复日报。
 - 手动测试会向所有已填写设备发送，并明确返回“成功/失败设备数”；测试不会写入正式日报去重标记。
 - 两个 Bark ID 都不会通过状态接口或操作记录输出。
+
+
+## r21 + bridge 0.2.8-r4 真机验收（2026-11-12）
+
+N1 / 小米电视实机完成 Home-only 正式计时闭环：
+
+- 系统首页：Agent/Fusion = `system_home / system_home_confirmed`；核心 = `idle_verified / system_home`；
+- App 首页：`ChannelHomeActivity` 经 r4 通用 Activity-switch guard 后稳定进入 `app_home / app_nonplaying_confirmed`；核心 = `idle_verified / app_home`；
+- 儿童模式 App 首页连续 30 秒：`watch_seconds/used_seconds = 117 → 117`；
+- 儿童模式正常播放：`117 → 170`，核心 `billing_state=charge`；
+- 同一播放器暂停：继续 `charge`，累计时间继续增长，符合“暂停无法可靠区分则计时”的正式策略；
+- 回到系统首页后连续 30 秒：`297 → 297`；
+- bridge r4 的 fusion schema 为 v4，已验证 learned media Activity 保持播放器 `VodDynamicActivity`，首页加载突发不会再把 `ChannelHomeActivity` 污染成播放上下文；
+- r21 LuCI「设置」页、两个 Bark 推送 ID、00:05 前一日儿童观看日报及双设备测试推送均已真机验证。
+
+因此正式产品语义固定为 **Home-only free / uncertain charge**；paused 的更精细免计时属于后续优化，不是 r21 合入门槛。
