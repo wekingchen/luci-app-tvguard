@@ -1,5 +1,5 @@
 #!/bin/sh
-# TVGuard Agent bridge: TVG1 legacy + TVG2 diagnostic ingress, RAM-only.
+# TVGuard Agent bridge: TVG1/TVG2 legacy + TVG3 bounded activity-trail ingress, RAM-only.
 set -eu
 umask 077
 PATH=/usr/sbin:/usr/bin:/sbin:/bin
@@ -15,7 +15,7 @@ forbidden() { send '403 Forbidden' 'forbidden'; exit 0; }
 [ "${REQUEST_METHOD:-}" = POST ] || { send '405 Method Not Allowed' 'POST only'; exit 0; }
 len="${CONTENT_LENGTH:-}"
 case "$len" in ''|*[!0-9]*) bad ;; esac
-[ "$len" -gt 0 ] && [ "$len" -le 512 ] || bad
+[ "$len" -gt 0 ] && [ "$len" -le 768 ] || bad
 TV_IP="$(uci -q get tvguard.main.ip 2>/dev/null || :)"
 [ -n "$TV_IP" ] && [ "${REMOTE_ADDR:-}" = "$TV_IP" ] || forbidden
 [ -r "$KEY_FILE" ] || forbidden
@@ -23,7 +23,7 @@ IFS= read -r expected < "$KEY_FILE" || :
 case "$expected" in ''|*[!0-9a-f]*) forbidden ;; esac
 [ "${#expected}" -eq 32 ] || forbidden
 IFS= read -r line || [ -n "${line:-}" ] || bad
-[ "${#line}" -le 512 ] || bad
+[ "${#line}" -le 768 ] || bad
 if [ "$line" = PAIR1 ]; then
     WINDOW="$RAM_DIR/pair-window"
     CLAIM="$RAM_DIR/pair-claim"
@@ -46,19 +46,25 @@ fi
 
 oldIFS="$IFS"
 IFS='|'
-read -r version token seq pkg activity audio screen client_ms usage_access foreground_source foreground_status extra <<EOF
+read -r version token seq pkg activity audio screen client_ms usage_access foreground_source foreground_status activity_trail extra <<EOF
 $line
 EOF
 IFS="$oldIFS"
 case "$version" in
     TVG1)
-        [ -z "${usage_access:-}${foreground_source:-}${foreground_status:-}${extra:-}" ] || bad
+        [ -z "${usage_access:-}${foreground_source:-}${foreground_status:-}${activity_trail:-}${extra:-}" ] || bad
         usage_access=legacy
         foreground_source=legacy
         foreground_status=legacy
+        activity_trail=none
         ;;
     TVG2)
+        [ -z "${activity_trail:-}${extra:-}" ] || bad
+        activity_trail=none
+        ;;
+    TVG3)
         [ -z "${extra:-}" ] || bad
+        activity_trail="${activity_trail:-none}"
         ;;
     *) bad ;;
 esac
@@ -79,11 +85,13 @@ done
 [ "${#usage_access}" -le 24 ] &&
 [ "${#foreground_source}" -le 32 ] &&
 [ "${#foreground_status}" -le 48 ] || bad
+case "$activity_trail" in ''|*[!A-Za-z0-9._~\$]*) bad ;; esac
+[ "${#activity_trail}" -le 240 ] || bad
 
 mkdir -p "$RAM_DIR" || { send '503 Service Unavailable' 'unavailable'; exit 0; }
 now="$(date +%s)"
 tmp="$RAM_DIR/latest.$$"
-if printf '%s|%s|%s|%s|%s|%s|%s|%s|%s|%s\n'         "$now" "$pkg" "$activity" "$audio" "$screen" "$client_ms" "$seq"         "$usage_access" "$foreground_source" "$foreground_status" > "$tmp" &&
+if printf '%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s\n'         "$now" "$pkg" "$activity" "$audio" "$screen" "$client_ms" "$seq"         "$usage_access" "$foreground_source" "$foreground_status" "$activity_trail" > "$tmp" &&
    mv -f "$tmp" "$OUT"; then
     send '200 OK' 'ok'
 else
