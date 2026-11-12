@@ -4,7 +4,7 @@
 
 ## 当前部署方式（v0.1.14 起）
 
-当前 N1 真机候选为 `luci-app-tvguard 0.1.14-1`，Bridge 0.2.8-r4 的 CGI、Fusion、观察脚本、Home-only billing hint、配对和服务已经并入主 IPK。**正常安装/升级只安装主包，不再单独安装 `tvguard-agent-bridge` IPK。**
+当前 N1 开发候选为 `luci-app-tvguard 0.1.14-2`，Bridge 0.2.8-r4 的 CGI、Fusion、观察脚本、Home-only billing hint、配对和服务已经并入主 IPK。**正常安装/升级只安装主包，不再单独安装 `tvguard-agent-bridge` IPK。**
 
 主包通过 `Conflicts / Replaces / Provides: tvguard-agent-bridge` 正规接管旧独立包。首次从 v0.1.13-r21 + `tvguard-agent-bridge 0.2.8-4` 真机升级已验证：旧包自动退出已安装列表，观看累计不回退，配对密钥保持一致，Bridge 服务继续由主包提供。旧独立 Bridge IPK 仅用于回退到 v0.1.13。
 
@@ -21,7 +21,7 @@ Agent → N1 的 OpenWrt uhttpd `/cgi-bin/tvguard-agent`（POST，固定最小�
 
 ## N1 操作（v0.1.14 当前方式）
 
-1. 安装或升级主包：`opkg install /tmp/luci-app-tvguard_0.1.14-1_all.ipk`；**不要预先卸载旧 Bridge，也不要再单独安装 companion IPK**。
+1. 安装或升级主包：`opkg install /tmp/luci-app-tvguard_0.1.14-2_all.ipk`；**不要预先卸载旧 Bridge，也不要再单独安装 companion IPK**。
 2. 确保 N1 当前 uhttpd 在 LAN 监听，且已启用 CGI prefix `/cgi-bin`。
 3. 已配对电视无需重新配对；需要查看配对状态时使用 `/usr/libexec/tvguard-agent-bridge-report pairing`。
 4. 电视 Agent 继续使用现有 N1 地址与配对信息；N1 主包升级不要求同步升级 APK。
@@ -279,3 +279,17 @@ r4 已在 N1 + 小米电视完成正式链路验证：
 - 系统首页确认 `system_home` 后 30 秒累计时间不增长。
 
 这证明 r4 的 Activity-switch guard 已解决首页首轮加载突发污染 learned media Activity 的真机问题。
+
+
+## v0.1.14-r2 · 明确暂停的窄免计授权
+
+r2 不放宽任何 TX-only 闲置规则，也不把普通 pause hint 当成暂停。正式 billing 只新增一个窄入口：
+
+- Fusion 必须已经学习过同一媒体上下文；
+- 必须由连续 3 个**新的** Agent report 满足强暂停证据，输出 `paused_confirmed_learned_context`；
+- 该当前确认态返回 `free paused`；
+- 第一帧证据丢失后的 `paused_temporal_hold` 虽仍可显示 paused，但重新按 `charge paused` 计时；
+- `idle_overlap`、`stable_low`、高 B/P、低 PPS、audio off、unknown/ambiguous 均没有暂停免计权限；
+- Agent stale/missing/invalid 仍 fail-closed 继续计时。
+
+因此“明确暂停免计时”和“其他状态继续学习”被严格拆开，576p/720p 的低码率播放保护门禁保持不变。
