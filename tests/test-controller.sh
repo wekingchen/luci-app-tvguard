@@ -177,6 +177,7 @@ mapping={
     'LEARN=/usr/libexec/tvguard-learn': 'LEARN='+root+'/learn',
     'SOAK=/usr/libexec/tvguard-soak': 'SOAK='+root+'/soak',
     'AGENT_BILLING=/usr/libexec/tvguard-agent-billing-hint': 'AGENT_BILLING='+root+'/agent-billing',
+    'AGENT_LATEST=/var/run/tvguard-agent-bridge/latest': 'AGENT_LATEST='+root+'/agent-latest',
     'BARK_REPORT=/usr/libexec/tvguard-daily-report': 'BARK_REPORT='+root+'/bark-report',
     'TX_IDLE_BILLING_AUTHORITY=0': 'TX_IDLE_BILLING_AUTHORITY="${TVGUARD_TEST_TX_IDLE_AUTHORITY:-0}"',
     'DATA=/usr/libexec/tvguard-data': 'DATA='+root+'/data',
@@ -222,6 +223,7 @@ check 'assert s["reply_observer"] == "disabled" and s["reply_coverage"] == "unve
 check 'assert s["reply_prerouting_pps"] == 0 and s["reply_local_pps"] == 0'
 check 'assert s["bonus_undo_available"] == 0 and s["bonus_limit_seconds"] == 7200'
 check 'assert s["policy_reason"] == "none"'
+check 'assert s["agent_state"] == "missing" and s["agent_package"] == "unknown", s'
 
 sh "$CTL" bonus 15
 status
@@ -299,6 +301,8 @@ s='\n'.join('LAST_EPOCH='+str(int(time.time())-10) if x.startswith('LAST_EPOCH='
 p.write_text(s)
 PY
 sh "$CTL" calibrate playing tencent
+agent_now="$(date +%s)"
+printf '%s|com.example.video|com.example.video.PlayerActivity|1|1|%s|41\n'     "$agent_now" "$((agent_now * 1000))" > "$TMP/agent-latest"
 echo '1500 240000 170 27000 1280 193000' > "$TMP/sample"
 sh "$CTL" tick
 status
@@ -311,12 +315,18 @@ check 'assert s["calibration_phase"] == "running" and s["calibration_active"] ==
 check 'assert s["calibration_samples"] == 1 and 0 <= s["calibration_elapsed_seconds"] <= 120'
 check 'assert s["calibration_remaining_seconds"] > 0 and 0 <= s["calibration_percent"] < 100'
 check 'assert s["server_epoch"] > 0'
+check 'assert s["agent_state"] == "fresh" and s["agent_package"] == "com.example.video", s'
+check 'assert s["agent_activity"] == "com.example.video.PlayerActivity" and s["agent_audio_active"] == 1 and s["agent_screen_on"] == 1, s'
+check 'assert s["agent_report_seq"] == 41 and 0 <= s["agent_age_seconds"] <= 20, s'
 if sh "$CTL" calibrate paused tencent > "$TMP/out" 2>&1; then
     echo "FAIL: a new session replaced an active calibration" >&2
     exit 1
 fi
 test -s "$TMP/state/calibration-v3.csv"
 grep -q ',playing,tencent,' "$TMP/state/calibration-v3.csv"
+test -s "$TMP/state/calibration-v5.csv"
+awk -F, 'NF!=14 {exit 1} $3=="playing" && $4=="fresh" && $6=="com.example.video" && $7=="com.example.video.PlayerActivity" && $8==1 && $9==1 && $10==41 {found=1} END {exit !found}' "$TMP/state/calibration-v5.csv"
+sh "$CTL" calibration-v5 | grep -q ',playing,fresh,'
 # Reply observer is disabled here: never manufacture directional zeros.
 [ ! -e "$TMP/state/calibration-v4.csv" ]
 # Simulate a completed 120-second calibration without sleeping.
