@@ -675,13 +675,12 @@ tick() {
 
     # Conservative formal billing:
     # - true network silence remains free as before;
-    # - an optional fresh Agent bridge may grant free time ONLY for an explicit
-    #   system_home or app_home confirmation;
-    # - playing, paused, unknown, ambiguous, stale/missing Agent and malformed
-    #   hints are all chargeable while network activity is present.
+    # - a fresh Agent bridge may grant free time for explicit system_home /
+    #   app_home, plus only the Fusion state paused_confirmed_learned_context;
+    # - playing, unknown, ambiguous, stale/missing Agent, malformed hints and
+    #   non-confirmed pause holds remain chargeable.
     #
-    # Adaptive/Shadow pause signals remain diagnostic-only. In particular,
-    # "paused" has NO free-time authority.
+    # TX-only Adaptive/Shadow pause-like hints still have no billing authority.
     HOME_FREE_REASON=none
     if [ "$ACTIVITY" = active ] && [ "$dt" -gt 0 ] && [ -x "$AGENT_BILLING" ]; then
         home_hint="$("$AGENT_BILLING" "$NOW" "$PPS" "$SHADOW_LABEL" \
@@ -691,7 +690,7 @@ tick() {
         set -- $home_hint
         if [ "$#" -eq 2 ] && [ "$1" = free ]; then
             case "$2" in
-                system_home|app_home) HOME_FREE_REASON="$2" ;;
+                system_home|app_home|paused) HOME_FREE_REASON="$2" ;;
             esac
         fi
     fi
