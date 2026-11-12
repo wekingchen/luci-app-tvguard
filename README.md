@@ -1,8 +1,9 @@
 # TV Guard · 家庭电视时间管理
-## v0.1.14-r4 · Agent 前台诊断 + 安全播放降级 + 联合学习质量门禁（开发候选）
+## v0.1.14-r5 · Agent 前台诊断 + 安全播放降级 + Bridge 干净退出（开发候选）
 
-- N1 只安装 `luci-app-tvguard_0.1.14-4_all.ipk`，已包含 CGI、Fusion、Home-only billing hint、配对、观察报告和 bridge 服务；电视仍需单独安装同一签名的 0.2.9 Agent APK；旧 0.2.8 仍可通过 TVG1 兼容接入，但没有新的前台诊断字段。
+- N1 只安装 `luci-app-tvguard_0.1.14-5_all.ipk`，已包含 CGI、Fusion、Home-only billing hint、配对、观察报告和 bridge 服务；电视仍需单独安装同一签名的 0.2.9 Agent APK；旧 0.2.8 仍可通过 TVG1 兼容接入，但没有新的前台诊断字段。
 - 主包声明 `Conflicts / Replaces: tvguard-agent-bridge`，由 opkg 正规替换旧独立包，不使用 `--force-overwrite`。配对密钥由 N1 生成、保持 0600 且从不打进 IPK；UCI 与持久统计保留。首次迁移时旧 Bridge 的卸载脚本会清理其 RAM 暂存信息，之后电视重新上报即可恢复。
+- r5 延续 r4 的计费边界；另外修复 Bridge soak observer 在 10 秒 sleep 期间收到 SIGTERM 无法及时退出、导致 procd 最终 SIGKILL 的问题。
 - r4 不放宽既有计费门槛：只有完整前台上下文才能授予 system_home / app_home / confirmed pause 免计时。TVG2 新增 Usage Access、前台来源和失败原因；当前台上下文缺失时，只允许“强网络播放证据 + 音频活跃”把融合显示提升为 playing，绝不据此授予免计时。
 - 本分支已通过首次 N1 真机无损整合迁移；正式发布前继续完成 Home-only 计时与重启恢复复验。
 
@@ -23,7 +24,7 @@
 
 面向 OpenWrt/LEDE 的电视使用时间管理。当前优先适配 **Phicomm N1 / LEDE R26.11.3 / fw3 / iptables-legacy** 的单网口旁路由环境。
 
-> **状态：v0.1.14-r4 整合候选。** 当前 LuCI 顶部页签为“概览 / 设置”；N1 主包已整合 Bridge，首次从 v0.1.13-r21 + 独立 Bridge 升级到单主包的真机迁移已通过。 v0.1.1 已通过 N1 的基础安装、LuCI、RAW 出站计数验证；v0.1.5 完成代理隔离硬化，v0.1.6 完成 LuCI 信息架构重构，v0.1.7 将家长模式明确为持续模式，并把孩子临时多看的需求统一归入奖励时间。 v0.1.8 根据 iPhone 深色主题实机截图重新收紧移动端响应式布局：顶部状态固定 2×2、模式/奖励按钮规则化、卡片改为深浅主题兼容的透明层级，并去掉 Argon 下过重的嵌套标题块。v0.1.9 进一步把 LuCI 顶部导航改成明确的“概览 / 时间规则”双 tab，去掉单独悬着的“时间规则”导航块。v0.1.10 收口移动端文案与视觉：顶部改为“儿童剩余”，家长模式摘要压缩，观察/家长状态提示改为轻量边框样式，减少深色主题中的高饱和色块。 v0.1.11 仅收口操作记录：奖励撤销日志记录具体分钟数，并兼容隐藏旧版本内部事件编号。2026-11-09 用户确认 v0.1.11 在 N1 完成日志、手机端界面与代理兼容检查的真机验收；同日第一轮正式锁定实测也通过：`TVG_GATE=DROP` 时电视实际断网，而手机、电脑保持正常联网。正式锁定测试结束后的安全收尾也已验证：恢复为 `enforce=0 / armed=0 / gate=allowed`，且 `tvguard-compat-check` 再次 `PASS`、`proxy_rules_unchanged=1`。v0.1.12 又完成了正式控制完整手动链路真机验证：`locked` 时 `TVG_GATE=DROP` 且电视断网，不关闭 enforce 直接切换 `parent` 后 gate 原位恢复为 `RETURN`、电视恢复联网；最终退出正式控制后兼容检查仍 `PASS`。儿童额度自动控制也已真机通过：额度耗尽自动 `DROP`，+15 分钟奖励立即恢复 `RETURN`，撤销奖励再次 `DROP`，家长模式可随时放行；最终兼容检查仍 `PASS`。TV Guard 自身 service reload 也已真机通过：daemon PID 不变，locked 时继续 `DROP`，parent 时继续 `RETURN`，最终兼容检查仍 `PASS`。全局 fw3/firewall reload 也已真机通过：fw3 清空并重建 raw 表后，TV Guard include 能按当前持久状态恢复目标电视 hook，locked 继续 `DROP`、parent 继续 `RETURN`，daemon PID 不变，最终兼容检查仍 `PASS`。N1 整机重启持久恢复也已真机通过：parent 模式跨重启恢复 `RETURN`，locked 模式跨重启恢复 `DROP`，已用额度保持不变，开机自启和代理兼容检查均正常。至此 v0.1.12 的**控制执行层**（模式、额度封禁、奖励恢复、reload/reboot、代理隔离）已完成真机闭环并作为稳定基线发布；但它仍按网络活动扣儿童时间，尚未完成最初要求的“系统首页/App 首页/明确暂停不计时”。v0.1.13 开始把经过保守验证的闲置识别正式接入儿童计时。实验性回程观测仍默认关闭。正式恢复链路复测时又暴露 N1 BusyBox `sleep` 不接受 `0.1` 的锁竞争兼容问题；v0.1.12 将锁等待改为整数秒重试并新增回归测试。默认 `enforce=0`、`allow_enforcement=0`、`observe_reply=0`。
+> **状态：v0.1.14-r5 整合候选。** 当前 LuCI 顶部页签为“概览 / 设置”；N1 主包已整合 Bridge，首次从 v0.1.13-r21 + 独立 Bridge 升级到单主包的真机迁移已通过。 v0.1.1 已通过 N1 的基础安装、LuCI、RAW 出站计数验证；v0.1.5 完成代理隔离硬化，v0.1.6 完成 LuCI 信息架构重构，v0.1.7 将家长模式明确为持续模式，并把孩子临时多看的需求统一归入奖励时间。 v0.1.8 根据 iPhone 深色主题实机截图重新收紧移动端响应式布局：顶部状态固定 2×2、模式/奖励按钮规则化、卡片改为深浅主题兼容的透明层级，并去掉 Argon 下过重的嵌套标题块。v0.1.9 进一步把 LuCI 顶部导航改成明确的“概览 / 时间规则”双 tab，去掉单独悬着的“时间规则”导航块。v0.1.10 收口移动端文案与视觉：顶部改为“儿童剩余”，家长模式摘要压缩，观察/家长状态提示改为轻量边框样式，减少深色主题中的高饱和色块。 v0.1.11 仅收口操作记录：奖励撤销日志记录具体分钟数，并兼容隐藏旧版本内部事件编号。2026-11-09 用户确认 v0.1.11 在 N1 完成日志、手机端界面与代理兼容检查的真机验收；同日第一轮正式锁定实测也通过：`TVG_GATE=DROP` 时电视实际断网，而手机、电脑保持正常联网。正式锁定测试结束后的安全收尾也已验证：恢复为 `enforce=0 / armed=0 / gate=allowed`，且 `tvguard-compat-check` 再次 `PASS`、`proxy_rules_unchanged=1`。v0.1.12 又完成了正式控制完整手动链路真机验证：`locked` 时 `TVG_GATE=DROP` 且电视断网，不关闭 enforce 直接切换 `parent` 后 gate 原位恢复为 `RETURN`、电视恢复联网；最终退出正式控制后兼容检查仍 `PASS`。儿童额度自动控制也已真机通过：额度耗尽自动 `DROP`，+15 分钟奖励立即恢复 `RETURN`，撤销奖励再次 `DROP`，家长模式可随时放行；最终兼容检查仍 `PASS`。TV Guard 自身 service reload 也已真机通过：daemon PID 不变，locked 时继续 `DROP`，parent 时继续 `RETURN`，最终兼容检查仍 `PASS`。全局 fw3/firewall reload 也已真机通过：fw3 清空并重建 raw 表后，TV Guard include 能按当前持久状态恢复目标电视 hook，locked 继续 `DROP`、parent 继续 `RETURN`，daemon PID 不变，最终兼容检查仍 `PASS`。N1 整机重启持久恢复也已真机通过：parent 模式跨重启恢复 `RETURN`，locked 模式跨重启恢复 `DROP`，已用额度保持不变，开机自启和代理兼容检查均正常。至此 v0.1.12 的**控制执行层**（模式、额度封禁、奖励恢复、reload/reboot、代理隔离）已完成真机闭环并作为稳定基线发布；但它仍按网络活动扣儿童时间，尚未完成最初要求的“系统首页/App 首页/明确暂停不计时”。v0.1.13 开始把经过保守验证的闲置识别正式接入儿童计时。实验性回程观测仍默认关闭。正式恢复链路复测时又暴露 N1 BusyBox `sleep` 不接受 `0.1` 的锁竞争兼容问题；v0.1.12 将锁等待改为整数秒重试并新增回归测试。默认 `enforce=0`、`allow_enforcement=0`、`observe_reply=0`。
 
 ## 已实现的基础能力
 
@@ -40,11 +41,11 @@
 
 ## 默认智能平衡策略：设计目标与现状
 
-**当前正式规则（v0.1.14-r4，Bridge 已并入主包）**：正常播放计时；明确识别为电视系统首页或视频 App 首页时不计时；只有 Fusion 输出当前确认态 `paused_confirmed_learned_context` 时暂停免计时；`paused_temporal_hold`、普通 pause hint、`stable_low/idle_overlap`、unknown/ambiguous、Agent 失联/过期均继续计时。网络真正静默仍沿用 `idle_silent` 免计时。家长模式不扣儿童额度。
+**当前正式规则（v0.1.14-r5，Bridge 已并入主包）**：正常播放计时；明确识别为电视系统首页或视频 App 首页时不计时；只有 Fusion 输出当前确认态 `paused_confirmed_learned_context` 时暂停免计时；`paused_temporal_hold`、普通 pause hint、`stable_low/idle_overlap`、unknown/ambiguous、Agent 失联/过期均继续计时。网络真正静默仍沿用 `idle_silent` 免计时。家长模式不扣儿童额度。
 
 **v0.1.12 稳定版现状**：控制执行层已真机闭环，但儿童计时仍主要依据网络活动，所以电视停留系统首页也可能持续消耗额度。这是已确认的功能缺口，不应把“断网控制稳定”误认为“智能计时完成”。
 
-**v0.1.14-r4 正式计时规则（继续沿用严格免计时门槛）：**
+**v0.1.14-r5 正式计时规则（继续沿用严格免计时门槛）：**
 - fresh Agent + Fusion 明确 `system_home` → `idle_verified/system_home`，不扣儿童时间；
 - fresh Agent + Fusion 明确 `app_home` → `idle_verified/app_home`，不扣儿童时间；
 - Fusion 当前明确 `paused_confirmed_learned_context` → `idle_verified/paused`，不扣儿童时间；
