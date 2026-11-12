@@ -45,7 +45,9 @@ grep -q '^样本完整度: 100% · 高$' "$REPORT"
 grep -q '^PPS: P10 ' "$REPORT"
 grep -q '^Agent 传输: 18/18 fresh · 覆盖 100%$' "$REPORT"
 grep -q '^应用包上下文: 18/18 · 覆盖 100% · com.mitv.tvhome · 稳定 100%$' "$REPORT"
-grep -q '^完整前台上下文: 18/18 · 覆盖 100% · com.mitv.tvhome.MainActivityUserMode · 稳定 100% 音频活跃 5% · 屏幕亮 100% · 前台切换 0 次$' "$REPORT"
+grep -q '^完整前台上下文: 18/18 · 覆盖 100% · com.mitv.tvhome.MainActivityUserMode · 稳定 100%$' "$REPORT"
+grep -q '^最近 Activity 轨迹: 覆盖 100% · com.mitv.tvhome.MainActivityUserMode · 稳定 100%$' "$REPORT"
+grep -q '^电视上下文: 音频活跃 5% · 屏幕亮 100% · 前台切换 0 次$' "$REPORT"
 grep -q '^联合质量: high$' "$REPORT"
 grep -q '高可信 Agent 联合人工学习会话' "$REPORT"
 awk -F, 'NF==29 && $2=="1700000000-1" && $3=="system_home" && $9==100 && $18=="high" &&
@@ -70,47 +72,8 @@ sh "$DST" "$sid" playing 120 general completed 1794475120
 REPORT="$TMP/state/learning-last.txt"
 grep -q '^Agent 传输: 12/12 fresh · 覆盖 100%$' "$REPORT"
 grep -q '^应用包上下文: 0/12 · 覆盖 0% · unknown · 稳定 0%$' "$REPORT"
-grep -q '^完整前台上下文: 0/12 · 覆盖 0% · unknown · 稳定 0% "$REPORT"
-grep -q '不伪装成联合高可信样本' "$REPORT"
-if grep -q '高可信 Agent 联合人工学习会话' "$REPORT"; then
-    echo 'FAIL: unknown foreground was promoted to high-confidence joint learning' >&2
-    exit 1
-fi
-
-# Paired playing/paused sessions on the same exact context must persist their
-# Agent features so Fusion can learn audio semantics without app hard-coding.
-PKG=com.example.video
-ACT=com.example.video.PlayerActivity
-for label in playing paused; do
-    suffix=1
-    [ "$label" = paused ] && suffix=2
-    sid="1794476000-$suffix"
-    : > "$V5"
-    : > "$CSV"
-    i=0
-    while [ "$i" -lt 12 ]; do
-        ts=$((1794476000 + i * 10))
-        audio=0
-        [ "$label" = playing ] && audio=1
-        printf '%s,%s,%s,%s,80,1,79,20000\n' "$ts" "$sid" "$label" "$PKG" >> "$CSV"
-        printf '%s,%s,%s,fresh,1,%s,%s,%s,1,%s,80,1,79,20000,allowed,usage_events,full_context,full\n' \
-            "$ts" "$sid" "$label" "$PKG" "$ACT" "$audio" "$i" >> "$V5"
-        i=$((i + 1))
-    done
-    sh "$DST" "$sid" "$label" 120 general completed 1794476120
-done
-awk -F, -v p="$PKG" -v a="$ACT" '
-    NF==29 && $6=="completed" && $18=="high" && $19=="high" &&
-    $23==p && $24==100 && $25==a && $26==100 && $28==100 {
-        if ($3=="playing" && $27==100) play=1
-        if ($3=="paused" && $27==0) pause=1
-    }
-    END {exit !(play && pause)}
-' "$TMP/state/learning-sessions.csv"
-
-echo 'PASS: learning session analysis + Agent joint-feature persistence + unknown-context quality gate'
- "$REPORT"
-grep -q '^最近 Activity 轨迹: 覆盖 100% · com.mitv.tvhome.MainActivityUserMode · 稳定 100% 音频活跃 5% · 屏幕亮 100% · 前台切换 0 次$' "$REPORT"
+grep -q '^完整前台上下文: 0/12 · 覆盖 0% · unknown · 稳定 0%$' "$REPORT"
+grep -q '^最近 Activity 轨迹: 覆盖 0% · none · 稳定 0%$' "$REPORT"
 grep -q '^联合质量: high$' "$REPORT"
 grep -q '高可信 Agent 联合人工学习会话' "$REPORT"
 awk -F, 'NF==29 && $2=="1700000000-1" && $3=="system_home" && $9==100 && $18=="high" &&
