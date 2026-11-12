@@ -140,3 +140,27 @@ App 首页   已识别
 2. 爱奇艺
 
 芒果 TV 作为已通过的 Type A 基准，不重复做无意义的长时间采集，除非后续代码改动需要回归。
+
+
+## Type D · 共享 Activity 的 generic nonplaying 画像
+
+腾讯极光真机已经证明一种比芒果更难但仍可安全处理的结构：
+
+- playing / paused / app_home 三态共享同一 exact package+Activity；
+- playing 时 audio_active=1；
+- paused 与 app_home 均为 audio_active=0；
+- 静音但继续播放时 audio_active 仍保持 1。
+
+对这种结构，运行时不应强迫计费层区分 paused 与 app_home，因为两者都属于“非播放、应免计时”集合。新的 generic nonplaying profile 只能在**同一 exact context** 下同时具备以下三类人工证据后成立：
+
+1. completed + high + joint-high playing 会话；
+2. completed + high + joint-high paused 会话；
+3. completed + high + joint-high app_home 会话；
+4. 三类 dominant package/Activity 完全一致，package/Activity 稳定度均 ≥75%，screen ratio ≥90%；
+5. playing 平均 audio-active ≥70%；
+6. paused 与 app_home 平均 audio-active 均 ≤30%；
+7. playing 相对 paused/app_home 的 audio 分离均至少 50 个百分点。
+
+满足后，exact context + audio=1 可直接确认 playing；exact context + audio=0 仍需至少 2 个 fresh report 才确认 generic nonplaying。generic nonplaying 可以获得 billing free，但展示层可以继续利用网络/时间画像尝试区分 paused 与 app_home；若无法可靠区分，宁可显示中性 nonplaying，也不能为了漂亮的标签牺牲计费安全。
+
+该机制不得覆盖现有 r7 Type-A learned-audio profile：如果 exact context 没有 app_home 冲突，继续沿用 playing/paused 成对画像；只有共享 exact context 的 app_home 高可信样本明确存在时，才允许切换到 Type-D generic nonplaying 画像。
