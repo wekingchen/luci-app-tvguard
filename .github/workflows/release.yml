@@ -126,10 +126,10 @@ jobs:
           test -s "$APK"
 
           cat > /tmp/release-notes.md <<'EOF'
-          TV Guard v0.1.14-r1：N1 Agent Bridge 已合并到 luci-app-tvguard 主包。
+          TV Guard v0.1.14-r2：N1 Agent Bridge 已合并到主包，并仅对严格确认的暂停状态免计时。
 
           本 Release 只发布两个安装文件：
-          - N1 路由器：luci-app-tvguard_0.1.14-1_all.ipk
+          - N1 路由器：luci-app-tvguard_0.1.14-2_all.ipk
           - 小米 Android 6 电视：tvguard-agent_0.2.8-release-signed.apk
 
           升级：只安装 N1 主包即可带上 CGI、Fusion、Home-only billing hint、
