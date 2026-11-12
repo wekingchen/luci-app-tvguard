@@ -105,6 +105,18 @@ with tempfile.TemporaryDirectory(prefix="tvguard-billing-hint-") as folder:
                pause_hint="none", pause_score=0) == (
         "charge", "paused")
 
+    # TVG2 diagnostics are accepted; incomplete context never grants free time.
+    latest.write_text(
+        "495|unknown|unknown|1|1|495000|25|allowed|none|no_foreground\n")
+    assert run(495, pps=180, adaptive_state="active",
+               adaptive_score=100, adaptive_reason="clear_current") == (
+        "charge", "playing")
+    latest.write_text(
+        "496|com.mitv.tvhome|unknown|0|1|496000|26|allowed|usage_stats|package_only\n")
+    assert run(496, pps=5, shadow="idle", adaptive_state="idle",
+               adaptive_score=95, adaptive_reason="stable_low") == (
+        "charge", "unknown")
+
     # A launcher report older than the 20-second billing freshness gate fails closed.
     put(30, 500, "com.mitv.tvhome", "com.mitv.tvhome.MainActivityUserMode", audio=0)
     assert run(521, pps=10) == ("charge", "unknown")

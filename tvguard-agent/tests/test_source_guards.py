@@ -64,7 +64,7 @@ assert "SharedPreferences.Editor" in service
 assert "editor.commit()" in service
 main_activity = (src / "java/com/tvguard/agent/MainActivity.java").read_text()
 editor = (src / "java/com/tvguard/agent/TvAddressEditor.java").read_text()
-assert "TVGuard 助手 · 0.2.8" in main_activity
+assert "TVGuard 助手 · 0.2.9" in main_activity
 gradle = (root / "app/build.gradle").read_text()
 assert "targetSdk 23" in gradle
 assert "disable 'ExpiredTargetSdkVersion'" in gradle
@@ -104,6 +104,10 @@ assert "startService(new Intent(this, MonitorService.class))" in recovery_job
 assert "192.168.101.99" in bridge_client
 assert "PAIR1" in bridge_client
 assert "TOKEN1|" in bridge_client
+protocol = (src / "java/com/tvguard/agent/BridgeProtocol.java").read_text()
+assert '"TVG2|"' in protocol
+assert "usageAccess" in protocol and "foregroundSource" in protocol
+assert "foregroundStatus" in protocol
 assert "TvAddressEditor.show" in main_activity
 assert "autoPair(MainActivity.this" in main_activity
 assert "EditText" not in main_activity

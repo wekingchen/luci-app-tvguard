@@ -18,7 +18,8 @@ with tempfile.TemporaryDirectory() as folder:
     target=d/'bridge'
     target.write_text(script)
     target.chmod(0o755)
-    base='TVG1|0123456789abcdef0123456789abcdef|1|com.gitvdemo.video|com.gala.video.app.player.PlayerActivity|1|1|1794319200000\n'
+    legacy='TVG1|0123456789abcdef0123456789abcdef|1|com.gitvdemo.video|com.gala.video.app.player.PlayerActivity|1|1|1794319200000\n'
+    base='TVG2|0123456789abcdef0123456789abcdef|2|com.gitvdemo.video|com.gala.video.app.player.PlayerActivity|1|1|1794319200000|allowed|usage_events|full_context\n'
     def send(body=base,remote='192.168.101.76',method='POST'):
         env={**os.environ,'REQUEST_METHOD':method,'REMOTE_ADDR':remote,
              'CONTENT_LENGTH':str(len(body))}
@@ -27,12 +28,17 @@ with tempfile.TemporaryDirectory() as folder:
         return p.stdout
     assert '200 OK' in send()
     assert (state/'latest').exists()
-    assert 'com.gitvdemo.video' in (state/'latest').read_text()
+    latest=(state/'latest').read_text()
+    assert 'com.gitvdemo.video' in latest
+    assert latest.rstrip().endswith('|allowed|usage_events|full_context')
+    assert '200 OK' in send(body=legacy)
+    assert (state/'latest').read_text().rstrip().endswith('|legacy|legacy|legacy')
     assert '403 Forbidden' in send(remote='192.168.101.75')
     assert '403 Forbidden' in send(body=base.replace('0123456789abcdef','0000000000000000'))
     assert '405 Method Not Allowed' in send(method='GET')
     assert '400 Bad Request' in send(body=base.replace('com.gitvdemo.video','bad;touch'))
     assert '400 Bad Request' in send(body=base.replace('|1|1|179431','|9|1|179431'))
+    assert '400 Bad Request' in send(body=base.replace('|allowed|usage_events|full_context','|allowed|bad-source!|full_context'))
     assert '400 Bad Request' in send(body='X'*513)
     assert len(list(state.glob('latest*')))==1
-print('bridge HTTP validation, authorization and RAM-only write PASS')
+print('bridge TVG1/TVG2 validation, diagnostics, authorization and RAM-only write PASS')

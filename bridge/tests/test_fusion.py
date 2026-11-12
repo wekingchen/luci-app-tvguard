@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Exercise v0.2.8 generic learned-context temporal fusion with real shell code."""
+"""Exercise v0.2.9 generic learned-context temporal fusion with real shell code."""
 import subprocess
 import tempfile
 from pathlib import Path
@@ -221,4 +221,37 @@ with tempfile.TemporaryDirectory(prefix="tvguard-fusion-") as folder:
     assert run(1, 790, pkg=APP_A, activity=PLAYER_A) == (
         "unknown", "agent_process_restart_context_reset", 0)
 
-print("v0.2.8 generic fusion: learned media context + universal hysteresis PASS")
+    # Incomplete foreground can improve only positive playback direction.
+    reset()
+    assert run(1, 900, pkg="unknown", activity="unknown", audio=1,
+               pps=180, shadow="unknown", adaptive_state="active",
+               adaptive_score=100, adaptive_reason="clear_current",
+               pause_hint="none", pause_score=0, active_floor=100) == (
+        "playing", "playing_network_audio_fallback", 0)
+    assert run(2, 910, pkg=APP_A, activity="unknown", audio=1,
+               pps=180, shadow="unknown", adaptive_state="active",
+               adaptive_score=100, adaptive_reason="clear_current",
+               pause_hint="none", pause_score=0, active_floor=100) == (
+        "playing", "playing_package_only_fallback", 0)
+    reset()
+    assert run(1, 920, pkg="com.mitv.tvhome", activity="unknown", audio=0,
+               pps=5, shadow="idle", adaptive_state="idle",
+               adaptive_score=95, adaptive_reason="stable_low",
+               pause_hint="high_ratio_pause", pause_score=95) == (
+        "unknown", "launcher_context_incomplete", 0)
+
+    # Package-only gaps preserve the last exact context but clear free latches.
+    reset()
+    run(10, 1000, pkg=APP_A, activity=PLAYER_A, audio=1,
+        pps=180, shadow="unknown", adaptive_state="active",
+        adaptive_score=100, adaptive_reason="clear_current",
+        pause_hint="none", pause_score=0, active_floor=100)
+    assert run(11, 1010, pkg=APP_A, activity="unknown", audio=0, pps=5,
+               shadow="idle", adaptive_state="idle", adaptive_score=95,
+               adaptive_reason="stable_low", pause_hint="high_ratio_pause",
+               pause_score=95, active_floor=100) == (
+        "unknown", "package_only_context_unresolved", 0)
+    saved=(d / "fusion.state").read_text().strip().split("|")
+    assert saved[9] == APP_A and saved[10] == PLAYER_A, saved
+
+print("v0.2.9 generic fusion: exact-context free states + safe incomplete-context playback fallback PASS")

@@ -25,15 +25,18 @@ public final class BridgeProtocolTest {
         assertFalse(BridgeProtocol.validKey("FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF"));
     }
     @Test public void protocolMatchesN1WireSchema() {
-        assertEquals("TVG1|" + KEY + "|5|com.gitvdemo.video|"
-                + "com.gala.video.app.player.PlayerActivity|1|1|123456789\n",
+        assertEquals("TVG2|" + KEY + "|5|com.gitvdemo.video|"
+                + "com.gala.video.app.player.PlayerActivity|1|1|123456789|"
+                + "allowed|usage_events|full_context\n",
                 BridgeProtocol.body(KEY,5,"com.gitvdemo.video",
-                        "com.gala.video.app.player.PlayerActivity",true,true,123456789L));
+                        "com.gala.video.app.player.PlayerActivity",true,true,123456789L,
+                        "allowed","usage_events","full_context"));
     }
     @Test public void maliciousCharactersAndLongNamesSanitized() {
         StringBuilder sb = new StringBuilder();
         for(int i=0;i<999;i++) sb.append('A');
-        String payload = BridgeProtocol.body(KEY,1,sb.toString(),sb.toString(),false,false,12);
+        String payload = BridgeProtocol.body(KEY,1,sb.toString(),sb.toString(),false,false,12,
+                "default","usage_stats","package_only");
         assertTrue(payload.length() < 440);
         assertEquals("abcd", BridgeProtocol.sanitize("ab;c|d", 128));
     }
