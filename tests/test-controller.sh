@@ -319,6 +319,7 @@ check 'assert s["server_epoch"] > 0'
 check 'assert s["agent_state"] == "fresh" and s["agent_package"] == "com.example.video", s'
 check 'assert s["agent_activity"] == "com.example.video.PlayerActivity" and s["agent_audio_active"] == 1 and s["agent_screen_on"] == 1, s'
 check 'assert s["agent_report_seq"] == 41 and 0 <= s["agent_age_seconds"] <= 20, s'
+check 'assert s["agent_activity_trail"] == "none", s'
 if sh "$CTL" calibrate paused tencent > "$TMP/out" 2>&1; then
     echo "FAIL: a new session replaced an active calibration" >&2
     exit 1
@@ -326,7 +327,7 @@ fi
 test -s "$TMP/state/calibration-v3.csv"
 grep -q ',playing,tencent,' "$TMP/state/calibration-v3.csv"
 test -s "$TMP/state/calibration-v5.csv"
-awk -F, 'NF!=18 {exit 1} $3=="playing" && $4=="fresh" && $6=="com.example.video" && $7=="com.example.video.PlayerActivity" && $8==1 && $9==1 && $10==41 && $15=="legacy" && $16=="legacy" && $17=="legacy" && $18=="full" {found=1} END {exit !found}' "$TMP/state/calibration-v5.csv"
+awk -F, 'NF!=19 {exit 1} $3=="playing" && $4=="fresh" && $6=="com.example.video" && $7=="com.example.video.PlayerActivity" && $8==1 && $9==1 && $10==41 && $15=="legacy" && $16=="legacy" && $17=="legacy" && $18=="full" && $19=="none" {found=1} END {exit !found}' "$TMP/state/calibration-v5.csv"
 sh "$CTL" calibration-v5 | grep -q ',playing,fresh,'
 # Reply observer is disabled here: never manufacture directional zeros.
 [ ! -e "$TMP/state/calibration-v4.csv" ]
