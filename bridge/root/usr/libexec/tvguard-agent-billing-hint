@@ -6,7 +6,8 @@
 #   free system_home  - only when generic fusion explicitly confirms TV launcher
 #   free app_home     - only when generic fusion explicitly confirms app-side non-playing UI
 #   free paused       - only for freshly confirmed learned-context pause
-#   charge <state>    - playing/unknown and any non-confirmed pause state
+#   free nonplaying   - only for a three-state shared-context learned profile
+#   charge <state>    - playing/unknown and any non-confirmed free-state candidate
 #
 # Missing/stale/invalid Agent context always fails closed to "charge unknown".
 set -eu
@@ -78,6 +79,16 @@ case "$1" in
         ;;
     app_home)
         echo "free app_home"
+        ;;
+    nonplaying)
+        case "$2" in
+            nonplaying_confirmed_learned_audio_context)
+                echo "free nonplaying"
+                ;;
+            *)
+                echo "charge nonplaying"
+                ;;
+        esac
         ;;
     paused)
         # Billing authority is narrower than the displayed Fusion state.
