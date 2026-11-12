@@ -66,7 +66,7 @@ with tempfile.TemporaryDirectory(prefix="tvguard-install-test-") as directory:
         p = subprocess.run(["/bin/dash", str(installer)], env=env,
                            text=True, capture_output=True, timeout=15)
         assert p.returncode == 0, (p.stdout, p.stderr)
-        assert "home-only billing hint available" in p.stdout
+        assert "learned player Activity is protected" in p.stdout
 
     # 0.2.0 failed install could create a newline-only key.
     key.write_text("\n")
