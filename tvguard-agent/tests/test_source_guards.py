@@ -33,6 +33,10 @@ assert "isVideoPackage" not in history
 assert "startForeground(" not in service
 assert "stopForeground(" not in service
 assert "static boolean isRunning()" in service
+gradle = (root / "app/build.gradle").read_text()
+assert "versionCode 12" in gradle
+assert "versionName '0.2.9'" in gradle
+
 main_activity = (src / "java/com/tvguard/agent/MainActivity.java").read_text()
 assert "不维护视频 App 白名单" in main_activity
 assert "isVideoPackage" not in main_activity
