@@ -27,11 +27,14 @@ jobs:
             *) echo "invalid RELEASE_VERSION: $VERSION" >&2; exit 1 ;;
           esac
           BUILD_VERSION="$(sed -n 's/^VERSION="${1:-\([^"]*\)}"/\1/p' scripts/build-ipk.sh)"
+          BUILD_RELEASE="$(sed -n 's/^RELEASE="${2:-\([^"]*\)}"/\1/p' scripts/build-ipk.sh)"
           [ "$VERSION" = "$BUILD_VERSION" ] || {
             echo "RELEASE_VERSION=$VERSION does not match build default=$BUILD_VERSION" >&2
             exit 1
           }
+          case "$BUILD_RELEASE" in ''|*[!0-9]*) echo "invalid build release: $BUILD_RELEASE" >&2; exit 1 ;; esac
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "package_release=$BUILD_RELEASE" >> "$GITHUB_OUTPUT"
           echo "tag=v$VERSION" >> "$GITHUB_OUTPUT"
 
       - name: Build and validate release IPK
@@ -39,8 +42,9 @@ jobs:
         run: |
           set -euo pipefail
           VERSION="${{ steps.version.outputs.version }}"
-          sh scripts/build-ipk.sh "$VERSION"
-          PKG="dist/luci-app-tvguard_${VERSION}-1_all.ipk"
+          RELEASE="${{ steps.version.outputs.package_release }}"
+          sh scripts/build-ipk.sh "$VERSION" "$RELEASE"
+          PKG="dist/luci-app-tvguard_${VERSION}-${RELEASE}_all.ipk"
           test -f "$PKG"
           test "$(od -An -tx1 -N2 "$PKG" | tr -d ' \n')" = 1f8b
           tar -tzf "$PKG" | grep -q './control.tar.gz'
@@ -53,8 +57,9 @@ jobs:
         run: |
           set -euo pipefail
           VERSION="${{ steps.version.outputs.version }}"
+          RELEASE="${{ steps.version.outputs.package_release }}"
           TAG="${{ steps.version.outputs.tag }}"
-          PKG="dist/luci-app-tvguard_${VERSION}-1_all.ipk"
+          PKG="dist/luci-app-tvguard_${VERSION}-${RELEASE}_all.ipk"
 
           if gh release view "$TAG" >/dev/null 2>&1; then
             echo "Release $TAG already exists; leaving it unchanged."
@@ -62,24 +67,29 @@ jobs:
           fi
 
           cat > /tmp/release-notes.md <<'EOF'
-          首个稳定候选版本，已在 Phicomm N1 / LEDE R26.11.3 / fw3 / iptables-legacy 环境完成真机核心闭环验证。
+          v0.1.13-r21 在 v0.1.12 已验证控制层上，加入 Home-only 计时、儿童观看统计和 Bark 日报。
 
-          已验证：
-          - 儿童/家长/手动锁定模式；
-          - 工作日/周末额度与允许时段；
-          - +15/+30/+60 分钟奖励与撤销；
-          - 儿童额度耗尽自动阻断、奖励恢复、撤销后重新阻断；
-          - 正式控制下 locked → DROP、parent → RETURN；
-          - TV Guard service reload 策略保持；
-          - 全局 fw3/firewall reload 后 TVG hook 与 gate 自动重建；
-          - N1 整机重启后模式、已用额度和 DROP/RETURN gate 持久恢复；
-          - 代理隔离检查 PASS，非 TVG 规则保持不变。
+          本版真机已验证：
+          - 儿童/家长/手动锁定、额度、奖励、DROP/RETURN、reload/reboot 与代理隔离继续正常；
+          - 系统首页明确识别后不累计儿童观看时间；
+          - 视频 App 首页明确识别后不累计儿童观看时间；
+          - 正常播放继续计时；
+          - 暂停、unknown、ambiguous、Agent 失联均保守继续计时；
+          - 今日儿童模式累计观看与上一完整自然日统计；
+          - 00:05 Bark 前一日观看日报与手动测试；
+          - 最多两个 Bark 推送 ID，单设备失败只补发失败设备；
+          - LuCI 顶部收敛为“概览 / 设置”。
+
+          Home-only 说明：
+          - 主 IPK 可独立提供控制、统计与 Bark；
+          - 高可信 system_home/app_home 免计时需要电视 Agent 0.2.8 + N1 bridge 0.2.8-r4；
+          - 正式原则为 Home-only free / uncertain charge，暂停免计时不属于本版承诺。
 
           安全边界：
           - 默认 enforce=0、allow_enforcement=0、observe_reply=0；
-          - 正式控制仍需要双开关及运行时 isolation audit=ok；
-          - 实验性回程观测保持默认关闭，不属于稳定核心功能；
-          - 当前网络控制仅覆盖实际经过 N1 的目标电视 IPv4 流量。
+          - 正式控制仍要求双开关及 isolation audit=ok；
+          - 不修改 SSR 的 nat/mangle、策略路由或网络 sysctl；
+          - Agent 默认无持久运行日志、SQLite 或离线队列。
           EOF
 
           gh release create "$TAG" "$PKG" \
@@ -87,13 +97,19 @@ jobs:
             --title "TV Guard v$VERSION" \
             --notes-file /tmp/release-notes.md
 
-      - name: Remove merged development branch
+      - name: Remove merged development branches
         if: success()
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
           set -euo pipefail
-          gh api -X DELETE \
-            "repos/${GITHUB_REPOSITORY}/git/refs/heads/feat/initial-shadow-mvp" \
-            >/dev/null 2>&1 || true
+          for branch in \
+            feat/initial-shadow-mvp \
+            feat/v0.1.13-agent-integration \
+            feat/v0.1.13-smart-billing; do
+            encoded="${branch//\//%2F}"
+            gh api -X DELETE \
+              "repos/${GITHUB_REPOSITORY}/git/refs/heads/${encoded}" \
+              >/dev/null 2>&1 || true
+          done
