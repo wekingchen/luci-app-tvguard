@@ -135,14 +135,19 @@ case "$activity" in ''|unknown) activity_known=0 ;; esac
 full_context=0
 if [ "$pkg_known" -eq 1 ] && [ "$activity_known" -eq 1 ]; then full_context=1; fi
 
-# Manual-learning profile: only an exact package+Activity pair with completed,
-# high-quality network AND Agent joint sessions may teach audio semantics.
-# Require at least one trusted playing and paused session whose audio ratios are
-# strongly separated. Any trusted app_home sample in the same exact context
-# disables the profile. Older 18-column session rows are deliberately ignored.
+# Manual-learning profiles are keyed by exact package+Activity and only use
+# completed high-quality network + Agent joint sessions. Older 18-column rows
+# are ignored because they cannot prove full-context stability.
+#
+# Type A: playing + paused share one exact context, with no app_home conflict.
+# Type D: playing + paused + app_home ALL share one exact context. In that case
+# audio may teach only playing vs generic nonplaying; billing must not pretend
+# that audio=0 distinguishes paused from app_home.
 learned_audio_profile=0
+learned_nonplaying_profile=0
 learned_play_audio=0
 learned_pause_audio=0
+learned_home_audio=0
 if [ "$full_context" -eq 1 ] && [ -x "$DATA" ]; then
     data_root="$("$DATA" root 2>/dev/null || :)"
     model="$data_root/learning-sessions.csv"
@@ -157,30 +162,38 @@ if [ "$full_context" -eq 1 ] && [ -x "$DATA" ]; then
                 qn++
                 qa += $27+0
             } else if ($3=="app_home") {
-                conflict++
+                hn++
+                ha += $27+0
             }
         }
         END {
             p=(pn>0 ? int(pa/pn) : 0)
             q=(qn>0 ? int(qa/qn) : 0)
-            ok=(pn>=1 && qn>=1 && conflict==0 &&
-                p>=70 && q<=30 && p-q>=50)
-            printf "%d %d %d\n", ok,p,q
-        }' "$model" 2>/dev/null || echo '0 0 0')"
+            h=(hn>0 ? int(ha/hn) : 0)
+            typea=(pn>=1 && qn>=1 && hn==0 &&
+                   p>=70 && q<=30 && p-q>=50)
+            typed=(pn>=1 && qn>=1 && hn>=1 &&
+                   p>=70 && q<=30 && h<=30 &&
+                   p-q>=50 && p-h>=50)
+            printf "%d %d %d %d %d\n", typea,typed,p,q,h
+        }' "$model" 2>/dev/null || echo '0 0 0 0 0')"
         set -- $profile
-        if [ "$#" -eq 3 ]; then
-            case "$1:$2:$3" in
+        if [ "$#" -eq 5 ]; then
+            case "$1:$2:$3:$4:$5" in
                 *[!0-9:]*|'') : ;;
                 *)
                     learned_audio_profile="$1"
-                    learned_play_audio="$2"
-                    learned_pause_audio="$3"
+                    learned_nonplaying_profile="$2"
+                    learned_play_audio="$3"
+                    learned_pause_audio="$4"
+                    learned_home_audio="$5"
                     ;;
             esac
         fi
     fi
 fi
 case "$learned_audio_profile" in 0|1) : ;; *) learned_audio_profile=0 ;; esac
+case "$learned_nonplaying_profile" in 0|1) : ;; *) learned_nonplaying_profile=0 ;; esac
 
 context_changed=0
 if [ "$full_context" -eq 1 ] &&
@@ -293,6 +306,46 @@ elif [ "$is_launcher" -eq 1 ] && [ "$full_context" -eq 1 ]; then
     pause_miss=0
     home_streak=0
     latched=none
+
+elif [ "$learned_nonplaying_profile" -eq 1 ]; then
+    # Type-D shared-context profile: human-labelled playing, paused and app_home
+    # sessions all use this exact package+Activity. Audio may therefore prove
+    # playing vs generic nonplaying, but it must NOT pretend to distinguish
+    # paused from app_home. Network state is deliberately not allowed to veto
+    # the learned nonplaying decision because paused may still download heavily.
+    media_pkg="$pkg"
+    media_activity="$activity"
+    known_media_package=1
+    known_media_context=1
+    home_streak=0
+    switch_activity=''
+    switch_strong_hits=0
+    switch_last_strong_seen=0
+
+    if [ "$audio" -eq 1 ]; then
+        combined=playing
+        candidate=playing_confirmed_learned_nonplaying_profile
+        pause_streak=0
+        pause_miss=0
+        latched=none
+        last_strong_seen="$now"
+    else
+        if [ "$fresh" -eq 1 ]; then
+            pause_streak=$((pause_streak + 1))
+            pause_miss=0
+        fi
+        if [ "$latched" = paused ] || [ "$pause_streak" -ge 2 ]; then
+            # Reuse the existing latch storage but expose an honest public
+            # state: we know the exact context is non-playing, not whether the
+            # user is paused or browsing the app home page.
+            latched=paused
+            combined=nonplaying
+            candidate=nonplaying_confirmed_learned_audio_context
+        else
+            combined=unknown
+            candidate=nonplaying_audio_profile_warming
+        fi
+    fi
 
 elif [ "$learned_audio_profile" -eq 1 ]; then
     # Human-labelled paired playing/paused sessions have taught this exact
