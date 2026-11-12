@@ -144,6 +144,56 @@ with tempfile.TemporaryDirectory(prefix="tvguard-fusion-") as folder:
                pause_score=60, active_floor=100) == (
         "app_home", "app_nonplaying_confirmed", 0)
 
+    # Regression: a loading burst in another Activity of an already learned
+    # media package must NOT overwrite the learned player Activity. This is the
+    # real failure mode that made an app home page impossible to recognize.
+    reset()
+    run(1, 600, pkg=APP_A, activity=PLAYER_A,
+        pps=180, shadow="unknown", adaptive_state="active",
+        adaptive_score=100, adaptive_reason="clear_current",
+        pause_hint="none", pause_score=0, active_floor=100)
+    assert run(2, 610, pkg=APP_A, activity=BROWSE_A, audio=0,
+               pps=180, shadow="unknown", adaptive_state="active",
+               adaptive_score=100, adaptive_reason="clear_current",
+               pause_hint="none", pause_score=0, active_floor=100) == (
+        "unknown", "media_context_switch_play_warming", 0)
+    state_fields = (d / "fusion.state").read_text().strip().split("|")
+    assert state_fields[0] == "4", state_fields
+    assert state_fields[6] == APP_A, state_fields
+    assert state_fields[7] == PLAYER_A, state_fields
+    for seq, seen, pps in ((3, 620, 11), (4, 630, 9)):
+        assert run(seq, seen, pkg=APP_A, activity=BROWSE_A, audio=0,
+                   pps=pps, shadow="idle", adaptive_state="idle",
+                   adaptive_score=95, adaptive_reason="stable_low",
+                   pause_hint="idle_overlap", pause_score=60,
+                   active_floor=100) == (
+            "unknown", "app_nonplaying_warming", 0)
+    assert run(5, 640, pkg=APP_A, activity=BROWSE_A, audio=0,
+               pps=8, shadow="idle", adaptive_state="idle",
+               adaptive_score=95, adaptive_reason="stable_low",
+               pause_hint="idle_overlap", pause_score=60,
+               active_floor=100) == (
+        "app_home", "app_nonplaying_confirmed", 0)
+
+    # A genuinely new playback Activity can still replace the old one, but only
+    # after three fresh strong-play confirmations in the same context.
+    reset()
+    run(1, 700, pkg=APP_A, activity=PLAYER_A,
+        pps=180, shadow="unknown", adaptive_state="active",
+        adaptive_score=100, adaptive_reason="clear_current",
+        pause_hint="none", pause_score=0, active_floor=100)
+    for seq, seen in ((2, 710), (3, 720)):
+        assert run(seq, seen, pkg=APP_A, activity=BROWSE_A, audio=1,
+                   pps=180, shadow="unknown", adaptive_state="active",
+                   adaptive_score=100, adaptive_reason="clear_current",
+                   pause_hint="none", pause_score=0, active_floor=100) == (
+            "unknown", "media_context_switch_play_warming", 0)
+    assert run(4, 730, pkg=APP_A, activity=BROWSE_A, audio=1,
+               pps=180, shadow="unknown", adaptive_state="active",
+               adaptive_score=100, adaptive_reason="clear_current",
+               pause_hint="none", pause_score=0, active_floor=100) == (
+        "playing", "playing_confirmed_context_switched", 0)
+
     # A never-learned package cannot claim app_home or pause from network hints.
     reset()
     for i in range(1, 5):
