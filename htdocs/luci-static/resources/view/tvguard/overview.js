@@ -1014,7 +1014,7 @@ return view.extend({
                 E('div', { 'style': 'margin-bottom:6px' }, watchTodayNode),
                 E('div', { 'class': 'description' }, ['上一完整自然日：', watchYesterdayNode]),
                 E('div', { 'class': 'description', 'style': 'margin-top:8px' },
-                    '每天定时发送上一完整自然日的 Bark 日报，设置入口在“时间规则”。')
+                    '每天定时发送上一完整自然日的 Bark 日报，可在“设置 → 每日观看日报 · Bark”中配置。')
             ], 'margin-top:16px'),
 
             panel('今日儿童额度', '这里显示的是根据经过 N1 的联网活动估算的使用时长，不等同于真实亮屏或观看时间。', [
