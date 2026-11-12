@@ -894,11 +894,17 @@ tick() {
             # grant "verified idle" exemptions or change today's quota.
             #
             # v3 remains the backward-compatible network dataset consumed by the
-            # existing Adaptive/Shadow engines. v5 adds synchronized TV-Agent
-            # context without making package/activity itself a billing signal.
-            printf '%s,%s,%s,%s,%s,%s,%s,%s\n' "$NOW" "$CAL_SESSION" "$CAL_LABEL" "$CAL_APP" \
-                "$PPS" "$TCP_PPS" "$UDP_PPS" "$BYTES_PER_S" >> "$DIR/calibration-v3.csv"
+            # existing Adaptive/Shadow engines. With a fresh Agent report, new
+            # UI-created video sessions automatically use the real package as
+            # their cross-App identity instead of the old generic label.
             read_agent_context
+            sample_app="$CAL_APP"
+            if [ "$AGENT_SAMPLE_STATE" = fresh ] && [ "$CAL_APP" = general ] &&
+               [ "$CAL_LABEL" != system_home ]; then
+                sample_app="$AGENT_SAMPLE_PKG"
+            fi
+            printf '%s,%s,%s,%s,%s,%s,%s,%s\n' "$NOW" "$CAL_SESSION" "$CAL_LABEL" "$sample_app" \
+                "$PPS" "$TCP_PPS" "$UDP_PPS" "$BYTES_PER_S" >> "$DIR/calibration-v3.csv"
             printf '%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s\n' \
                 "$NOW" "$CAL_SESSION" "$CAL_LABEL" "$AGENT_SAMPLE_STATE" "$AGENT_SAMPLE_AGE" \
                 "$AGENT_SAMPLE_PKG" "$AGENT_SAMPLE_ACTIVITY" "$AGENT_SAMPLE_AUDIO" \
