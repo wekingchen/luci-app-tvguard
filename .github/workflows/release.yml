@@ -34,8 +34,14 @@ jobs:
             exit 1
           }
           case "$BUILD_RELEASE" in ''|*[!0-9]*) echo "invalid build release: $BUILD_RELEASE" >&2; exit 1 ;; esac
+          AGENT_VERSION="$(sed -n "s/^[[:space:]]*versionName '\([^']*\)'.*/\1/p" tvguard-agent/app/build.gradle | head -n1)"
+          AGENT_CODE="$(sed -n 's/^[[:space:]]*versionCode \([0-9][0-9]*\).*/\1/p' tvguard-agent/app/build.gradle | head -n1)"
+          test -n "$AGENT_VERSION"
+          case "$AGENT_CODE" in ''|*[!0-9]*) echo "invalid Agent versionCode: $AGENT_CODE" >&2; exit 1 ;; esac
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "package_release=$BUILD_RELEASE" >> "$GITHUB_OUTPUT"
+          echo "agent_version=$AGENT_VERSION" >> "$GITHUB_OUTPUT"
+          echo "agent_code=$AGENT_CODE" >> "$GITHUB_OUTPUT"
           echo "tag=v$VERSION" >> "$GITHUB_OUTPUT"
 
       - name: Build and validate main IPK
@@ -97,7 +103,8 @@ jobs:
         run: |
           set -euo pipefail
           SRC="tvguard-agent/app/build/outputs/apk/release/app-release.apk"
-          APK="dist/tvguard-agent_0.2.8-release-signed.apk"
+          AGENT_VERSION="${{ steps.version.outputs.agent_version }}"
+          APK="dist/tvguard-agent_${AGENT_VERSION}-release-signed.apk"
           test -s "$SRC"
           test "$(stat -c%s "$SRC")" -lt 1048576
           unzip -l "$SRC" | grep -q classes.dex
@@ -121,39 +128,50 @@ jobs:
           RELEASE="${{ steps.version.outputs.package_release }}"
           TAG="${{ steps.version.outputs.tag }}"
           PKG="dist/luci-app-tvguard_${VERSION}-${RELEASE}_all.ipk"
-          APK="dist/tvguard-agent_0.2.8-release-signed.apk"
+          AGENT_VERSION="${{ steps.version.outputs.agent_version }}"
+          AGENT_CODE="${{ steps.version.outputs.agent_code }}"
+          APK="dist/tvguard-agent_${AGENT_VERSION}-release-signed.apk"
           test -s "$PKG"
           test -s "$APK"
 
-          cat > /tmp/release-notes.md <<'EOF'
-          TV Guard v0.1.14-r3：N1 Agent Bridge 已合并到主包；严格确认暂停可免计时，学习中心新增 Agent 联合采样。
+          cat > /tmp/release-notes.md <<EOF
+          TV Guard v${VERSION}-r${RELEASE}：Agent Bridge 已整合进 N1 主包，电视 Agent 为 ${AGENT_VERSION}（versionCode ${AGENT_CODE}）。
 
-          本 Release 只发布两个安装文件：
-          - N1 路由器：luci-app-tvguard_0.1.14-3_all.ipk
-          - 小米 Android 6 电视：tvguard-agent_0.2.8-release-signed.apk
+          本 Release 只需要两个安装文件：
+          - N1 路由器：luci-app-tvguard_${VERSION}-${RELEASE}_all.ipk
+          - 小米 Android 6 电视：tvguard-agent_${AGENT_VERSION}-release-signed.apk
 
-          升级：只安装 N1 主包即可带上 CGI、Fusion、Home-only billing hint、
-          配对、bridge 服务和观察报告。旧 tvguard-agent-bridge 独立 IPK
-          由 opkg Conflicts/Replaces 迁移移除；原配对密钥 /etc/tvguard/agent-bridge.key、
-          UCI 及持久观看数据保留。旧 Bridge 卸载时会重置 RAM 临时学习状态，
-          电视重新上报即可继续。
+          v0.1.14-r7 已完成小米电视真机验收：UsageEvents/full-context、系统首页与 App 首页免计时、
+          人工 playing/paused 联合学习、低码率播放继续计时、暂停两次 fresh Agent 心跳后免计时、
+          静音播放不误判暂停、play → pause → play 儿童模式计时闭环，以及 Agent 进程被 kill 后自动恢复。
 
-          正式计时规则：明确 system_home/app_home 免计时；只有当前严格
-          paused_confirmed_learned_context 也可免计时；普通 pause hint、
-          stable_low/idle_overlap、unknown/ambiguous 与 Agent 失联继续计时。
-          学习中心会在人工四状态标注期间同步保存 fresh Agent 的 package、
-          Activity、audio、screen 与序号，Agent 不可用时自动降级为网络-only。
-          每日 Bark 儿童观看报告和双推送 ID 保留；正式断网默认不启用。
+          N1 只需安装主 IPK；CGI、Fusion、billing hint、配对与 Bridge 服务均已包含。
+          旧独立 tvguard-agent-bridge 会由 opkg Conflicts/Replaces 正规迁移，配对密钥、UCI 和持久观看数据保留。
 
-          电视 APK 保持固定签名证书，允许覆盖升级而不清除原有应用数据。
-          回退至 v0.1.13 时，旧主包须与旧独立 Bridge IPK 一起安装。
+          正式计时仍保持 fail-closed：Agent stale/package-only/unknown Activity、普通网络 pause hint、
+          unknown/ambiguous 均不会获得暂停免计时权限。learned-audio 暂停只对同一 exact package+Activity
+          的成对高可信 playing/paused 人工画像生效。
+
+          电视 APK 使用固定签名证书，可覆盖升级而不清除应用数据。
+          腾讯、爱奇艺等其它视频 App 的逐 App 画像与跨 App 泛化验证属于后续阶段，不影响本次 r7 已验收能力。
           EOF
 
           if gh release view "$TAG" >/dev/null 2>&1; then
-            gh release edit "$TAG"               --title "TV Guard v$VERSION"               --notes-file /tmp/release-notes.md
+            # Remove stale Agent assets left by older hard-coded filenames so
+            # each stable release exposes exactly one current signed APK.
+            gh release view "$TAG" --json assets --jq '.assets[].name' |
+              while IFS= read -r asset; do
+                case "$asset" in
+                  tvguard-agent_*-release-signed.apk)
+                    [ "$asset" = "$(basename "$APK")" ] ||
+                      gh release delete-asset "$TAG" "$asset" --yes
+                    ;;
+                esac
+              done
+            gh release edit "$TAG" --title "TV Guard v$VERSION" --notes-file /tmp/release-notes.md
             gh release upload "$TAG" "$PKG" "$APK" --clobber
           else
-            gh release create "$TAG" "$PKG" "$APK"               --target "$GITHUB_SHA"               --title "TV Guard v$VERSION"               --notes-file /tmp/release-notes.md
+            gh release create "$TAG" "$PKG" "$APK" --target "$GITHUB_SHA" --title "TV Guard v$VERSION" --notes-file /tmp/release-notes.md
           fi
 
       - name: Remove temporary release keystore
@@ -168,7 +186,11 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          for branch in             feat/initial-shadow-mvp             feat/v0.1.13-agent-integration             feat/v0.1.13-smart-billing; do
+          for branch in \
+            feat/initial-shadow-mvp \
+            feat/v0.1.13-agent-integration \
+            feat/v0.1.13-smart-billing \
+            feat/v0.1.14-integrated-agent-bridge; do
             encoded="${branch//\//%2F}"
             gh api -X DELETE               "repos/${GITHUB_REPOSITORY}/git/refs/heads/${encoded}"               >/dev/null 2>&1 || true
           done
