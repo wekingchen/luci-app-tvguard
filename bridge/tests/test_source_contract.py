@@ -7,6 +7,7 @@ fusion = (p / 'root/usr/libexec/tvguard-agent-fusion').read_text()
 soak = (p / 'root/usr/libexec/tvguard-agent-bridge-soak').read_text()
 ipk = (p / '../scripts/build-ipk.sh').resolve().read_text()
 postinst = (p / 'ipkg/postinst').read_text()
+prerm = (p / 'ipkg/prerm').read_text()
 pair = (p / 'root/usr/libexec/tvguard-agent-bridge-pair').read_text()
 billing = (p / 'root/usr/libexec/tvguard-agent-billing-hint').read_text()
 
@@ -35,9 +36,11 @@ assert 'is_new_report' in report
 assert 'cp -R "$ROOT/bridge/root/." "$WORK/data/"' in ipk
 assert 'Conflicts: tvguard-agent-bridge' in ipk
 assert 'Replaces: tvguard-agent-bridge' in ipk
+assert 'Provides: tvguard-agent-bridge' in ipk
 assert 'od -An' not in postinst
 assert 'sha256sum' in postinst
 assert 'bs=32 count=1' in postinst
+assert 'agent-bridge.key' not in prerm
 assert 'cp "$ROOT/ipkg/preinst"' in ipk
 assert "printf '/etc/tvguard/agent-bridge.key" not in ipk
 assert 'pair-window' in pair and 'now + 120' in pair
