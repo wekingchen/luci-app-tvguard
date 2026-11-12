@@ -65,6 +65,9 @@ assert 'paused_confirmed_learned_context' in fusion
 assert 'learned_media_idle_overlap_unresolved' in fusion
 assert 'recent_play_burst_guard' in fusion
 assert 'burst_gap_max' in fusion and 'burst_hits' in fusion
+assert 'media_context_switch_play_warming' in fusion
+assert 'playing_confirmed_context_switched' in fusion
+assert 'switch_strong_hits' in fusion and 'switch_activity' in fusion
 assert 'app_nonplaying_confirmed' in fusion
 assert 'unlearned_package_pause_hint_ignored' in fusion
 assert 'media_pkg' in fusion and 'media_activity' in fusion
