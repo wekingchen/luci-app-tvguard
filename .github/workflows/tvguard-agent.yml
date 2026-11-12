@@ -55,8 +55,8 @@ jobs:
           unzip -l "$APK" | grep -q classes.dex
           APKANALYZER="$(find "$ANDROID_HOME" -type f -name apkanalyzer 2>/dev/null | head -n 1)"
           test -x "$APKANALYZER"
-          test "$("$APKANALYZER" manifest version-code "$APK")" = "12"
-          test "$("$APKANALYZER" manifest version-name "$APK")" = "0.2.9"
+          test "$("$APKANALYZER" manifest version-code "$APK")" = "13"
+          test "$("$APKANALYZER" manifest version-name "$APK")" = "0.3.0"
           echo "Debug APK bytes: $(stat -c%s "$APK")"
       - name: Enable KVM on hosted runner
         run: |
@@ -121,7 +121,7 @@ jobs:
         if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
         uses: actions/upload-artifact@v4
         with:
-          name: tvguard-agent-0.2.9-release-signed-apk
+          name: tvguard-agent-0.3.0-release-signed-apk
           path: tvguard-agent/app/build/outputs/apk/release/app-release.apk
           if-no-files-found: error
           retention-days: 30
