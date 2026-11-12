@@ -4,7 +4,7 @@
 
 ## 当前部署方式（v0.1.14 起）
 
-当前 N1 开发候选为 `luci-app-tvguard 0.1.14-2`，Bridge 0.2.8-r4 的 CGI、Fusion、观察脚本、Home-only billing hint、配对和服务已经并入主 IPK。**正常安装/升级只安装主包，不再单独安装 `tvguard-agent-bridge` IPK。**
+当前 N1 开发候选为 `luci-app-tvguard 0.1.14-3`，Bridge 0.2.8-r4 的 CGI、Fusion、观察脚本、Home-only billing hint、配对和服务已经并入主 IPK。**正常安装/升级只安装主包，不再单独安装 `tvguard-agent-bridge` IPK。**
 
 主包通过 `Conflicts / Replaces / Provides: tvguard-agent-bridge` 正规接管旧独立包。首次从 v0.1.13-r21 + `tvguard-agent-bridge 0.2.8-4` 真机升级已验证：旧包自动退出已安装列表，观看累计不回退，配对密钥保持一致，Bridge 服务继续由主包提供。旧独立 Bridge IPK 仅用于回退到 v0.1.13。
 
@@ -15,13 +15,13 @@ Agent → N1 的 OpenWrt uhttpd `/cgi-bin/tvguard-agent`（POST，固定最小�
 - 只保存最新一份包名、Activity、Android 音频活动提示、亮屏提示及服务器接收时间到 `/var/run/tvguard-agent-bridge/latest`（RAM），**无历史日志、无闪存持续写入**。
 - 单次 HTTP 200 OK 为收到；3xx/4xx/5xx 不计成功。旧数据超过 35 秒直接作为失效。
 - 配对码在 `/etc/tvguard/agent-bridge.key` 中生成一次，600 权限。电视首次配置服务器 URL 与配对码需要在私有首选项落盘一次；不会保存流量历史。
-- **明文 LAN HTTP 的 token 不抵抗主动局域网攻击。** r17 仅在“家庭 LAN 可信”的当前威胁模型下，让它承担 `system_home/app_home` 两种窄免计提示；它不获得封禁、防火墙或奖励权限。若需要抵抗 LAN 内主动攻击，后续应增加消息认证与重放保护。
+- **明文 LAN HTTP 的 token 不抵抗主动局域网攻击。** 当前仍只在“家庭 LAN 可信”的威胁模型下使用 Agent：`system_home/app_home` 与严格 `paused_confirmed_learned_context` 可形成窄免计提示；普通 Agent 字段本身不获得封禁、防火墙或奖励权限。若需要抵抗 LAN 内主动攻击，后续应增加消息认证与重放保护。
 - v0.2.7 新增 `combined_state=playing|paused|app_home|system_home|unknown` 与详细 `combined_candidate`。其中只有已在真机验证 Activity 语义的场景才允许进入四状态；`PlayerActivity`、`AudioManager.isMusicActive()` 或单个 PPS 窗口单独都**不能证明视频真的播放或暂停**；不修改使用额度。
 - 如果电视后台被清理、断网、失权限，发送停止，N1 35 秒后自动标记 stale。
 
 ## N1 操作（v0.1.14 当前方式）
 
-1. 安装或升级主包：`opkg install /tmp/luci-app-tvguard_0.1.14-2_all.ipk`；**不要预先卸载旧 Bridge，也不要再单独安装 companion IPK**。
+1. 安装或升级主包：`opkg install /tmp/luci-app-tvguard_0.1.14-3_all.ipk`；**不要预先卸载旧 Bridge，也不要再单独安装 companion IPK**。
 2. 确保 N1 当前 uhttpd 在 LAN 监听，且已启用 CGI prefix `/cgi-bin`。
 3. 已配对电视无需重新配对；需要查看配对状态时使用 `/usr/libexec/tvguard-agent-bridge-report pairing`。
 4. 电视 Agent 继续使用现有 N1 地址与配对信息；N1 主包升级不要求同步升级 APK。
@@ -293,3 +293,14 @@ r2 不放宽任何 TX-only 闲置规则，也不把普通 pause hint 当成暂�
 - Agent stale/missing/invalid 仍 fail-closed 继续计时。
 
 因此“明确暂停免计时”和“其他状态继续学习”被严格拆开，576p/720p 的低码率播放保护门禁保持不变。
+
+## v0.1.14-r3 · Agent 联合学习采样
+
+N1 的人工四状态学习现在直接复用 Bridge 已经收到的 latest-only Agent 上报，不要求电视 APK 增加日志或历史数据库。
+
+- 人工标签仍只有 `system_home / app_home / playing / paused`，它们是 ground truth；
+- 每个有效 10 秒网络窗口继续写兼容 `calibration-v3.csv`，同时写 `calibration-v5.csv`；
+- v5 同步保存 Agent freshness、package、Activity、audio、screen、report seq 与网络 PPS/TCP/UDP/BPS；
+- Agent 超过 20 秒、缺失或输入异常时，该窗口仍可保留网络数据，但 v5 标为 stale/missing/invalid，package/Activity 不作为 fresh 证据；
+- 学习报告自动给出 Agent 覆盖率、主 package/Activity 和稳定度，不再要求用户手工选择视频 App；
+- 这些上下文只增强人工学习和泛化验证，不直接成为新的 billing authority。
