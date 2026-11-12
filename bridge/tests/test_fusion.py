@@ -38,6 +38,21 @@ with tempfile.TemporaryDirectory(prefix="tvguard-fusion-") as folder:
             row("2-pause", "paused", pause_audio) + "\n"
         )
 
+    def write_nonplaying_profile(pkg=APP_A, activity=PLAYER_A,
+                                  play_audio=100, pause_audio=5, home_audio=0):
+        def row(sid, label, audio):
+            return ",".join(map(str, [
+                1000, sid, label, "general", 180, "completed", 17, 179,
+                94, 20, 50, 120, 1, 45, 90000, 150000, "variable", "high",
+                "high", 100, 100, 100, pkg, 100, activity, 100,
+                audio, 100, 0,
+            ]))
+        (d / "learning-sessions.csv").write_text(
+            row("11-play", "playing", play_audio) + "\n" +
+            row("12-pause", "paused", pause_audio) + "\n" +
+            row("13-home", "app_home", home_audio) + "\n"
+        )
+
     def reset():
         for name in ("fusion.state", "fusion.lock"):
             p = d / name
@@ -109,6 +124,54 @@ with tempfile.TemporaryDirectory(prefix="tvguard-fusion-") as folder:
                pause_hint="none", pause_score=0,
                active_floor=100) == (
         "playing", "playing_confirmed_learned_audio_profile", 0)
+
+    # Three high-quality human-labelled states in the SAME exact context teach
+    # Type-D playing vs generic nonplaying semantics. The runtime must not lie
+    # by calling audio-off "paused" or "app_home" when both share that context.
+    reset()
+    write_nonplaying_profile()
+    assert run(1, 350, pkg=APP_A, activity=PLAYER_A, audio=1,
+               pps=6, shadow="idle", adaptive_state="idle",
+               adaptive_score=95, adaptive_reason="stable_low",
+               pause_hint="idle_overlap", pause_score=60,
+               active_floor=100) == (
+        "playing", "playing_confirmed_learned_nonplaying_profile", 0)
+    assert run(2, 360, pkg=APP_A, activity=PLAYER_A, audio=0,
+               pps=300, shadow="playing", adaptive_state="active",
+               adaptive_score=100, adaptive_reason="clear_current",
+               pause_hint="none", pause_score=0,
+               active_floor=100) == (
+        "unknown", "nonplaying_audio_profile_warming", 1)
+    # Re-reading the same report never manufactures the second vote.
+    assert run(2, 360, pkg=APP_A, activity=PLAYER_A, audio=0,
+               pps=300, shadow="playing", adaptive_state="active",
+               adaptive_score=100, adaptive_reason="clear_current",
+               pause_hint="none", pause_score=0,
+               active_floor=100) == (
+        "unknown", "nonplaying_audio_profile_warming", 1)
+    assert run(3, 370, pkg=APP_A, activity=PLAYER_A, audio=0,
+               pps=300, shadow="playing", adaptive_state="active",
+               adaptive_score=100, adaptive_reason="clear_current",
+               pause_hint="none", pause_score=0,
+               active_floor=100) == (
+        "nonplaying", "nonplaying_confirmed_learned_audio_context", 2)
+    assert run(4, 380, pkg=APP_A, activity=PLAYER_A, audio=1,
+               pps=5, shadow="idle", adaptive_state="ambiguous",
+               adaptive_score=50, adaptive_reason="overlap",
+               pause_hint="none", pause_score=0,
+               active_floor=100) == (
+        "playing", "playing_confirmed_learned_nonplaying_profile", 0)
+
+    # Type-D authority requires BOTH free-state labels. A same-context home
+    # sample with audio still active is a conflict, not permission to free time.
+    reset()
+    write_nonplaying_profile(home_audio=80)
+    assert run(1, 390, pkg=APP_A, activity=PLAYER_A, audio=0,
+               pps=300, shadow="playing", adaptive_state="active",
+               adaptive_score=100, adaptive_reason="clear_current",
+               pause_hint="none", pause_score=0,
+               active_floor=100) == (
+        "playing", "playing_confirmed_context_learned", 0)
 
     # Without strong playing-vs-paused audio separation, the model has no
     # authority and the conservative legacy path remains in force.
