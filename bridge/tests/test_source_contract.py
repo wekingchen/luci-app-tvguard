@@ -16,6 +16,7 @@ assert 'tvguard.main.ip' in cgi
 assert 'CONTENT_LENGTH' in cgi
 assert 'REQUEST_METHOD' in cgi and 'REMOTE_ADDR' in cgi
 assert 'agent-bridge.key' in cgi
+assert 'TVG3' in cgi and 'activity_trail' in cgi
 assert '>>' not in cgi
 assert 'USED_S' not in cgi and 'iptables' not in cgi
 
@@ -27,6 +28,8 @@ assert 'adaptive_pause_hint' in report
 assert 'adaptive_pause_score' in report
 assert 'combined_state=' in report
 assert 'fusion_pause_streak=' in report
+assert 'recent_activity_trail=' in report
+assert 'TVG1_TVG2_TVG3' in report
 assert 'soak-v3.csv' in report and 'soak-v3.csv' in soak
 assert 'repeated_report_not_new_evidence' in soak
 assert 'agent_process_restart_suspected' in soak
@@ -48,7 +51,7 @@ assert 'TOKEN1|' in cgi and 'PAIR1' in cgi
 assert 'REMOTE_ADDR' in cgi and 'pair-claim' in cgi
 assert 'USED_S' not in pair and 'iptables' not in pair
 
-# v0.2.9 fusion must be generic: real video-app package names and
+# Fusion must remain generic: real video-app package names and
 # brand-specific candidate labels are forbidden from the decision engine.
 for forbidden in (
     'com.gitvdemo.video',
@@ -90,6 +93,7 @@ assert 'nonplaying_confirmed_learned_audio_context' in fusion
 assert 'pause_streak" -ge 2' in fusion
 assert 'pause_streak" -ge 3' in fusion  # legacy network-pause path stays conservative
 assert '$19=="high"' in fusion and '$27+0' in fusion
+assert 'activity_trail' not in fusion
 
 # Hard isolation from real billing/firewall remains mandatory.
 assert 'USED_S' not in fusion
@@ -98,7 +102,7 @@ assert 'iptables' not in fusion
 assert '/etc/' not in fusion
 assert '>>' not in fusion
 
-print('bridge v0.2.9 generic-context / learned-audio / isolation / freshness / pairing checks PASS')
+print('bridge generic-context / learned-audio / TVG3 diagnostic isolation / freshness / pairing checks PASS')
 
 
 # Formal billing bridge is deliberately narrow: it may only grant free time
