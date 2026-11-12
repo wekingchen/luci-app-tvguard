@@ -25,7 +25,9 @@ let state = {
     agent_state: 'fresh', agent_age_seconds: 2,
     agent_package: 'com.example.video',
     agent_activity: 'com.example.video.PlayerActivity',
-    agent_audio_active: 1, agent_screen_on: 1, agent_report_seq: 42
+    agent_audio_active: 1, agent_screen_on: 1, agent_report_seq: 42,
+    agent_usage_access: 'allowed', agent_foreground_source: 'usage_events',
+    agent_foreground_status: 'full_context', agent_context_quality: 'full'
 };
 let commands = [];
 let eventLog = [
@@ -134,6 +136,8 @@ const updates = [
     assert.match(page._calibrationNodes.agentStatus.textContent, /Agent 已连接/);
     assert.match(page._calibrationNodes.agentContext.textContent, /com\.example\.video/);
     assert.match(page._calibrationNodes.agentContext.textContent, /PlayerActivity/);
+    assert.match(page._calibrationNodes.agentContext.textContent, /usage_events/);
+    assert.match(page._calibrationNodes.agentStatus.textContent, /前台识别完整/);
     assert.match(String(page._calibrationNodes.report.children[0] || ''), /学习分析/);
     assert.equal(page._overviewNodes.childButton.props.type, 'button');
     assert.equal(page._overviewNodes.parentButton.props.type, 'button');
@@ -353,6 +357,19 @@ const updates = [
         n === '/usr/libexec/tvguardctl' && args.join(' ') === 'calibrate system_home 180'));
     assert.match(confirmations[confirmations.length - 1], /com\.example\.video/);
     assert.match(confirmations[confirmations.length - 1], /PlayerActivity/);
+
+    Object.assign(state, {
+        calibration_phase: 'idle',
+        agent_state: 'fresh',
+        agent_package: 'com.example.video',
+        agent_activity: 'unknown',
+        agent_foreground_source: 'usage_stats',
+        agent_foreground_status: 'package_only',
+        agent_context_quality: 'package_only'
+    });
+    page.updateCalibrationUI(state);
+    assert.match(page._calibrationNodes.agentStatus.textContent, /仅识别到应用/);
+    assert.match(page._calibrationNodes.hint.textContent, /不会冒充高可信联合样本/);
 
     // Calibration stop remains an independent action.
     state = {...state, ...updates[0]};

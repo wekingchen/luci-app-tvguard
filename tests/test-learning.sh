@@ -43,7 +43,326 @@ REPORT="$TMP/state/learning-last.txt"
 grep -q '^状态: 电视系统首页$' "$REPORT"
 grep -q '^样本完整度: 100% · 高$' "$REPORT"
 grep -q '^PPS: P10 ' "$REPORT"
-grep -q '^Agent 联动: 18/18 fresh · 覆盖 100%$' "$REPORT"
+grep -q '^Agent 传输: 18/18 fresh · 覆盖 100%
+grep -q '^应用包上下文: 18/18 · 覆盖 100% · com.mitv.tvhome · 稳定 100%
+grep -q '^完整前台上下文: 18/18 · 覆盖 100% · com.mitv.tvhome.MainActivityUserMode · 稳定 100%
+grep -q '^电视上下文: 音频活跃 5% · 屏幕亮 100% · 前台切换 0 次$' "$REPORT"
+grep -q '^联合质量: high$' "$REPORT"
+awk -F, 'NF==18 && $2=="1700000000-1" && $3=="system_home" && $9==100 && $18=="high" {ok=1} END {exit !ok}' \
+    "$TMP/state/learning-sessions.csv"
+
+
+# Fresh transport with unknown/unknown foreground must never be high-confidence.
+sid=1794475000-999
+: > "$V5"
+: > "$CSV"
+i=0
+while [ "$i" -lt 12 ]; do
+    ts=$((1794475000 + i * 10))
+    printf '%s,%s,playing,general,80,1,79,20000\n' "$ts" "$sid" >> "$CSV"
+    printf '%s,%s,playing,fresh,1,unknown,unknown,1,1,%s,80,1,79,20000,allowed,none,no_foreground,unknown\n' \
+        "$ts" "$sid" "$i" >> "$V5"
+    i=$((i + 1))
+done
+sh "$DST" "$sid" playing 120 general completed 1794475120
+REPORT="$TMP/state/learning-last.txt"
+grep -q '^Agent 传输: 12/12 fresh · 覆盖 100%
+ "$REPORT"
+grep -q '^自动应用: com.mitv.tvhome · 稳定 100%$' "$REPORT"
+grep -q '^主要页面: com.mitv.tvhome.MainActivityUserMode · 稳定 100%$' "$REPORT"
+grep -q '^电视上下文: 音频活跃 5% · 屏幕亮 100% · 前台切换 0 次$' "$REPORT"
+grep -q '^联合质量: high$' "$REPORT"
+awk -F, 'NF==18 && $2=="1700000000-1" && $3=="system_home" && $9==100 && $18=="high" {ok=1} END {exit !ok}' \
+    "$TMP/state/learning-sessions.csv"
+
+echo 'PASS: learning session analysis produces network + Agent context statistics'
+ "$REPORT"
+grep -q '^主要页面: com.mitv.tvhome.MainActivityUserMode · 稳定 100%$' "$REPORT"
+grep -q '^电视上下文: 音频活跃 5% · 屏幕亮 100% · 前台切换 0 次$' "$REPORT"
+grep -q '^联合质量: high$' "$REPORT"
+awk -F, 'NF==18 && $2=="1700000000-1" && $3=="system_home" && $9==100 && $18=="high" {ok=1} END {exit !ok}' \
+    "$TMP/state/learning-sessions.csv"
+
+echo 'PASS: learning session analysis produces network + Agent context statistics'
+ "$REPORT"
+grep -q '^自动应用: com.mitv.tvhome · 稳定 100%$' "$REPORT"
+grep -q '^主要页面: com.mitv.tvhome.MainActivityUserMode · 稳定 100%$' "$REPORT"
+grep -q '^电视上下文: 音频活跃 5% · 屏幕亮 100% · 前台切换 0 次$' "$REPORT"
+grep -q '^联合质量: high$' "$REPORT"
+awk -F, 'NF==18 && $2=="1700000000-1" && $3=="system_home" && $9==100 && $18=="high" {ok=1} END {exit !ok}' \
+    "$TMP/state/learning-sessions.csv"
+
+echo 'PASS: learning session analysis produces network + Agent context statistics'
+ "$REPORT"
+grep -q '^电视上下文: 音频活跃 5% · 屏幕亮 100% · 前台切换 0 次$' "$REPORT"
+grep -q '^联合质量: high$' "$REPORT"
+awk -F, 'NF==18 && $2=="1700000000-1" && $3=="system_home" && $9==100 && $18=="high" {ok=1} END {exit !ok}' \
+    "$TMP/state/learning-sessions.csv"
+
+echo 'PASS: learning session analysis produces network + Agent context statistics'
+ "$REPORT"
+grep -q '^自动应用: com.mitv.tvhome · 稳定 100%$' "$REPORT"
+grep -q '^主要页面: com.mitv.tvhome.MainActivityUserMode · 稳定 100%$' "$REPORT"
+grep -q '^电视上下文: 音频活跃 5% · 屏幕亮 100% · 前台切换 0 次$' "$REPORT"
+grep -q '^联合质量: high$' "$REPORT"
+awk -F, 'NF==18 && $2=="1700000000-1" && $3=="system_home" && $9==100 && $18=="high" {ok=1} END {exit !ok}' \
+    "$TMP/state/learning-sessions.csv"
+
+echo 'PASS: learning session analysis produces network + Agent context statistics'
+ "$REPORT"
+grep -q '^主要页面: com.mitv.tvhome.MainActivityUserMode · 稳定 100%$' "$REPORT"
+grep -q '^电视上下文: 音频活跃 5% · 屏幕亮 100% · 前台切换 0 次$' "$REPORT"
+grep -q '^联合质量: high$' "$REPORT"
+awk -F, 'NF==18 && $2=="1700000000-1" && $3=="system_home" && $9==100 && $18=="high" {ok=1} END {exit !ok}' \
+    "$TMP/state/learning-sessions.csv"
+
+echo 'PASS: learning session analysis produces network + Agent context statistics'
+ "$REPORT"
+grep -q '^自动应用: com.mitv.tvhome · 稳定 100%$' "$REPORT"
+grep -q '^主要页面: com.mitv.tvhome.MainActivityUserMode · 稳定 100%$' "$REPORT"
+grep -q '^电视上下文: 音频活跃 5% · 屏幕亮 100% · 前台切换 0 次$' "$REPORT"
+grep -q '^联合质量: high$' "$REPORT"
+awk -F, 'NF==18 && $2=="1700000000-1" && $3=="system_home" && $9==100 && $18=="high" {ok=1} END {exit !ok}' \
+    "$TMP/state/learning-sessions.csv"
+
+echo 'PASS: learning session analysis produces network + Agent context statistics'
+ "$REPORT"
+grep -q '^应用包上下文: 0/12 · 覆盖 0% · unknown · 稳定 0%
+ "$REPORT"
+grep -q '^自动应用: com.mitv.tvhome · 稳定 100%$' "$REPORT"
+grep -q '^主要页面: com.mitv.tvhome.MainActivityUserMode · 稳定 100%$' "$REPORT"
+grep -q '^电视上下文: 音频活跃 5% · 屏幕亮 100% · 前台切换 0 次$' "$REPORT"
+grep -q '^联合质量: high$' "$REPORT"
+awk -F, 'NF==18 && $2=="1700000000-1" && $3=="system_home" && $9==100 && $18=="high" {ok=1} END {exit !ok}' \
+    "$TMP/state/learning-sessions.csv"
+
+echo 'PASS: learning session analysis produces network + Agent context statistics'
+ "$REPORT"
+grep -q '^主要页面: com.mitv.tvhome.MainActivityUserMode · 稳定 100%$' "$REPORT"
+grep -q '^电视上下文: 音频活跃 5% · 屏幕亮 100% · 前台切换 0 次$' "$REPORT"
+grep -q '^联合质量: high$' "$REPORT"
+awk -F, 'NF==18 && $2=="1700000000-1" && $3=="system_home" && $9==100 && $18=="high" {ok=1} END {exit !ok}' \
+    "$TMP/state/learning-sessions.csv"
+
+echo 'PASS: learning session analysis produces network + Agent context statistics'
+ "$REPORT"
+grep -q '^自动应用: com.mitv.tvhome · 稳定 100%$' "$REPORT"
+grep -q '^主要页面: com.mitv.tvhome.MainActivityUserMode · 稳定 100%$' "$REPORT"
+grep -q '^电视上下文: 音频活跃 5% · 屏幕亮 100% · 前台切换 0 次$' "$REPORT"
+grep -q '^联合质量: high$' "$REPORT"
+awk -F, 'NF==18 && $2=="1700000000-1" && $3=="system_home" && $9==100 && $18=="high" {ok=1} END {exit !ok}' \
+    "$TMP/state/learning-sessions.csv"
+
+echo 'PASS: learning session analysis produces network + Agent context statistics'
+ "$REPORT"
+grep -q '^电视上下文: 音频活跃 5% · 屏幕亮 100% · 前台切换 0 次$' "$REPORT"
+grep -q '^联合质量: high$' "$REPORT"
+awk -F, 'NF==18 && $2=="1700000000-1" && $3=="system_home" && $9==100 && $18=="high" {ok=1} END {exit !ok}' \
+    "$TMP/state/learning-sessions.csv"
+
+echo 'PASS: learning session analysis produces network + Agent context statistics'
+ "$REPORT"
+grep -q '^自动应用: com.mitv.tvhome · 稳定 100%$' "$REPORT"
+grep -q '^主要页面: com.mitv.tvhome.MainActivityUserMode · 稳定 100%$' "$REPORT"
+grep -q '^电视上下文: 音频活跃 5% · 屏幕亮 100% · 前台切换 0 次$' "$REPORT"
+grep -q '^联合质量: high$' "$REPORT"
+awk -F, 'NF==18 && $2=="1700000000-1" && $3=="system_home" && $9==100 && $18=="high" {ok=1} END {exit !ok}' \
+    "$TMP/state/learning-sessions.csv"
+
+echo 'PASS: learning session analysis produces network + Agent context statistics'
+ "$REPORT"
+grep -q '^主要页面: com.mitv.tvhome.MainActivityUserMode · 稳定 100%$' "$REPORT"
+grep -q '^电视上下文: 音频活跃 5% · 屏幕亮 100% · 前台切换 0 次$' "$REPORT"
+grep -q '^联合质量: high$' "$REPORT"
+awk -F, 'NF==18 && $2=="1700000000-1" && $3=="system_home" && $9==100 && $18=="high" {ok=1} END {exit !ok}' \
+    "$TMP/state/learning-sessions.csv"
+
+echo 'PASS: learning session analysis produces network + Agent context statistics'
+ "$REPORT"
+grep -q '^自动应用: com.mitv.tvhome · 稳定 100%$' "$REPORT"
+grep -q '^主要页面: com.mitv.tvhome.MainActivityUserMode · 稳定 100%$' "$REPORT"
+grep -q '^电视上下文: 音频活跃 5% · 屏幕亮 100% · 前台切换 0 次$' "$REPORT"
+grep -q '^联合质量: high$' "$REPORT"
+awk -F, 'NF==18 && $2=="1700000000-1" && $3=="system_home" && $9==100 && $18=="high" {ok=1} END {exit !ok}' \
+    "$TMP/state/learning-sessions.csv"
+
+echo 'PASS: learning session analysis produces network + Agent context statistics'
+ "$REPORT"
+grep -q '^完整前台上下文: 0/12 · 覆盖 0% · unknown · 稳定 0%
+ "$REPORT"
+grep -q '^自动应用: com.mitv.tvhome · 稳定 100%$' "$REPORT"
+grep -q '^主要页面: com.mitv.tvhome.MainActivityUserMode · 稳定 100%$' "$REPORT"
+grep -q '^电视上下文: 音频活跃 5% · 屏幕亮 100% · 前台切换 0 次$' "$REPORT"
+grep -q '^联合质量: high$' "$REPORT"
+awk -F, 'NF==18 && $2=="1700000000-1" && $3=="system_home" && $9==100 && $18=="high" {ok=1} END {exit !ok}' \
+    "$TMP/state/learning-sessions.csv"
+
+echo 'PASS: learning session analysis produces network + Agent context statistics'
+ "$REPORT"
+grep -q '^主要页面: com.mitv.tvhome.MainActivityUserMode · 稳定 100%$' "$REPORT"
+grep -q '^电视上下文: 音频活跃 5% · 屏幕亮 100% · 前台切换 0 次$' "$REPORT"
+grep -q '^联合质量: high$' "$REPORT"
+awk -F, 'NF==18 && $2=="1700000000-1" && $3=="system_home" && $9==100 && $18=="high" {ok=1} END {exit !ok}' \
+    "$TMP/state/learning-sessions.csv"
+
+echo 'PASS: learning session analysis produces network + Agent context statistics'
+ "$REPORT"
+grep -q '^自动应用: com.mitv.tvhome · 稳定 100%$' "$REPORT"
+grep -q '^主要页面: com.mitv.tvhome.MainActivityUserMode · 稳定 100%$' "$REPORT"
+grep -q '^电视上下文: 音频活跃 5% · 屏幕亮 100% · 前台切换 0 次$' "$REPORT"
+grep -q '^联合质量: high$' "$REPORT"
+awk -F, 'NF==18 && $2=="1700000000-1" && $3=="system_home" && $9==100 && $18=="high" {ok=1} END {exit !ok}' \
+    "$TMP/state/learning-sessions.csv"
+
+echo 'PASS: learning session analysis produces network + Agent context statistics'
+ "$REPORT"
+grep -q '^电视上下文: 音频活跃 5% · 屏幕亮 100% · 前台切换 0 次$' "$REPORT"
+grep -q '^联合质量: high$' "$REPORT"
+awk -F, 'NF==18 && $2=="1700000000-1" && $3=="system_home" && $9==100 && $18=="high" {ok=1} END {exit !ok}' \
+    "$TMP/state/learning-sessions.csv"
+
+echo 'PASS: learning session analysis produces network + Agent context statistics'
+ "$REPORT"
+grep -q '^自动应用: com.mitv.tvhome · 稳定 100%$' "$REPORT"
+grep -q '^主要页面: com.mitv.tvhome.MainActivityUserMode · 稳定 100%$' "$REPORT"
+grep -q '^电视上下文: 音频活跃 5% · 屏幕亮 100% · 前台切换 0 次$' "$REPORT"
+grep -q '^联合质量: high$' "$REPORT"
+awk -F, 'NF==18 && $2=="1700000000-1" && $3=="system_home" && $9==100 && $18=="high" {ok=1} END {exit !ok}' \
+    "$TMP/state/learning-sessions.csv"
+
+echo 'PASS: learning session analysis produces network + Agent context statistics'
+ "$REPORT"
+grep -q '^主要页面: com.mitv.tvhome.MainActivityUserMode · 稳定 100%$' "$REPORT"
+grep -q '^电视上下文: 音频活跃 5% · 屏幕亮 100% · 前台切换 0 次$' "$REPORT"
+grep -q '^联合质量: high$' "$REPORT"
+awk -F, 'NF==18 && $2=="1700000000-1" && $3=="system_home" && $9==100 && $18=="high" {ok=1} END {exit !ok}' \
+    "$TMP/state/learning-sessions.csv"
+
+echo 'PASS: learning session analysis produces network + Agent context statistics'
+ "$REPORT"
+grep -q '^自动应用: com.mitv.tvhome · 稳定 100%$' "$REPORT"
+grep -q '^主要页面: com.mitv.tvhome.MainActivityUserMode · 稳定 100%$' "$REPORT"
+grep -q '^电视上下文: 音频活跃 5% · 屏幕亮 100% · 前台切换 0 次$' "$REPORT"
+grep -q '^联合质量: high$' "$REPORT"
+awk -F, 'NF==18 && $2=="1700000000-1" && $3=="system_home" && $9==100 && $18=="high" {ok=1} END {exit !ok}' \
+    "$TMP/state/learning-sessions.csv"
+
+echo 'PASS: learning session analysis produces network + Agent context statistics'
+ "$REPORT"
+grep -q '^联合质量: network_only
+ "$REPORT"
+grep -q '^自动应用: com.mitv.tvhome · 稳定 100%$' "$REPORT"
+grep -q '^主要页面: com.mitv.tvhome.MainActivityUserMode · 稳定 100%$' "$REPORT"
+grep -q '^电视上下文: 音频活跃 5% · 屏幕亮 100% · 前台切换 0 次$' "$REPORT"
+grep -q '^联合质量: high$' "$REPORT"
+awk -F, 'NF==18 && $2=="1700000000-1" && $3=="system_home" && $9==100 && $18=="high" {ok=1} END {exit !ok}' \
+    "$TMP/state/learning-sessions.csv"
+
+echo 'PASS: learning session analysis produces network + Agent context statistics'
+ "$REPORT"
+grep -q '^主要页面: com.mitv.tvhome.MainActivityUserMode · 稳定 100%$' "$REPORT"
+grep -q '^电视上下文: 音频活跃 5% · 屏幕亮 100% · 前台切换 0 次$' "$REPORT"
+grep -q '^联合质量: high$' "$REPORT"
+awk -F, 'NF==18 && $2=="1700000000-1" && $3=="system_home" && $9==100 && $18=="high" {ok=1} END {exit !ok}' \
+    "$TMP/state/learning-sessions.csv"
+
+echo 'PASS: learning session analysis produces network + Agent context statistics'
+ "$REPORT"
+grep -q '^自动应用: com.mitv.tvhome · 稳定 100%$' "$REPORT"
+grep -q '^主要页面: com.mitv.tvhome.MainActivityUserMode · 稳定 100%$' "$REPORT"
+grep -q '^电视上下文: 音频活跃 5% · 屏幕亮 100% · 前台切换 0 次$' "$REPORT"
+grep -q '^联合质量: high$' "$REPORT"
+awk -F, 'NF==18 && $2=="1700000000-1" && $3=="system_home" && $9==100 && $18=="high" {ok=1} END {exit !ok}' \
+    "$TMP/state/learning-sessions.csv"
+
+echo 'PASS: learning session analysis produces network + Agent context statistics'
+ "$REPORT"
+grep -q '^电视上下文: 音频活跃 5% · 屏幕亮 100% · 前台切换 0 次$' "$REPORT"
+grep -q '^联合质量: high$' "$REPORT"
+awk -F, 'NF==18 && $2=="1700000000-1" && $3=="system_home" && $9==100 && $18=="high" {ok=1} END {exit !ok}' \
+    "$TMP/state/learning-sessions.csv"
+
+echo 'PASS: learning session analysis produces network + Agent context statistics'
+ "$REPORT"
+grep -q '^自动应用: com.mitv.tvhome · 稳定 100%$' "$REPORT"
+grep -q '^主要页面: com.mitv.tvhome.MainActivityUserMode · 稳定 100%$' "$REPORT"
+grep -q '^电视上下文: 音频活跃 5% · 屏幕亮 100% · 前台切换 0 次$' "$REPORT"
+grep -q '^联合质量: high$' "$REPORT"
+awk -F, 'NF==18 && $2=="1700000000-1" && $3=="system_home" && $9==100 && $18=="high" {ok=1} END {exit !ok}' \
+    "$TMP/state/learning-sessions.csv"
+
+echo 'PASS: learning session analysis produces network + Agent context statistics'
+ "$REPORT"
+grep -q '^主要页面: com.mitv.tvhome.MainActivityUserMode · 稳定 100%$' "$REPORT"
+grep -q '^电视上下文: 音频活跃 5% · 屏幕亮 100% · 前台切换 0 次$' "$REPORT"
+grep -q '^联合质量: high$' "$REPORT"
+awk -F, 'NF==18 && $2=="1700000000-1" && $3=="system_home" && $9==100 && $18=="high" {ok=1} END {exit !ok}' \
+    "$TMP/state/learning-sessions.csv"
+
+echo 'PASS: learning session analysis produces network + Agent context statistics'
+ "$REPORT"
+grep -q '^自动应用: com.mitv.tvhome · 稳定 100%$' "$REPORT"
+grep -q '^主要页面: com.mitv.tvhome.MainActivityUserMode · 稳定 100%$' "$REPORT"
+grep -q '^电视上下文: 音频活跃 5% · 屏幕亮 100% · 前台切换 0 次$' "$REPORT"
+grep -q '^联合质量: high$' "$REPORT"
+awk -F, 'NF==18 && $2=="1700000000-1" && $3=="system_home" && $9==100 && $18=="high" {ok=1} END {exit !ok}' \
+    "$TMP/state/learning-sessions.csv"
+
+echo 'PASS: learning session analysis produces network + Agent context statistics'
+ "$REPORT"
+
+echo 'PASS: learning session analysis + unknown-context quality gate'
+ "$REPORT"
+grep -q '^自动应用: com.mitv.tvhome · 稳定 100%$' "$REPORT"
+grep -q '^主要页面: com.mitv.tvhome.MainActivityUserMode · 稳定 100%$' "$REPORT"
+grep -q '^电视上下文: 音频活跃 5% · 屏幕亮 100% · 前台切换 0 次$' "$REPORT"
+grep -q '^联合质量: high$' "$REPORT"
+awk -F, 'NF==18 && $2=="1700000000-1" && $3=="system_home" && $9==100 && $18=="high" {ok=1} END {exit !ok}' \
+    "$TMP/state/learning-sessions.csv"
+
+echo 'PASS: learning session analysis produces network + Agent context statistics'
+ "$REPORT"
+grep -q '^主要页面: com.mitv.tvhome.MainActivityUserMode · 稳定 100%$' "$REPORT"
+grep -q '^电视上下文: 音频活跃 5% · 屏幕亮 100% · 前台切换 0 次$' "$REPORT"
+grep -q '^联合质量: high$' "$REPORT"
+awk -F, 'NF==18 && $2=="1700000000-1" && $3=="system_home" && $9==100 && $18=="high" {ok=1} END {exit !ok}' \
+    "$TMP/state/learning-sessions.csv"
+
+echo 'PASS: learning session analysis produces network + Agent context statistics'
+ "$REPORT"
+grep -q '^自动应用: com.mitv.tvhome · 稳定 100%$' "$REPORT"
+grep -q '^主要页面: com.mitv.tvhome.MainActivityUserMode · 稳定 100%$' "$REPORT"
+grep -q '^电视上下文: 音频活跃 5% · 屏幕亮 100% · 前台切换 0 次$' "$REPORT"
+grep -q '^联合质量: high$' "$REPORT"
+awk -F, 'NF==18 && $2=="1700000000-1" && $3=="system_home" && $9==100 && $18=="high" {ok=1} END {exit !ok}' \
+    "$TMP/state/learning-sessions.csv"
+
+echo 'PASS: learning session analysis produces network + Agent context statistics'
+ "$REPORT"
+grep -q '^电视上下文: 音频活跃 5% · 屏幕亮 100% · 前台切换 0 次$' "$REPORT"
+grep -q '^联合质量: high$' "$REPORT"
+awk -F, 'NF==18 && $2=="1700000000-1" && $3=="system_home" && $9==100 && $18=="high" {ok=1} END {exit !ok}' \
+    "$TMP/state/learning-sessions.csv"
+
+echo 'PASS: learning session analysis produces network + Agent context statistics'
+ "$REPORT"
+grep -q '^自动应用: com.mitv.tvhome · 稳定 100%$' "$REPORT"
+grep -q '^主要页面: com.mitv.tvhome.MainActivityUserMode · 稳定 100%$' "$REPORT"
+grep -q '^电视上下文: 音频活跃 5% · 屏幕亮 100% · 前台切换 0 次$' "$REPORT"
+grep -q '^联合质量: high$' "$REPORT"
+awk -F, 'NF==18 && $2=="1700000000-1" && $3=="system_home" && $9==100 && $18=="high" {ok=1} END {exit !ok}' \
+    "$TMP/state/learning-sessions.csv"
+
+echo 'PASS: learning session analysis produces network + Agent context statistics'
+ "$REPORT"
+grep -q '^主要页面: com.mitv.tvhome.MainActivityUserMode · 稳定 100%$' "$REPORT"
+grep -q '^电视上下文: 音频活跃 5% · 屏幕亮 100% · 前台切换 0 次$' "$REPORT"
+grep -q '^联合质量: high$' "$REPORT"
+awk -F, 'NF==18 && $2=="1700000000-1" && $3=="system_home" && $9==100 && $18=="high" {ok=1} END {exit !ok}' \
+    "$TMP/state/learning-sessions.csv"
+
+echo 'PASS: learning session analysis produces network + Agent context statistics'
+ "$REPORT"
 grep -q '^自动应用: com.mitv.tvhome · 稳定 100%$' "$REPORT"
 grep -q '^主要页面: com.mitv.tvhome.MainActivityUserMode · 稳定 100%$' "$REPORT"
 grep -q '^电视上下文: 音频活跃 5% · 屏幕亮 100% · 前台切换 0 次$' "$REPORT"
