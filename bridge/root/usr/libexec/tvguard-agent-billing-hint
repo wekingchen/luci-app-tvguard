@@ -5,7 +5,8 @@
 # Contract:
 #   free system_home  - only when generic fusion explicitly confirms TV launcher
 #   free app_home     - only when generic fusion explicitly confirms app-side non-playing UI
-#   charge <state>    - every other state, including playing/paused/unknown
+#   free paused       - only for paused_confirmed_learned_context
+#   charge <state>    - playing/unknown and any non-confirmed pause state
 #
 # Missing/stale/invalid Agent context always fails closed to "charge unknown".
 set -eu
@@ -78,8 +79,18 @@ case "$1" in
     app_home)
         echo "free app_home"
         ;;
-    playing|paused|unknown)
-        # Explicitly conservative: pause remains Shadow-only research.
+    paused)
+        # Billing authority is narrower than the displayed Fusion state.
+        # Only the current, freshly-confirmed paused state is free. The
+        # temporal hold is deliberately still chargeable so an uncertain
+        # transition back to playback cannot inherit free time.
+        if [ "$2" = paused_confirmed_learned_context ]; then
+            echo "free paused"
+        else
+            echo "charge paused"
+        fi
+        ;;
+    playing|unknown)
         echo "charge $1"
         ;;
     *)
