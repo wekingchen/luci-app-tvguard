@@ -94,6 +94,8 @@ jobs:
         run: dash tests/test-data-root.sh
       - name: Validate UCI config persistence install semantics
         run: dash tests/test-config-persistence.sh
+      - name: Simulate v0.1.13 to integrated v0.1.14 no-loss upgrade
+        run: dash tests/test-integrated-upgrade.sh
       - name: Validate bounded Shadow Soak observer
         run: dash tests/test-soak.sh
       - name: Validate unseen-app generalization and safe refusal
