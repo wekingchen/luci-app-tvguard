@@ -100,23 +100,22 @@ with tempfile.TemporaryDirectory(prefix="tvguard-billing-hint-") as folder:
                pause_hint="idle_overlap", pause_score=60) == (
         "free", "app_home")
 
-    # Paired manual Agent learning grants a second strict pause path. Even a
-    # high network burst cannot override three fresh audio-off reports in the
-    # exact human-labelled playing/paused context.
+    # Paired manual Agent learning grants a second strict pause path. One fresh
+    # audio-off report remains chargeable; the second confirms pause. Even a
+    # high network burst cannot override the exact learned playing/paused context.
     write_audio_profile()
-    for seq, now in ((14, 340), (15, 350)):
-        put(seq, now, PKG, PLAYER, audio=0)
-        assert run(now, pps=300, shadow="playing", adaptive_state="active",
-                   adaptive_score=100, adaptive_reason="clear_current",
-                   pause_hint="none", pause_score=0) == (
-            "charge", "unknown")
-    put(16, 360, PKG, PLAYER, audio=0)
-    assert run(360, pps=300, shadow="playing", adaptive_state="active",
+    put(14, 340, PKG, PLAYER, audio=0)
+    assert run(340, pps=300, shadow="playing", adaptive_state="active",
+               adaptive_score=100, adaptive_reason="clear_current",
+               pause_hint="none", pause_score=0) == (
+        "charge", "unknown")
+    put(15, 350, PKG, PLAYER, audio=0)
+    assert run(350, pps=300, shadow="playing", adaptive_state="active",
                adaptive_score=100, adaptive_reason="clear_current",
                pause_hint="none", pause_score=0) == (
         "free", "paused")
-    put(17, 370, PKG, PLAYER, audio=1)
-    assert run(370, pps=5, shadow="idle", adaptive_state="ambiguous",
+    put(16, 360, PKG, PLAYER, audio=1)
+    assert run(360, pps=5, shadow="idle", adaptive_state="ambiguous",
                adaptive_score=50, adaptive_reason="overlap",
                pause_hint="none", pause_score=0) == (
         "charge", "playing")
