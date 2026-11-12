@@ -357,7 +357,10 @@ function childPolicySummary(state) {
         return '当前不在允许时段';
     if (state.billing_state === 'idle_verified')
         return state.idle_reason === 'adaptive' ? 'Adaptive 高置信闲置 · 已暂停计时' :
-            (state.idle_reason === 'system_home' ? '系统首页 · 已暂停计时' : '已确认闲置 · 暂停计时');
+            (state.idle_reason === 'system_home' ? '系统首页 · 已暂停计时' :
+            (state.idle_reason === 'nonplaying' ? '已确认非播放 · 已暂停计时' :
+            (state.idle_reason === 'paused' ? '视频暂停 · 已暂停计时' :
+            (state.idle_reason === 'app_home' ? 'App 首页 · 已暂停计时' : '已确认闲置 · 暂停计时'))));
     if (state.billing_state === 'idle_grace')
         return '短暂无法判断 · 保持暂停计时';
     if (state.billing_state === 'idle_silent')
