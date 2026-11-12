@@ -126,10 +126,10 @@ jobs:
           test -s "$APK"
 
           cat > /tmp/release-notes.md <<'EOF'
-          TV Guard v0.1.14-r2：N1 Agent Bridge 已合并到主包，并仅对严格确认的暂停状态免计时。
+          TV Guard v0.1.14-r3：N1 Agent Bridge 已合并到主包；严格确认暂停可免计时，学习中心新增 Agent 联合采样。
 
           本 Release 只发布两个安装文件：
-          - N1 路由器：luci-app-tvguard_0.1.14-2_all.ipk
+          - N1 路由器：luci-app-tvguard_0.1.14-3_all.ipk
           - 小米 Android 6 电视：tvguard-agent_0.2.8-release-signed.apk
 
           升级：只安装 N1 主包即可带上 CGI、Fusion、Home-only billing hint、
@@ -138,8 +138,11 @@ jobs:
           UCI 及持久观看数据保留。旧 Bridge 卸载时会重置 RAM 临时学习状态，
           电视重新上报即可继续。
 
-          正式计时规则不变：明确 system_home/app_home 才免计时；
-          播放、暂停、unknown/ambiguous 与 Agent 失联按保守策略计时。
+          正式计时规则：明确 system_home/app_home 免计时；只有当前严格
+          paused_confirmed_learned_context 也可免计时；普通 pause hint、
+          stable_low/idle_overlap、unknown/ambiguous 与 Agent 失联继续计时。
+          学习中心会在人工四状态标注期间同步保存 fresh Agent 的 package、
+          Activity、audio、screen 与序号，Agent 不可用时自动降级为网络-only。
           每日 Bark 儿童观看报告和双推送 ID 保留；正式断网默认不启用。
 
           电视 APK 保持固定签名证书，允许覆盖升级而不清除原有应用数据。
