@@ -1,6 +1,14 @@
 #!/bin/sh
 [ -n "$IPKG_INSTROOT" ] && exit 0
 
+# Upgrades must not change enforcement, remove firewall hooks or reset
+# counters. The new postinst will restart both services.
+if [ "${1:-remove}" = upgrade ]; then
+    /etc/init.d/tvguard-agent-bridge stop 2>/dev/null || :
+    /etc/init.d/tvguard stop 2>/dev/null || :
+    exit 0
+fi
+
 # Stop integrated Bridge before removing/replacing its executable.
 # Keep one-time pairing key and persistent viewing data intact.
 /etc/init.d/tvguard-agent-bridge stop 2>/dev/null || :
