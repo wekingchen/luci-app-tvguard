@@ -321,7 +321,12 @@ elif [ "$learned_audio_profile" -eq 1 ]; then
             pause_streak=$((pause_streak + 1))
             pause_miss=0
         fi
-        if [ "$latched" = paused ] || [ "$pause_streak" -ge 3 ]; then
+        # Paired manual playing/paused learning plus exact full-context
+        # makes this branch much narrower than the legacy network-pause path.
+        # Two NEW reports preserve one anti-glitch interval while reducing
+        # pause overbilling from roughly 30s to roughly 20s. The legacy
+        # pause-evidence path below intentionally remains at three reports.
+        if [ "$latched" = paused ] || [ "$pause_streak" -ge 2 ]; then
             latched=paused
             combined=paused
             candidate=paused_confirmed_learned_audio_context
