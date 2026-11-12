@@ -53,7 +53,9 @@ jobs:
           test -s "$APK"
           test "$(stat -c%s "$APK")" -lt 1048576
           unzip -l "$APK" | grep -q classes.dex
-          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$APK" | tee "$RUNNER_TEMP/debug-badging.txt"
+          AAPT="$(find "$ANDROID_HOME/build-tools" -type f -name aapt | sort -V | tail -n 1)"
+          test -x "$AAPT"
+          "$AAPT" dump badging "$APK" | tee "$RUNNER_TEMP/debug-badging.txt"
           grep -q "versionCode='12'" "$RUNNER_TEMP/debug-badging.txt"
           grep -q "versionName='0.2.9'" "$RUNNER_TEMP/debug-badging.txt"
           echo "Debug APK bytes: $(stat -c%s "$APK")"
@@ -105,7 +107,9 @@ jobs:
           test -s "$APK"
           test "$(stat -c%s "$APK")" -lt 1048576
           unzip -l "$APK" | grep -q classes.dex
-          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$APK" | tee "$RUNNER_TEMP/release-badging.txt"
+          AAPT="$(find "$ANDROID_HOME/build-tools" -type f -name aapt | sort -V | tail -n 1)"
+          test -x "$AAPT"
+          "$AAPT" dump badging "$APK" | tee "$RUNNER_TEMP/release-badging.txt"
           grep -q "versionCode='12'" "$RUNNER_TEMP/release-badging.txt"
           grep -q "versionName='0.2.9'" "$RUNNER_TEMP/release-badging.txt"
           "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose --print-certs "$APK" | tee "$RUNNER_TEMP/apksigner.txt"
