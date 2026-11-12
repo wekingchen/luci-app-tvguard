@@ -48,7 +48,7 @@ assert 'TOKEN1|' in cgi and 'PAIR1' in cgi
 assert 'REMOTE_ADDR' in cgi and 'pair-claim' in cgi
 assert 'USED_S' not in pair and 'iptables' not in pair
 
-# v0.2.8 fusion must be generic: real video-app package names and
+# v0.2.9 fusion must be generic: real video-app package names and
 # brand-specific candidate labels are forbidden from the decision engine.
 for forbidden in (
     'com.gitvdemo.video',
@@ -79,6 +79,11 @@ assert 'app_nonplaying_confirmed' in fusion
 assert 'unlearned_package_pause_hint_ignored' in fusion
 assert 'media_pkg' in fusion and 'media_activity' in fusion
 assert 'pause_streak' in fusion and 'pause_miss' in fusion and 'home_streak' in fusion
+assert 'learning-sessions.csv' in fusion
+assert 'playing_confirmed_learned_audio_profile' in fusion
+assert 'paused_confirmed_learned_audio_context' in fusion
+assert 'paused_audio_profile_warming' in fusion
+assert '$19=="high"' in fusion and '$27+0' in fusion
 
 # Hard isolation from real billing/firewall remains mandatory.
 assert 'USED_S' not in fusion
@@ -87,7 +92,7 @@ assert 'iptables' not in fusion
 assert '/etc/' not in fusion
 assert '>>' not in fusion
 
-print('bridge v0.2.8 generic-context / isolation / freshness / pairing checks PASS')
+print('bridge v0.2.9 generic-context / learned-audio / isolation / freshness / pairing checks PASS')
 
 
 # Formal billing bridge is deliberately narrow: it may only grant free time
@@ -96,6 +101,7 @@ assert 'free system_home' in billing
 assert 'free app_home' in billing
 assert 'free paused' in billing
 assert 'paused_confirmed_learned_context' in billing
+assert 'paused_confirmed_learned_audio_context' in billing
 assert 'playing|unknown' in billing
 assert 'charge $1' in billing
 assert 'USED_S' not in billing
