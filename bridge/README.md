@@ -2,9 +2,9 @@
 
 ## 为何不把旧的 TVGuard 全量 IPK 重打包？
 
-用户 N1 真机当前基线为 `v0.1.13-r16-temporal-nonsilent`；下一候选为 `v0.1.13-r17-agent-home-billing`。**不可用更早源码生成的 luci-app-tvguard 覆盖真机。**
+当前 N1 真机主包基线为 `v0.1.13-r21-settings-dual-bark`，bridge 为 `0.2.8-r4`。主包与 bridge 分开升级；bridge 不覆盖核心控制器、LuCI 或防火墙文件。
 
-当前 companion 为 **`tvguard-agent-bridge_0.2.8-4_all.ipk`**。它安装独立 CGI、融合/观察脚本、Home-only billing hint 和一次生成的配对密钥；不覆盖 `tvguardctl`、`tvguardd`、LuCI、iptables、防火墙、代理、配额和奖励。billing hint 本身只返回状态，不写额度；只有 r17 核心会消费其中 `system_home/app_home` 两种免计结果。
+当前 companion 为 **`tvguard-agent-bridge_0.2.8-4_all.ipk`**。它安装独立 CGI、融合/观察脚本、Home-only billing hint 和一次生成的配对密钥；不覆盖 `tvguardctl`、`tvguardd`、LuCI、iptables、防火墙、代理、配额和奖励。billing hint 本身只返回状态，不写额度；r17 之后的 Home-only 核心会消费其中 `system_home/app_home` 两种免计结果；当前真机基线为 r21。
 
 ## 链路与安全
 
@@ -19,12 +19,12 @@ Agent → N1 的 OpenWrt uhttpd `/cgi-bin/tvguard-agent`（POST，固定最小�
 
 ## N1 操作（无需修改原 IPK）
 
-1. 单独安装 companion IPK：`opkg install /tmp/tvguard-agent-bridge_0.2.8-3_all.ipk`。配套正式 Home-only 计时使用 r17 核心；更早核心不会消费该 hint。
+1. 单独安装 companion IPK：`opkg install /tmp/tvguard-agent-bridge_0.2.8-4_all.ipk`。配套正式 Home-only 计时要求 r17 或更新核心；当前真机使用 r21。
 2. 确保 N1 当前 uhttpd 在 LAN 监听，且已启用 CGI prefix `/cgi-bin`。
 3. 查看一次性 token：`/usr/libexec/tvguard-agent-bridge-report pairing`。
 4. 记下 N1 的 LAN IP。电视 Agent UI 填写 `http://N1_LAN_IP/cgi-bin/tvguard-agent` 与配对码，保存后启动监测。
 5. 测试电视视频首页、正常播放、暂停、桌面，N1 执行 `/usr/libexec/tvguard-agent-bridge-report status`；若 HTTP 连通将看到 `agent=online` 和包名/音频提示、Router PPS 及候选。
-6. 失联后 `agent=stale` 或 `agent=missing`；r17 会 fail-closed：有网络活动时照常扣时，不会因为 Agent 失联获得免费时间。
+6. 失联后 `agent=stale` 或 `agent=missing`；Home-only 核心会 fail-closed：有网络活动时照常扣时，不会因为 Agent 失联获得免费时间。
 
 ## 对成功的定义
 
@@ -261,3 +261,17 @@ r4 采用通用保护，不增加任何 App/包名特判：
 5. 该保护只影响 RAM-only Fusion 学习，不改变 firewall、奖励或其他核心策略。
 
 升级到 r4 会因 fusion state schema v3→v4 自动丢弃旧的 RAM 学习状态，避免把已经污染的 Activity 继续带入新模型；重启或升级后需要一次真实播放重新建立媒体上下文。
+
+
+### r4 真机验收结果（2026-11-12）
+
+r4 已在 N1 + 小米电视完成正式链路验证：
+
+- 正常播放重新学习到 `com.mgtv.tv.vod.activity.VodDynamicActivity`，fusion schema v4 正确持久在 RAM；
+- 回 App 首页后 `com.mgtv.tv.launcher.ChannelHomeActivity` 未覆盖 learned playback Activity，并稳定确认 `app_home`；
+- 核心输出 `billing_state=idle_verified / idle_reason=app_home`；
+- 儿童模式 App 首页 30 秒累计时间不增长；
+- 正常播放和暂停均保持 `charge`；
+- 系统首页确认 `system_home` 后 30 秒累计时间不增长。
+
+这证明 r4 的 Activity-switch guard 已解决首页首轮加载突发污染 learned media Activity 的真机问题。
