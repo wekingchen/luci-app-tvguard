@@ -106,9 +106,10 @@ def main():
     if args.min_sessions < 3:
         parser.error("at least 3 independent sessions are required")
     groups = read_sessions(args.csv)
+    apps = sorted({key[0] for key in groups if key[0] != "system"})
     result = [
         evaluate_pair(groups, app, idle, min_sessions=args.min_sessions)
-        for app in ("tencent", "iqiyi", "mango", "other", "general")
+        for app in apps
         for idle in LABELS
         if any(k[0] == app for k in groups)
     ]
