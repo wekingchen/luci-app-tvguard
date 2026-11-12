@@ -40,6 +40,21 @@ with tempfile.TemporaryDirectory(prefix="tvguard-billing-hint-") as folder:
             row("2-pause", "paused", pause_audio) + "\n"
         )
 
+    def write_nonplaying_profile(pkg=PKG, activity=PLAYER,
+                                  play_audio=100, pause_audio=5, home_audio=0):
+        def row(sid, label, audio):
+            return ",".join(map(str, [
+                1000, sid, label, "general", 180, "completed", 17, 179,
+                94, 20, 50, 120, 1, 45, 90000, 150000, "variable", "high",
+                "high", 100, 100, 100, pkg, 100, activity, 100,
+                audio, 100, 0,
+            ]))
+        (d / "learning-sessions.csv").write_text(
+            row("11-play", "playing", play_audio) + "\n" +
+            row("12-pause", "paused", pause_audio) + "\n" +
+            row("13-home", "app_home", home_audio) + "\n"
+        )
+
     hint = d / "billing-hint"
     text = hint_source.replace(
         "RAM=/var/run/tvguard-agent-bridge", f"RAM={d}")
@@ -116,6 +131,27 @@ with tempfile.TemporaryDirectory(prefix="tvguard-billing-hint-") as folder:
         "free", "paused")
     put(16, 360, PKG, PLAYER, audio=1)
     assert run(360, pps=5, shadow="idle", adaptive_state="ambiguous",
+               adaptive_score=50, adaptive_reason="overlap",
+               pause_hint="none", pause_score=0) == (
+        "charge", "playing")
+    (d / "learning-sessions.csv").unlink()
+
+    # Shared-context Type-D profile: first audio-off report is still charged;
+    # the second fresh report grants generic nonplaying free time even if the
+    # network itself looks strongly active. Audio-on exits immediately.
+    write_nonplaying_profile()
+    put(17, 370, PKG, PLAYER, audio=0)
+    assert run(370, pps=300, shadow="playing", adaptive_state="active",
+               adaptive_score=100, adaptive_reason="clear_current",
+               pause_hint="none", pause_score=0) == (
+        "charge", "unknown")
+    put(18, 380, PKG, PLAYER, audio=0)
+    assert run(380, pps=300, shadow="playing", adaptive_state="active",
+               adaptive_score=100, adaptive_reason="clear_current",
+               pause_hint="none", pause_score=0) == (
+        "free", "nonplaying")
+    put(19, 390, PKG, PLAYER, audio=1)
+    assert run(390, pps=5, shadow="idle", adaptive_state="ambiguous",
                adaptive_score=50, adaptive_reason="overlap",
                pause_hint="none", pause_score=0) == (
         "charge", "playing")
