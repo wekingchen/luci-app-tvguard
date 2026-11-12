@@ -54,13 +54,13 @@ public final class MainActivity extends Activity {
         scroller.setBackgroundColor(Color.rgb(16, 27, 39));
         LinearLayout panel = new LinearLayout(this);
         panel.setOrientation(LinearLayout.VERTICAL);
-        panel.setPadding(36, 30, 36, 30);
+        panel.setPadding(32, 18, 32, 18);
         scroller.addView(panel);
-        addText(panel, "TVGuard 助手 · 0.2.9", 27, 0xFFFFFFFF);
-        addText(panel, "Android 6 前台上下文观察验证版", 17, 0xFFB8C9D5);
+        addText(panel, "TVGuard 助手 · 0.2.9", 24, 0xFFFFFFFF);
+        addText(panel, "Android 6 前台上下文观察验证版", 14, 0xFFB8C9D5);
         toggle = new Button(this);
         toggle.setAllCaps(false);
-        toggle.setTextSize(18);
+        styleActionButton(toggle);
         toggle.setFocusable(true);
         toggle.setOnClickListener(new View.OnClickListener() {
             @Override
@@ -77,13 +77,13 @@ public final class MainActivity extends Activity {
             }
         });
         panel.addView(toggle);
-        healthSummary = addText(panel, "采样状态：等待启动", 16, 0xFFB8C9D5);
+        healthSummary = addText(panel, "采样状态：等待启动", 14, 0xFFB8C9D5);
 
-        addText(panel, "N1 联动 · 仅旁路观察，不改变实际计时", 18, 0xFFEAF4F9);
-        endpointDisplay = addText(panel, "N1 地址：" + BridgeClient.endpoint(this), 17, 0xFFB8C9D5);
+        addText(panel, "N1 联动 · 仅旁路观察，不改变实际计时", 16, 0xFFEAF4F9);
+        endpointDisplay = addText(panel, "N1 地址：" + BridgeClient.endpoint(this), 14, 0xFFB8C9D5);
 
         final Button changeAddress = new Button(this);
-        changeAddress.setAllCaps(false);
+        styleActionButton(changeAddress);
         changeAddress.setText("修改 N1 地址（遥控器数字键盘）");
         changeAddress.setFocusable(true);
         changeAddress.setId(View.generateViewId());
@@ -101,10 +101,9 @@ public final class MainActivity extends Activity {
         changeAddressButton = changeAddress;
 
         final Button autoPair = new Button(this);
-        autoPair.setAllCaps(false);
+        styleActionButton(autoPair);
         autoPair.setText("自动配对 N1（无需输入密钥）");
-        autoPair.setTextSize(18);
-        autoPair.setFocusable(true);
+                autoPair.setFocusable(true);
         autoPair.setFocusableInTouchMode(true);
         autoPair.setId(View.generateViewId());
         autoPair.setOnClickListener(new View.OnClickListener() {
@@ -129,12 +128,12 @@ public final class MainActivity extends Activity {
         changeAddress.setNextFocusUpId(toggle.getId());
         changeAddress.setNextFocusDownId(autoPair.getId());
         autoPair.setNextFocusUpId(changeAddress.getId());
-        bridgeStatus = addText(panel, "", 16, 0xFFB8C9D5);
-        remoteDebug = addText(panel, "遥控器：首次打开直接按确定进行自动配对", 14, 0xFFB8C9D5);
-        details = addText(panel, "", 20, 0xFFEAF4F9);
-        guidance = addText(panel, "", 16, 0xFFB8C9D5);
-        addText(panel, "开启后由系统恢复任务维持监测；仅向 N1 发送当前状态，无文件日志、数据库或离线队列。", 14, 0xFFB8C9D5);
-        addText(panel, "本版连接 N1 仅用于观察，不参与计时、奖励、暂停或防火墙判断。", 14, 0xFFB8C9D5);
+        bridgeStatus = addText(panel, "", 14, 0xFFB8C9D5);
+        remoteDebug = addText(panel, "遥控器：首次打开直接按确定进行自动配对", 13, 0xFFB8C9D5);
+        details = addText(panel, "", 15, 0xFFEAF4F9);
+        guidance = addText(panel, "", 14, 0xFFB8C9D5);
+        addText(panel, "开启后由系统恢复任务维持监测；仅向 N1 发送当前状态，无文件日志、数据库或离线队列。", 12, 0xFFB8C9D5);
+        addText(panel, "本版连接 N1 仅用于观察，不参与计时、奖励、暂停或防火墙判断。", 12, 0xFFB8C9D5);
         setContentView(scroller);
         // First-launch focus always lands on the only button needed for pairing.
         // The user does not need TV text input or DPAD_DOWN to begin.
@@ -142,12 +141,19 @@ public final class MainActivity extends Activity {
         autoPairButton.requestFocus();
     }
 
+    private void styleActionButton(Button button) {
+        button.setAllCaps(false);
+        button.setTextSize(16);
+        button.setMinHeight(48);
+        button.setPadding(18, 4, 18, 4);
+    }
+
     private TextView addText(LinearLayout parent, String text, int sp, int color) {
         TextView view = new TextView(this);
         view.setText(text);
         view.setTextSize(sp);
         view.setTextColor(color);
-        view.setPadding(0, 10, 0, 12);
+        view.setPadding(0, 5, 0, 6);
         parent.addView(view);
         return view;
     }
@@ -185,7 +191,7 @@ public final class MainActivity extends Activity {
                 "  · 最近接收：" + (ack == 0 ? "尚无" : time(ack)));
         ForegroundActivityHistory.Event meaningful = state.recentNonLauncher;
         StringBuilder info = new StringBuilder();
-        info.append("\n使用情况权限判断：").append(accessState)
+        info.append("使用情况权限判断：").append(accessState)
                 .append("\n监测开关：").append(enabled ? "已开启" : "未开启")
                 .append("\n状态：").append(state.state)
                 .append("\n采样：").append(freshness)
@@ -241,6 +247,12 @@ public final class MainActivity extends Activity {
             return true;
         Button[] choices = { toggle, changeAddressButton, autoPairButton };
         if (navigation) {
+            // At the edges, let ScrollView consume the key so diagnostics below
+            // the action buttons remain reachable with an ordinary TV remote.
+            if ((code == KeyEvent.KEYCODE_DPAD_DOWN && remoteSelectedIndex == choices.length - 1) ||
+                    (code == KeyEvent.KEYCODE_DPAD_UP && remoteSelectedIndex == 0)) {
+                return false;
+            }
             remoteSelectedIndex = Math.max(0, Math.min(choices.length - 1,
                     remoteSelectedIndex + (code == KeyEvent.KEYCODE_DPAD_DOWN ? 1 : -1)));
             Button selected = choices[remoteSelectedIndex];
