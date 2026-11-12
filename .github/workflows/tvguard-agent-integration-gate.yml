@@ -40,5 +40,5 @@ jobs:
     if: github.event_name == 'pull_request'
     uses: ./.github/workflows/tvguard-agent.yml
 
-  n1-bridge:
+  integrated-n1-bridge:
     uses: ./.github/workflows/tvguard-agent-bridge.yml
