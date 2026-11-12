@@ -101,8 +101,10 @@ restore_upgrade_key() {
     atomic_copy "$UPGRADE/agent-bridge.key" /etc/tvguard/agent-bridge.key
 }
 
-# Restore the exact pre-upgrade UCI file before the legacy package's prerm
-# changes (notably its old "enforce off") can become the new persisted config.
+# Restore the snapshot captured by the new preinst. On the first v0.1.13 ->
+# v0.1.14 transition opkg has already run the legacy prerm, so enforce=0 is
+# intentionally retained as the safe one-time observer state; all other user
+# settings are restored exactly from the migration snapshot.
 if [ -r "$UPGRADE/config" ]; then
     atomic_copy "$UPGRADE/config" /etc/config/tvguard || {
         echo 'TV Guard: failed to restore pre-upgrade configuration' >&2
