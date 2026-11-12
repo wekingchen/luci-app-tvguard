@@ -65,6 +65,7 @@ run_expect 'ctl:evidence' evidence
 run_expect 'ctl:log' log
 run_expect 'ctl:calibration' calibration
 run_expect 'ctl:calibration-v4' calibration-v4
+run_expect 'ctl:calibration-v5' calibration-v5
 run_expect 'ctl:learning' learning
 run_expect 'retention:report' storage
 run_expect 'soak-report:' soak
@@ -89,4 +90,4 @@ if sh "$WRAPPER" '../../bin/sh' >"$TMP/out" 2>"$TMP/err"; then
 fi
 [ ! -s "$LOG" ]
 
-echo "PASS: LuCI read wrapper exposes only fixed status/brief/evidence/log/calibration/learning/storage/soak/isolation readers"
+echo "PASS: LuCI read wrapper exposes only fixed status/brief/evidence/log/calibration-v4/v5/learning/storage/soak/isolation readers"
