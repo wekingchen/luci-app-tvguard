@@ -1,5 +1,114 @@
 #!/bin/sh
-[ -n "$IPKG_INSTROOT" ] && exit 0
+[ -n "${IPKG_INSTROOT:-}" ] && exit 0
+set -u
+umask 077
+
+UPGRADE=/tmp/tvguard-v014-upgrade
+RUN_STATE=/var/run/tvguard.state
+
+atomic_copy() {
+    src="$1"
+    dst="$2"
+    [ -f "$src" ] || return 1
+    mkdir -p "$(dirname "$dst")" || return 1
+    tmp="${dst}.$$"
+    cp "$src" "$tmp" || { rm -f "$tmp"; return 1; }
+    chmod 600 "$tmp" 2>/dev/null || :
+    mv -f "$tmp" "$dst"
+}
+
+state_field() {
+    file="$1"
+    key="$2"
+    [ -r "$file" ] || return 1
+    sed -n "s/^${key}=//p" "$file" | head -n 1
+}
+
+valid_uint() {
+    case "${1:-}" in ''|*[!0-9]*) return 1;; *) return 0;; esac
+}
+
+state_covers_snapshot() {
+    current="$1"
+    snap="$UPGRADE/state"
+    [ -r "$snap" ] || return 0
+    [ -r "$current" ] || return 1
+
+    snap_day="$(state_field "$snap" TODAY 2>/dev/null || :)"
+    snap_used="$(state_field "$snap" USED_S 2>/dev/null || :)"
+    valid_uint "$snap_used" || return 1
+    case "$snap_day" in
+        [0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]) : ;;
+        *) return 1 ;;
+    esac
+
+    cur_day="$(state_field "$current" TODAY 2>/dev/null || :)"
+    cur_used="$(state_field "$current" USED_S 2>/dev/null || :)"
+    if [ "$cur_day" = "$snap_day" ] && valid_uint "$cur_used" &&
+       [ "$cur_used" -ge "$snap_used" ]; then
+        return 0
+    fi
+
+    prev_day="$(state_field "$current" PREV_DATE 2>/dev/null || :)"
+    prev_used="$(state_field "$current" PREV_WATCH_S 2>/dev/null || :)"
+    if [ "$prev_day" = "$snap_day" ] && valid_uint "$prev_used" &&
+       [ "$prev_used" -ge "$snap_used" ]; then
+        return 0
+    fi
+    return 1
+}
+
+restore_upgrade_state_floor() {
+    [ -r "$UPGRADE/state" ] || return 0
+    data_root="$(/usr/libexec/tvguard-data root 2>/dev/null || :)"
+    [ -n "$data_root" ] || return 1
+    durable="$data_root/state"
+
+    if state_covers_snapshot "$durable" || state_covers_snapshot "$RUN_STATE"; then
+        # Keep whichever current state is newer. No restore is necessary.
+        return 0
+    fi
+
+    snap_day="$(state_field "$UPGRADE/state" TODAY 2>/dev/null || :)"
+    snap_used="$(state_field "$UPGRADE/state" USED_S 2>/dev/null || :)"
+    valid_uint "$snap_used" || return 1
+
+    # Only restore a same-day floor. Across midnight, never overwrite a newer
+    # day's state; keep the snapshot and fail closed for manual recovery.
+    [ "$snap_day" = "$(date +%Y-%m-%d)" ] || return 1
+    atomic_copy "$UPGRADE/state" "$durable" || return 1
+    atomic_copy "$UPGRADE/state" "$RUN_STATE" || return 1
+    state_covers_snapshot "$durable"
+}
+
+valid_key_file() {
+    file="$1"
+    [ -r "$file" ] || return 1
+    key=''
+    IFS= read -r key < "$file" || :
+    case "$key" in ''|*[!0123456789abcdef]*) return 1;; esac
+    [ "${#key}" -eq 32 ]
+}
+
+restore_upgrade_key() {
+    [ -r "$UPGRADE/agent-bridge.key" ] || return 0
+    valid_key_file "$UPGRADE/agent-bridge.key" || {
+        echo 'TV Guard: saved Agent pairing key is invalid; refusing to replace it' >&2
+        return 1
+    }
+    mkdir -p /etc/tvguard
+    chmod 700 /etc/tvguard 2>/dev/null || :
+    atomic_copy "$UPGRADE/agent-bridge.key" /etc/tvguard/agent-bridge.key
+}
+
+# Restore the exact pre-upgrade UCI file before the legacy package's prerm
+# changes (notably its old "enforce off") can become the new persisted config.
+if [ -r "$UPGRADE/config" ]; then
+    atomic_copy "$UPGRADE/config" /etc/config/tvguard || {
+        echo 'TV Guard: failed to restore pre-upgrade configuration' >&2
+        exit 1
+    }
+fi
 
 for path in /etc/init.d/tvguard /usr/libexec/tvguardctl /usr/libexec/tvguardd /usr/libexec/tvguard-status /usr/libexec/tvguard-fw /usr/libexec/tvguard-firewall-include /usr/libexec/tvguard-isolation-audit /usr/libexec/tvguard-compat-check /usr/libexec/tvguard-shadow /usr/libexec/tvguard-learn /usr/libexec/tvguard-adaptive /usr/libexec/tvguard-retention /usr/libexec/tvguard-data /usr/libexec/tvguard-daily-report; do
     chmod 755 "$path" 2>/dev/null || :
@@ -30,6 +139,21 @@ if [ -f /tmp/tvguard-config-restore-needed ]; then
     /usr/libexec/tvguard-data restore-config 2>/dev/null || :
     rm -f /tmp/tvguard-config-restore-needed
 fi
+
+# A v0.1.13 -> v0.1.14 package transition must never lower today's child
+# viewing total. Recover the pre-upgrade snapshot if the durable/RAM state was
+# lost or regressed while opkg removed the old packages.
+if ! restore_upgrade_state_floor; then
+    echo "TV Guard: viewing-state migration verification failed; recovery snapshot kept in $UPGRADE" >&2
+    exit 1
+fi
+
+# Preserve the standalone Bridge identity before its integrated setup starts.
+if ! restore_upgrade_key; then
+    echo "TV Guard: Agent pairing-key migration failed; recovery snapshot kept in $UPGRADE" >&2
+    exit 1
+fi
+
 /usr/libexec/tvguard-data config-sync 2>/dev/null || :
 /usr/libexec/tvguard-retention trim 2>/dev/null || :
 /etc/init.d/rpcd reload 2>/dev/null || :
@@ -45,4 +169,22 @@ if ! /usr/libexec/tvguard-agent-bridge-setup; then
     echo 'TV Guard: bridge setup failed; core remains running' >&2
     exit 1
 fi
+
+# Final no-regression check before deleting the recovery snapshot.
+if [ -r "$UPGRADE/state" ]; then
+    data_root="$(/usr/libexec/tvguard-data root 2>/dev/null || :)"
+    if [ -z "$data_root" ] ||
+       { ! state_covers_snapshot "$data_root/state" && ! state_covers_snapshot "$RUN_STATE"; }; then
+        echo "TV Guard: post-upgrade viewing total is below the saved floor; snapshot retained in $UPGRADE" >&2
+        exit 1
+    fi
+fi
+if [ -r "$UPGRADE/agent-bridge.key" ]; then
+    cmp -s "$UPGRADE/agent-bridge.key" /etc/tvguard/agent-bridge.key || {
+        echo "TV Guard: Agent pairing key changed during migration; snapshot retained in $UPGRADE" >&2
+        exit 1
+    }
+fi
+
+rm -rf "$UPGRADE"
 exit 0
