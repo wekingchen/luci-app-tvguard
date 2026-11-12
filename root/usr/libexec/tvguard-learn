@@ -229,6 +229,14 @@ EOF
 chmod 600 "$tmp"
 mv -f "$tmp" "$LAST"
 
-printf '%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s\n'     "$finished" "$sid" "$label" "$app" "$duration" "$result" "$samples" "$elapsed"     "$coverage" "$p10" "$p50" "$p90" "$t50" "$u50" "$b50" "$b90" "$stability" "$quality"     >> "$SESSIONS"
+# learning-sessions schema v2 keeps the original 18 network columns intact
+# and appends reusable Agent joint-learning features. Older 18-column rows stay
+# valid but cannot authorize learned Agent pause behavior.
+printf '%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s\n' \
+    "$finished" "$sid" "$label" "$app" "$duration" "$result" "$samples" "$elapsed" \
+    "$coverage" "$p10" "$p50" "$p90" "$t50" "$u50" "$b50" "$b90" "$stability" "$quality" \
+    "$joint_quality" "$agent_coverage" "$agent_package_coverage" "$agent_full_coverage" \
+    "$dominant_pkg" "$dominant_pkg_share" "$dominant_activity" "$dominant_activity_share" \
+    "$audio_ratio" "$screen_ratio" "$context_changes" >> "$SESSIONS"
 chmod 600 "$SESSIONS"
 "$RETENTION" trim >/dev/null 2>&1 || :
