@@ -12,3 +12,5 @@ reason=Re-run after BusyBox postinst contract and billing-hint executable permis
 # r21: rename time-rules tab to settings; support two Bark recipients with per-device retry
 
 # r21 fix: preserve live-test wording and allow menu rename in integration boundary
+
+# bridge r4: protect learned playback Activity from one-off app-home loading bursts
