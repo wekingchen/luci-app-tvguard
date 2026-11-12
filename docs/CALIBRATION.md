@@ -300,9 +300,16 @@ r6 针对真机已确认的关键反例补齐最后一段学习链：同一个�
 
 满足后：
 - 当前 exact context + audio=1：直接确认 playing，即使 PPS 暂时很低，也继续计时，优先保护 576p/720p；
-- 当前 exact context + audio=0：连续 3 个新的 Agent report 后才确认 paused；确认前仍是 unknown/charge；
+- 当前 exact context + audio=0：r7 起连续 2 个新的 Agent report 后确认 paused；第 1 个仍是 unknown/charge。旧的网络 pause-evidence 路径仍保持 3 个 report，不一起放宽；
 - paused 已确认后，即使后台预取让 PPS 突然升高，也不能单凭网络 active 覆盖人工学习出的暂停状态；
 - audio 恢复为 1 时立即退出 paused 并恢复 playing；
 - Agent stale、package-only、unknown Activity、无成对高可信样本、音频分离不足时全部 fail-closed，继续沿用原来的保守 Fusion/计时路径。
 
 2026-11-12 真机观察到芒果 TV 播放与暂停均处于同一 `VodDynamicActivity`，播放 audio=1、暂停 audio=0；暂停后一度出现 PPS≈198，随后降至 51–98，又可再次升到 349。该反例正是 r6 不再允许“网络 active 无条件否决暂停”的原因，但上述包名/Activity 只记录在测试文档中，不进入决策白名单。
+
+
+## v0.1.14-r7：learned-audio 暂停确认由 3 个心跳收紧到 2 个
+
+r6 真机儿童模式已确认：正常播放 40 秒约 +43 秒，暂停确认后 40 秒 +0，恢复播放 40 秒约 +43 秒；但从按下暂停到正式免计仍多计约 32 秒。随后专门验证“静音但继续播放”：连续 5 个 Agent report 均保持 audio_active=1，Fusion 一直为 playing，未出现静音误判。
+
+因此 r7 只对**已经存在成对高可信 playing/paused Agent 画像的 exact package+Activity**收紧确认：第 1 个 fresh audio=0 report 继续 charge，第 2 个 fresh audio=0 report 才进入 `paused_confirmed_learned_audio_context`。这样保留一个完整抗抖窗口，同时把典型暂停确认延迟从约 30 秒降到约 20 秒。没有 learned-audio profile 的旧网络暂停路径仍要求 3 个 fresh report。
