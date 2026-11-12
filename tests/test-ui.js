@@ -21,7 +21,11 @@ let state = {
     calibration_phase: 'idle',
     calibration_label: 'none', calibration_app: 'none',
     calibration_duration_seconds: 0, calibration_last_duration_seconds: 0,
-    calibration_last_session: 'none'
+    calibration_last_session: 'none',
+    agent_state: 'fresh', agent_age_seconds: 2,
+    agent_package: 'com.example.video',
+    agent_activity: 'com.example.video.PlayerActivity',
+    agent_audio_active: 1, agent_screen_on: 1, agent_report_seq: 42
 };
 let commands = [];
 let eventLog = [
@@ -78,7 +82,8 @@ const poll = {
     remove(fn) { polls.delete(fn); }
 };
 const L = { bind: (fn, ctx) => fn.bind(ctx) };
-const win = { confirm: () => true, location: { reload: () => reloads++ } };
+let confirmations = [];
+const win = { confirm: (message) => { confirmations.push(String(message || '')); return true; }, location: { reload: () => reloads++ } };
 const view = { extend: (value) => value };
 const factory = new Function('view', 'fs', 'ui', 'poll', 'L', 'E', 'window', source);
 const page = factory(view, mockFs, ui, poll, L, E, win);
@@ -125,6 +130,9 @@ const updates = [
     assert.equal(page._calibrationNodes.duration.props['aria-label'], '学习采集时长');
     assert.equal(page._calibrationNodes.sceneButtons.length, 4);
     assert.equal(page._calibrationNodes.selectedScene.children[0], '电视系统首页');
+    assert.match(page._calibrationNodes.agentStatus.textContent, /Agent 已连接/);
+    assert.match(page._calibrationNodes.agentContext.textContent, /com\.example\.video/);
+    assert.match(page._calibrationNodes.agentContext.textContent, /PlayerActivity/);
     assert.match(String(page._calibrationNodes.report.children[0] || ''), /学习分析/);
     assert.equal(page._overviewNodes.childButton.props.type, 'button');
     assert.equal(page._overviewNodes.parentButton.props.type, 'button');
@@ -342,6 +350,8 @@ const updates = [
     await page._calibrationNodes.start.props.click();
     assert.ok(commands.some(([n, args]) =>
         n === '/usr/libexec/tvguardctl' && args.join(' ') === 'calibrate system_home 180'));
+    assert.match(confirmations[confirmations.length - 1], /com\.example\.video/);
+    assert.match(confirmations[confirmations.length - 1], /PlayerActivity/);
 
     // Calibration stop remains an independent action.
     state = {...state, ...updates[0]};
