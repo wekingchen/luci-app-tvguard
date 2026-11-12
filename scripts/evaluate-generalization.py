@@ -13,6 +13,7 @@ from __future__ import annotations
 import argparse
 import csv
 import json
+import re
 import subprocess
 import sys
 import tempfile
@@ -44,7 +45,8 @@ def parse_rows(path: Path):
             if len(parts) == 8:
                 schema = "v3"
                 stamp, session, scene, app, *metrics = parts
-                if scene not in VALID_SCENES or app not in VALID_APPS:
+                package_like = bool(re.fullmatch(r"[A-Za-z0-9._$]+", app))
+                if scene not in VALID_SCENES or not (app in VALID_APPS or package_like):
                     raise ValueError(f"line {number}: invalid scene/app label")
             elif len(parts) == 14:
                 schema = "v5"
