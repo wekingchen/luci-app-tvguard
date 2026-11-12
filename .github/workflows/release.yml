@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - RELEASE_VERSION
+      - '.github/workflows/release.yml'
   workflow_dispatch:
 
 permissions:
@@ -48,7 +49,7 @@ jobs:
           test -f "$PKG"
           test "$(od -An -tx1 -N2 "$PKG" | tr -d ' \n')" = 1f8b
           tar -tzf "$PKG" | grep -q './control.tar.gz'
-          python3 scripts/verify-ipk.py "$PKG" "$VERSION"
+          python3 scripts/verify-ipk.py "$PKG" "$VERSION" "$RELEASE"
 
       - name: Publish GitHub Release
         env:
