@@ -13,9 +13,9 @@
 | 无后台文件日志 / 数据库 | 源码约束及短时模拟器盘占用检查通过 | 小米电视连续 24h 持续观测 |
 | 后台进程恢复 | 0.2.6-r2 真机 `am kill` → RecoveryJobService 约 3.6 秒拉起 | 0.2.8 必须保持同等恢复行为 |
 | 前台上下文向 N1 上报 | 已实现并在 v0.1.14 整合 Bridge 后真机保持 fresh 上报 | 继续验证长期稳定和 stale 降级 |
-| Agent 上下文与 N1 网络窗口融合 | v0.2.8 generic fusion 已实现；Home-only 的 `system_home/app_home` 已进入 N1 正式计时 | 暂停等高风险判断继续保守，不扩大免计时权限 |
+| Agent 上下文与 N1 网络窗口融合 | v0.2.8 generic fusion 已实现；`system_home/app_home` 与严格 `paused_confirmed_learned_context` 可进入 N1 免计时 | 普通 pause hint / temporal hold / TX-only idle 继续保守计时 |
 | 免费低码率视频正确计时 | 未验证，现阶段不能由 Agent 单独保证 | P0 效果必须真机过 |
-| 暂停 / 首页 / 待机不误计 | 系统首页与 App 首页 Home-only 免计时已真机通过；暂停当前仍按设计继续计时 | 暂停免计时仍需更强证据，不能仅凭 Activity 放宽 |
+| 暂停 / 首页 / 待机不误计 | 系统首页与 App 首页已真机通过；r2 只对 Fusion 当前严格确认暂停免计时 | 真机验证 confirmed pause 不误伤 576p/720p，其他暂停形态继续学习 |
 | N1 故障和权限失效自动降级 | 已接入 fail-closed：Agent missing/stale/invalid 时有网络活动继续计时 | 继续做断网、权限撤销和长期 stale 回归 |
 | 长时间低资源占用 | 仅短时验证 | 未通过 |
 
