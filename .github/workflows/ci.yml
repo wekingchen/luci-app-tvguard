@@ -144,8 +144,10 @@ jobs:
           grep -q '1048576 bytes (1 MiB)' root/usr/libexec/tvguard-retention
           grep -q '/mnt/mmcblk2p4' root/usr/libexec/tvguard-data
           grep -q 'tvguard-data' scripts/build-ipk.sh
-          grep -q 'backup-config' ipkg/preinst
+          grep -q 'tvguard-v014-upgrade' ipkg/preinst
+          grep -q 'agent-bridge.key' ipkg/preinst
           grep -q 'restore-config' ipkg/postinst
+          grep -q 'state_covers_snapshot' ipkg/postinst
           grep -q 'default-config' scripts/verify-ipk.py
           grep -q 'system_home system 100' root/usr/libexec/tvguard-shadow
           grep -q 'flow_offload_observation_risk' root/usr/libexec/tvguard-compat-check
