@@ -38,7 +38,7 @@ jobs:
           echo "package_release=$BUILD_RELEASE" >> "$GITHUB_OUTPUT"
           echo "tag=v$VERSION" >> "$GITHUB_OUTPUT"
 
-      - name: Build and validate release IPK
+      - name: Build and validate main IPK
         shell: bash
         run: |
           set -euo pipefail
@@ -51,7 +51,83 @@ jobs:
           tar -tzf "$PKG" | grep -q './control.tar.gz'
           python3 scripts/verify-ipk.py "$PKG" "$VERSION" "$RELEASE"
 
-      - name: Publish GitHub Release
+      - name: Build and validate N1 Agent bridge IPK
+        shell: bash
+        run: |
+          set -euo pipefail
+          sh scripts/build-agent-bridge-ipk.sh
+          BRIDGE="dist/tvguard-agent-bridge_0.2.8-4_all.ipk"
+          test -s "$BRIDGE"
+          test "$(od -An -tx1 -N2 "$BRIDGE" | tr -d ' \n')" = 1f8b
+          tar -tzf "$BRIDGE" | grep -q './control.tar.gz'
+          tar -xOzf "$BRIDGE" ./control.tar.gz |
+            tar -xOzf - ./control |
+            grep -q '^Version: 0.2.8-4$'
+          tar -xOzf "$BRIDGE" ./data.tar.gz |
+            tar -tzf - |
+            grep -q './usr/libexec/tvguard-agent-billing-hint'
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Check hosted Android SDK
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ ! -f "$ANDROID_HOME/platforms/android-35/android.jar" ] ||
+             [ ! -x "$ANDROID_HOME/build-tools/35.0.0/apksigner" ]; then
+            sdkmanager --install 'platforms;android-35' 'build-tools;35.0.0'
+          fi
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.7'
+
+      - name: Prepare permanent Agent release keystore
+        shell: bash
+        env:
+          TVGUARD_KEYSTORE_B64: ${{ secrets.TVGUARD_KEYSTORE_B64 }}
+        run: |
+          set -euo pipefail
+          test -n "$TVGUARD_KEYSTORE_B64"
+          KEYSTORE="$RUNNER_TEMP/tvguard-release.p12"
+          printf '%s' "$TVGUARD_KEYSTORE_B64" | base64 --decode > "$KEYSTORE"
+          chmod 600 "$KEYSTORE"
+          ACTUAL_SHA256="$(sha256sum "$KEYSTORE" | awk '{print $1}')"
+          EXPECTED_SHA256="96e920be816ff3a59c8b914f99909a5da9c6c59b07ccc833ee901b2700bc74a8"
+          test "$ACTUAL_SHA256" = "$EXPECTED_SHA256"
+          echo "TVGUARD_KEYSTORE_PATH=$KEYSTORE" >> "$GITHUB_ENV"
+
+      - name: Build permanently signed TV Agent APK
+        working-directory: tvguard-agent
+        env:
+          TVGUARD_STORE_PASSWORD: ${{ secrets.TVGUARD_STORE_PASSWORD }}
+          TVGUARD_KEY_ALIAS: ${{ secrets.TVGUARD_KEY_ALIAS }}
+          TVGUARD_KEY_PASSWORD: ${{ secrets.TVGUARD_KEY_PASSWORD }}
+        run: gradle --no-daemon :app:assembleRelease
+
+      - name: Verify Agent APK signature and stage release asset
+        shell: bash
+        run: |
+          set -euo pipefail
+          SRC="tvguard-agent/app/build/outputs/apk/release/app-release.apk"
+          APK="dist/tvguard-agent_0.2.8-release-signed.apk"
+          test -s "$SRC"
+          test "$(stat -c%s "$SRC")" -lt 1048576
+          unzip -l "$SRC" | grep -q classes.dex
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose --print-certs "$SRC" |
+            tee "$RUNNER_TEMP/apksigner.txt"
+          EXPECTED_CERT_SHA256="f4c300999b1bb3f04f4f80a630ebd5273dd268810a35b25b6c4c60a63cf376fa"
+          ACTUAL_CERT_SHA256="$(sed -n 's/^Signer #1 certificate SHA-256 digest: //p' "$RUNNER_TEMP/apksigner.txt" |
+            head -n1 | tr '[:upper:]' '[:lower:]' | tr -d ':[:space:]')"
+          test "$ACTUAL_CERT_SHA256" = "$EXPECTED_CERT_SHA256"
+          cp "$SRC" "$APK"
+          test -s "$APK"
+          echo "Release signer SHA256 verified: $ACTUAL_CERT_SHA256"
+
+      - name: Publish or refresh complete GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
@@ -61,14 +137,19 @@ jobs:
           RELEASE="${{ steps.version.outputs.package_release }}"
           TAG="${{ steps.version.outputs.tag }}"
           PKG="dist/luci-app-tvguard_${VERSION}-${RELEASE}_all.ipk"
-
-          if gh release view "$TAG" >/dev/null 2>&1; then
-            echo "Release $TAG already exists; leaving it unchanged."
-            exit 0
-          fi
+          BRIDGE="dist/tvguard-agent-bridge_0.2.8-4_all.ipk"
+          APK="dist/tvguard-agent_0.2.8-release-signed.apk"
+          test -s "$PKG"
+          test -s "$BRIDGE"
+          test -s "$APK"
 
           cat > /tmp/release-notes.md <<'EOF'
-          v0.1.13-r21 在 v0.1.12 已验证控制层上，加入 Home-only 计时、儿童观看统计和 Bark 日报。
+          v0.1.13-r21 在 v0.1.12 已验证控制层上，加入 Home-only 计时、儿童观看统计、电视 Agent 与 Bark 日报。
+
+          本 Release 同时提供三部分，Home-only 完整功能需要三者配套：
+          - N1 主包：luci-app-tvguard_0.1.13-21_all.ipk
+          - N1 Agent bridge：tvguard-agent-bridge_0.2.8-4_all.ipk
+          - 小米 Android 6 电视 Agent：tvguard-agent_0.2.8-release-signed.apk
 
           本版真机已验证：
           - 儿童/家长/手动锁定、额度、奖励、DROP/RETURN、reload/reboot 与代理隔离继续正常；
@@ -86,6 +167,8 @@ jobs:
           - 高可信 system_home/app_home 免计时需要电视 Agent 0.2.8 + N1 bridge 0.2.8-r4；
           - 正式原则为 Home-only free / uncertain charge，暂停免计时不属于本版承诺。
 
+          Agent APK 使用固定永久 Release 证书；Release 工作流会同时校验 keystore SHA256 与 signer certificate SHA256。
+
           安全边界：
           - 默认 enforce=0、allow_enforcement=0、observe_reply=0；
           - 正式控制仍要求双开关及 isolation audit=ok；
@@ -93,10 +176,17 @@ jobs:
           - Agent 默认无持久运行日志、SQLite 或离线队列。
           EOF
 
-          gh release create "$TAG" "$PKG" \
-            --target "$GITHUB_SHA" \
-            --title "TV Guard v$VERSION" \
-            --notes-file /tmp/release-notes.md
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release edit "$TAG"               --title "TV Guard v$VERSION"               --notes-file /tmp/release-notes.md
+            gh release upload "$TAG" "$PKG" "$BRIDGE" "$APK" --clobber
+          else
+            gh release create "$TAG" "$PKG" "$BRIDGE" "$APK"               --target "$GITHUB_SHA"               --title "TV Guard v$VERSION"               --notes-file /tmp/release-notes.md
+          fi
+
+      - name: Remove temporary release keystore
+        if: always()
+        shell: bash
+        run: rm -f "$RUNNER_TEMP/tvguard-release.p12"
 
       - name: Remove merged development branches
         if: success()
@@ -105,12 +195,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          for branch in \
-            feat/initial-shadow-mvp \
-            feat/v0.1.13-agent-integration \
-            feat/v0.1.13-smart-billing; do
+          for branch in             feat/initial-shadow-mvp             feat/v0.1.13-agent-integration             feat/v0.1.13-smart-billing; do
             encoded="${branch//\//%2F}"
-            gh api -X DELETE \
-              "repos/${GITHUB_REPOSITORY}/git/refs/heads/${encoded}" \
-              >/dev/null 2>&1 || true
+            gh api -X DELETE               "repos/${GITHUB_REPOSITORY}/git/refs/heads/${encoded}"               >/dev/null 2>&1 || true
           done
