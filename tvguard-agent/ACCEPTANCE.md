@@ -13,6 +13,7 @@
 | 无后台文件日志 / 数据库 | 源码约束及短时模拟器盘占用检查通过 | 小米电视连续 24h 持续观测 |
 | 后台进程恢复 | 0.2.6-r2 真机 `am kill` → RecoveryJobService 约 3.6 秒拉起 | 0.2.8 必须保持同等恢复行为 |
 | 前台上下文向 N1 上报 | 已实现并在 v0.1.14 整合 Bridge 后真机保持 fresh 上报 | 继续验证长期稳定和 stale 降级 |
+| 人工学习 Agent 联动 | v0.1.14-r3 在 N1 侧同步采集 fresh package/Activity/audio/screen/seq；电视 APK 无新增持久日志 | 真机验证 v5 覆盖率、自动 App 识别和 missing/stale 降级 |
 | Agent 上下文与 N1 网络窗口融合 | v0.2.8 generic fusion 已实现；`system_home/app_home` 与严格 `paused_confirmed_learned_context` 可进入 N1 免计时 | 普通 pause hint / temporal hold / TX-only idle 继续保守计时 |
 | 免费低码率视频正确计时 | 未验证，现阶段不能由 Agent 单独保证 | P0 效果必须真机过 |
 | 暂停 / 首页 / 待机不误计 | 系统首页与 App 首页已真机通过；r2 只对 Fusion 当前严格确认暂停免计时 | 真机验证 confirmed pause 不误伤 576p/720p，其他暂停形态继续学习 |
@@ -47,6 +48,7 @@
 
 ### T3 N1 Shadow Soak 融合观察
 - 必须让真实 Agent 事件达到 N1，按窗口对齐，能看到事件新鲜度和失联状态。
+- r3 人工学习期间应同时形成 v3 网络窗口和 v5 Agent 联合窗口；不同视频 App 应由真实 package 自动区分，不再要求人工填写品牌标签。
 - **整个 T3 不影响 `USED_S`、`billing_state`、额度、奖励、`TVG_GATE`，除非后续单独审查/启用。**
 
 ### T4 真机视频效果（P0 → P1）
