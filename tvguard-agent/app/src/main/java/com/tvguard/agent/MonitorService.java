@@ -201,8 +201,11 @@ public final class MonitorService extends Service {
                         getSystemService(Context.POWER_SERVICE);
                 boolean activeAudio = audio != null && audio.isMusicActive();
                 boolean screenOn = power != null && power.isInteractive();
+                String activityTrail = fresh
+                        ? BridgeProtocol.activityTrail(sample.timeline, pkg) : "none";
                 BridgeClient.maybeSend(MonitorService.this, pkg, cls,
-                        activeAudio, screenOn, now, sample.usageAccess, source, status);
+                        activeAudio, screenOn, now, sample.usageAccess, source, status,
+                        activityTrail);
             } catch (RuntimeException e) {
                 BridgeClient.markUplinkError("本地上报异常：" +
                         e.getClass().getSimpleName());
