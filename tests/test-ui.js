@@ -43,6 +43,7 @@ const mockFs = {
         if (args[0] === 'status') return Promise.resolve({code: 0, stdout: JSON.stringify(state)});
         if (args[0] === 'log') return Promise.resolve({code: 0, stdout: eventLog});
         if (args[0] === 'calibration') return Promise.resolve({code: 0, stdout: 'sample line'});
+        if (args[0] === 'calibration-v5') return Promise.resolve({code: 0, stdout: 'agent sample line'});
         if (args[0] === 'learning') return Promise.resolve({code: 0, stdout: '学习分析\n状态: 电视系统首页'});
         if (args[0] === 'isolation') return Promise.resolve({code: 0, stdout: 'ok\n'});
         if (name === '/usr/libexec/tvguardctl') return Promise.resolve({code: 0, stdout: ''});
@@ -326,7 +327,7 @@ const updates = [
     Object.assign(state, updates[2]);
     await page.refreshCalibration();
     assert.equal(page._calibrationNodes.bar.value, 100);
-    assert.equal(page._calibrationNodes.samples.textContent, 'sample line');
+    assert.equal(page._calibrationNodes.samples.textContent, 'agent sample line');
     assert.match(page._calibrationNodes.report.textContent, /学习分析/);
     assert.match(page._calibrationNodes.title.textContent, /完成/);
 
