@@ -16,3 +16,5 @@ reason=Re-run after BusyBox postinst contract and billing-hint executable permis
 # bridge r4: protect learned playback Activity from one-off app-home loading bursts
 
 # bridge r4 fix2: persist fusion schema v4 switch-learning state correctly
+
+# final r21/r4 docs-aligned integration gate before merge
