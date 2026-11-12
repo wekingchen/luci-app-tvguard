@@ -157,6 +157,16 @@ if ! restore_upgrade_key; then
 fi
 
 /usr/libexec/tvguard-data config-sync 2>/dev/null || :
+
+# opkg keeps a -opkg copy when the administrator has changed the conffile.
+# The package also ships the same pristine default at /usr/share/tvguard,
+# so discard only a byte-identical duplicate. Never remove an unknown file.
+if [ -f /etc/config/tvguard-opkg ] &&
+   [ -f /usr/share/tvguard/default-config ] &&
+   cmp -s /etc/config/tvguard-opkg /usr/share/tvguard/default-config; then
+    rm -f /etc/config/tvguard-opkg
+fi
+
 /usr/libexec/tvguard-retention trim 2>/dev/null || :
 /etc/init.d/rpcd reload 2>/dev/null || :
 /etc/init.d/tvguard enable
