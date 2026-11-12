@@ -81,7 +81,8 @@ with tempfile.TemporaryDirectory(prefix="tvguard-fusion-") as folder:
 
     # Human-labelled paired sessions teach exact-context audio semantics.
     # Low-bitrate audio-active playback must charge/play even below the network
-    # floor, while sustained audio-off pause must survive a high-PPS burst.
+    # floor. Two fresh audio-off reports confirm pause and the latched pause
+    # must survive a high-PPS burst.
     reset()
     write_audio_profile()
     assert run(1, 300, pkg=APP_A, activity=PLAYER_A, audio=1,
@@ -90,20 +91,19 @@ with tempfile.TemporaryDirectory(prefix="tvguard-fusion-") as folder:
                pause_hint="idle_overlap", pause_score=60,
                active_floor=100) == (
         "playing", "playing_confirmed_learned_audio_profile", 0)
-    for seq, seen in ((2, 310), (3, 320)):
-        assert run(seq, seen, pkg=APP_A, activity=PLAYER_A, audio=0,
-                   pps=300, shadow="playing", adaptive_state="active",
-                   adaptive_score=100, adaptive_reason="clear_current",
-                   pause_hint="none", pause_score=0,
-                   active_floor=100) == (
-            "unknown", "paused_audio_profile_warming", seq - 1)
-    assert run(4, 330, pkg=APP_A, activity=PLAYER_A, audio=0,
+    assert run(2, 310, pkg=APP_A, activity=PLAYER_A, audio=0,
                pps=300, shadow="playing", adaptive_state="active",
                adaptive_score=100, adaptive_reason="clear_current",
                pause_hint="none", pause_score=0,
                active_floor=100) == (
-        "paused", "paused_confirmed_learned_audio_context", 3)
-    assert run(5, 340, pkg=APP_A, activity=PLAYER_A, audio=1,
+        "unknown", "paused_audio_profile_warming", 1)
+    assert run(3, 320, pkg=APP_A, activity=PLAYER_A, audio=0,
+               pps=300, shadow="playing", adaptive_state="active",
+               adaptive_score=100, adaptive_reason="clear_current",
+               pause_hint="none", pause_score=0,
+               active_floor=100) == (
+        "paused", "paused_confirmed_learned_audio_context", 2)
+    assert run(4, 330, pkg=APP_A, activity=PLAYER_A, audio=1,
                pps=5, shadow="idle", adaptive_state="ambiguous",
                adaptive_score=50, adaptive_reason="overlap",
                pause_hint="none", pause_score=0,
