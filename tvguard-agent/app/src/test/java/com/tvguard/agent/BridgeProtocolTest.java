@@ -32,6 +32,29 @@ public final class BridgeProtocolTest {
                         "com.gala.video.app.player.PlayerActivity",true,true,123456789L,
                         "allowed","usage_events","full_context"));
     }
+    @Test public void tvg3AddsBoundedSamePackageActivityTrail() {
+        ForegroundActivityHistory.Event[] timeline = new ForegroundActivityHistory.Event[] {
+                new ForegroundActivityHistory.Event("com.gitvdemo.video",
+                        "com.gala.video.plugincenter.component.InstrActivityProxy0", 40),
+                new ForegroundActivityHistory.Event("com.gitvdemo.video",
+                        "com.gala.video.app.player.PlayerActivity", 30),
+                new ForegroundActivityHistory.Event("com.gitvdemo.video",
+                        "com.gala.video.plugincenter.component.InstrActivityProxy0", 20),
+                new ForegroundActivityHistory.Event("other.pkg",
+                        "other.pkg.NoiseActivity", 10)
+        };
+        String trail = BridgeProtocol.activityTrail(timeline, "com.gitvdemo.video");
+        assertEquals("com.gala.video.plugincenter.component.InstrActivityProxy0~"
+                + "com.gala.video.app.player.PlayerActivity~"
+                + "com.gala.video.plugincenter.component.InstrActivityProxy0", trail);
+        String payload = BridgeProtocol.bodyV3(KEY, 6, "com.gitvdemo.video",
+                "com.gala.video.plugincenter.component.InstrActivityProxy0",
+                true, true, 123456790L, "allowed", "usage_events", "full_context", trail);
+        assertTrue(payload.startsWith("TVG3|" + KEY + "|6|"));
+        assertTrue(payload.contains("|allowed|usage_events|full_context|" + trail + "\n"));
+        assertTrue(payload.length() < 768);
+    }
+
     @Test public void maliciousCharactersAndLongNamesSanitized() {
         StringBuilder sb = new StringBuilder();
         for(int i=0;i<999;i++) sb.append('A');
