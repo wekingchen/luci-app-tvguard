@@ -124,7 +124,9 @@ jobs:
           grep -q 'tvguard-compat-check' scripts/build-ipk.sh
           grep -q 'TX_IDLE_BILLING_AUTHORITY=0' root/usr/libexec/tvguardctl
           grep -q 'AGENT_BILLING=/usr/libexec/tvguard-agent-billing-hint' root/usr/libexec/tvguardctl
-          grep -q 'system_home|app_home) HOME_FREE_REASON=' root/usr/libexec/tvguardctl
+          grep -q 'system_home|app_home|paused) HOME_FREE_REASON=' root/usr/libexec/tvguardctl
+          grep -q 'paused_confirmed_learned_context' bridge/root/usr/libexec/tvguard-agent-billing-hint
+          grep -q 'charge paused' bridge/root/usr/libexec/tvguard-agent-billing-hint
           grep -q 'idle_grace' root/usr/libexec/tvguardctl
           grep -q 'BUILD_ID_FILE' root/usr/libexec/tvguardctl
           grep -q 'tvguard-learn' scripts/build-ipk.sh
