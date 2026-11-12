@@ -126,6 +126,9 @@ jobs:
           grep -q 'AGENT_BILLING=/usr/libexec/tvguard-agent-billing-hint' root/usr/libexec/tvguardctl
           grep -q 'system_home|app_home|paused) HOME_FREE_REASON=' root/usr/libexec/tvguardctl
           grep -q 'paused_confirmed_learned_context' bridge/root/usr/libexec/tvguard-agent-billing-hint
+          grep -q 'paused_confirmed_learned_audio_context' bridge/root/usr/libexec/tvguard-agent-billing-hint
+          grep -q 'playing_confirmed_learned_audio_profile' bridge/root/usr/libexec/tvguard-agent-fusion
+          grep -q 'learning-sessions.csv' bridge/root/usr/libexec/tvguard-agent-fusion
           grep -q 'charge paused' bridge/root/usr/libexec/tvguard-agent-billing-hint
           grep -q 'idle_grace' root/usr/libexec/tvguardctl
           grep -q 'BUILD_ID_FILE' root/usr/libexec/tvguardctl
