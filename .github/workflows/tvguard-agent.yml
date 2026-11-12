@@ -68,7 +68,7 @@ jobs:
           script: bash tvguard-agent/tests/emulator_smoke.sh
 
       - name: Prepare stable release keystore
-        if: github.event_name != 'pull_request'
+        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
         shell: bash
         env:
           TVGUARD_KEYSTORE_B64: ${{ secrets.TVGUARD_KEYSTORE_B64 }}
@@ -85,7 +85,7 @@ jobs:
           echo "Release keystore SHA256 verified."
 
       - name: Build stable signed release APK
-        if: github.event_name != 'pull_request'
+        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
         working-directory: tvguard-agent
         env:
           TVGUARD_STORE_PASSWORD: ${{ secrets.TVGUARD_STORE_PASSWORD }}
@@ -94,7 +94,7 @@ jobs:
         run: gradle --no-daemon :app:assembleRelease
 
       - name: Verify release APK signature and identity
-        if: github.event_name != 'pull_request'
+        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
         shell: bash
         run: |
           set -euo pipefail
@@ -110,7 +110,7 @@ jobs:
           echo "Release APK bytes: $(stat -c%s "$APK")"
 
       - name: Upload stable signed release APK
-        if: github.event_name != 'pull_request'
+        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
         uses: actions/upload-artifact@v4
         with:
           name: tvguard-agent-0.2.8-release-signed-apk
