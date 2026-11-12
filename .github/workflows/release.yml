@@ -192,5 +192,9 @@ jobs:
             feat/v0.1.13-smart-billing \
             feat/v0.1.14-integrated-agent-bridge; do
             encoded="${branch//\//%2F}"
-            gh api -X DELETE               "repos/${GITHUB_REPOSITORY}/git/refs/heads/${encoded}"               >/dev/null 2>&1 || true
+            # Best-effort cleanup only; release success must not depend on an
+            # already-deleted development branch.
+            gh api -X DELETE \
+              "repos/${GITHUB_REPOSITORY}/git/refs/heads/${encoded}" \
+              >/dev/null 2>&1 || true
           done
