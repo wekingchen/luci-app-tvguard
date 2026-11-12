@@ -170,7 +170,7 @@ load_state() {
     case "$PREV_DATE" in none|[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]) :;; *) PREV_DATE=none;; esac
     case "$MODE" in child|parent|locked) :;; *) MODE=locked;; esac
     case "$BILLING_STATE" in charge|idle_verified|idle_grace|idle_silent) :;; *) BILLING_STATE=charge;; esac
-    case "$IDLE_REASON" in none|system_home|idle|paused|app_home|adaptive|silent) :;; *) IDLE_REASON=none;; esac
+    case "$IDLE_REASON" in none|system_home|idle|paused|app_home|nonplaying|adaptive|silent) :;; *) IDLE_REASON=none;; esac
     case "$ADAPTIVE_STATE" in unready|warming|idle|active|ambiguous) :;; *) ADAPTIVE_STATE=unready;; esac
     case "$ADAPTIVE_SCORE" in ''|*[!0-9]*) ADAPTIVE_SCORE=0;; esac
     case "$ADAPTIVE_WINDOWS" in ''|*[!0-9]*) ADAPTIVE_WINDOWS=0;; esac
@@ -1016,6 +1016,7 @@ brief() {
                         idle) billing_name="已暂停（App 首页/暂停已确认）" ;;
                         paused) billing_name="已暂停（暂停已确认）" ;;
                         app_home) billing_name="已暂停（App 首页已确认）" ;;
+                        nonplaying) billing_name="已暂停（非播放已确认）" ;;
                         adaptive) billing_name="已暂停（Adaptive 闲置已确认）" ;;
                         *) billing_name="已暂停（闲置已确认）" ;;
                     esac ;;
