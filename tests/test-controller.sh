@@ -88,6 +88,7 @@ case "${TVGUARD_TEST_AGENT_BILLING:-charge}" in
     system_home) echo 'free system_home' ;;
     app_home) echo 'free app_home' ;;
     paused) echo 'free paused' ;;
+    nonplaying) echo 'free nonplaying' ;;
     playing) echo 'charge playing' ;;
     *) echo 'charge unknown' ;;
 esac
@@ -602,6 +603,27 @@ status
 after_paused="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["used_seconds"])' "$TMP/status.json")"
 [ "$after_paused" = "$after_app_home" ]
 check 'assert s["billing_state"]=="idle_verified" and s["idle_reason"]=="paused", s'
+
+# Three-state learned shared-context nonplaying is also a narrow exemption.
+export TVGUARD_TEST_AGENT_BILLING=nonplaying
+python3 - "$TMP/run/runtime" <<'PY'
+from pathlib import Path
+import sys,time
+p=Path(sys.argv[1])
+lines=p.read_text().splitlines()
+now=int(time.time())
+p.write_text('\n'.join(
+    'LAST_EPOCH='+str(now-10) if line.startswith('LAST_EPOCH=') else line
+    for line in lines
+)+'\n')
+PY
+set -- $(cat "$TMP/sample")
+echo "$(($1 + 220)) $(($2 + 44000)) $(($3 + 20)) $(($4 + 4000)) $(($5 + 200)) $(($6 + 40000))" > "$TMP/sample"
+sh "$CTL" tick
+status
+after_nonplaying="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["used_seconds"])' "$TMP/status.json")"
+[ "$after_nonplaying" = "$after_paused" ]
+check 'assert s["billing_state"]=="idle_verified" and s["idle_reason"]=="nonplaying", s'
 export TVGUARD_TEST_AGENT_BILLING=charge
 
 # Keep the previous smart-idle state machine covered as dormant code. Tests may
