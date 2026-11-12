@@ -5,7 +5,7 @@
 # Contract:
 #   free system_home  - only when generic fusion explicitly confirms TV launcher
 #   free app_home     - only when generic fusion explicitly confirms app-side non-playing UI
-#   free paused       - only for paused_confirmed_learned_context
+#   free paused       - only for freshly confirmed learned-context pause
 #   charge <state>    - playing/unknown and any non-confirmed pause state
 #
 # Missing/stale/invalid Agent context always fails closed to "charge unknown".
@@ -84,11 +84,14 @@ case "$1" in
         # Only the current, freshly-confirmed paused state is free. The
         # temporal hold is deliberately still chargeable so an uncertain
         # transition back to playback cannot inherit free time.
-        if [ "$2" = paused_confirmed_learned_context ]; then
-            echo "free paused"
-        else
-            echo "charge paused"
-        fi
+        case "$2" in
+            paused_confirmed_learned_context|paused_confirmed_learned_audio_context)
+                echo "free paused"
+                ;;
+            *)
+                echo "charge paused"
+                ;;
+        esac
         ;;
     playing|unknown)
         echo "charge $1"
