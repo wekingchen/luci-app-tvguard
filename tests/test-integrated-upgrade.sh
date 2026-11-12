@@ -107,7 +107,7 @@ src, dst, tmp = sys.argv[1:]
 s = Path(src).read_text()
 replacements = {
     "/tmp/tvguard-v014-upgrade": tmp + "/upgrade",
-    "/tmp/tvguard-config-restore-ned": tmp + "/config-restore-needed",
+    "/tmp/tvguard-config-restore-needed": tmp + "/config-restore-needed",
     "/mnt/mmcblk2p4/tvguard/state": tmp + "/persist/state",
     "/var/run/tvguard.state": tmp + "/var/run/tvguard.state",
     "/etc/config/tvguard": tmp + "/etc/config/tvguard",
