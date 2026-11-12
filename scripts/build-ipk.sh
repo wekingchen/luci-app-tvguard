@@ -79,6 +79,7 @@ Installed-Size: $INSTALLED_SIZE
 Depends: luci-base, rpcd, curl, uhttpd
 Conflicts: tvguard-agent-bridge
 Replaces: tvguard-agent-bridge
+Provides: tvguard-agent-bridge
 Description: TV Guard LuCI and shadow time-control service for firewall3 / iptables-legacy
 EOF
 
