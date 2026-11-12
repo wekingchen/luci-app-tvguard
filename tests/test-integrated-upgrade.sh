@@ -130,14 +130,22 @@ PY
 rewrite_script "$ROOT/ipkg/preinst" "$TMP/preinst"
 rewrite_script "$ROOT/ipkg/postinst" "$TMP/postinst"
 
-# New preinst runs before opkg removes/replaces the old packages.
+# Real opkg order matters: it removes the replaced standalone Bridge, runs
+# the installed v0.1.13 main prerm, and only then runs the new preinst. The
+# Bridge prerm keeps its pairing key; the legacy main prerm forces enforce=0.
+# Simulate that one persistent UCI change before invoking the new preinst.
+sed -i "s/option enforce '1'/option enforce '0'/" "$TMP/etc/config/tvguard"
+cp "$TMP/etc/config/tvguard" "$TMP/expected-safe-config"
+cp "$TMP/var/run/tvguard.state" "$TMP/persist/state"
+
 sh "$TMP/preinst"
-cmp "$TMP/original-config" "$TMP/upgrade/config"
+cmp "$TMP/expected-safe-config" "$TMP/upgrade/config"
 grep -q "^USED_S=731$" "$TMP/upgrade/state"
 cmp "$TMP/etc/tvguard/agent-bridge.key" "$TMP/upgrade/agent-bridge.key"
 
-# Simulate relevant damage from the v0.1.13 transition. The integrated
-# postinst must restore the original settings, viewing floor and pairing key.
+# Simulate file replacement/regression after the migration snapshot exists.
+# The integrated postinst must recover user settings, the viewing floor and
+# pairing identity without re-enabling active enforcement.
 cat > "$TMP/etc/config/tvguard" <<'EOF'
 config tvguard 'main'
         option child_name 'Child'
@@ -159,7 +167,7 @@ rm -f "$TMP/var/run/tvguard.state" "$TMP/etc/tvguard/agent-bridge.key"
 
 sh "$TMP/postinst"
 
-cmp "$TMP/original-config" "$TMP/etc/config/tvguard"
+cmp "$TMP/expected-safe-config" "$TMP/etc/config/tvguard"
 grep -q "^USED_S=731$" "$TMP/persist/state"
 grep -q "^USED_S=731$" "$TMP/var/run/tvguard.state"
 [ "$(cat "$TMP/etc/tvguard/agent-bridge.key")" = "$KEY" ]
@@ -167,7 +175,7 @@ grep -q "^USED_S=731$" "$TMP/var/run/tvguard.state"
 
 grep -q "option child_name 'Xiaoming'" "$TMP/etc/config/tvguard"
 grep -q "option bark_key 'keep-me'" "$TMP/etc/config/tvguard"
-grep -q "option enforce '1'" "$TMP/etc/config/tvguard"
+grep -q "option enforce '0'" "$TMP/etc/config/tvguard"
 grep -q "option allow_enforcement '1'" "$TMP/etc/config/tvguard"
 
-echo "PASS: integrated v0.1.14 upgrade preserves viewing floor, UCI settings and Agent pairing key"
+echo "PASS: real-order integrated upgrade preserves viewing floor/settings/key and stays fail-safe observer"
