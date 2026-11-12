@@ -1,7 +1,9 @@
 #!/bin/sh
-# Preserve the exact live configuration, accounting state and Agent pairing
-# key before opkg removes the v0.1.13 packages. The first integrated release
-# replaces both luci-app-tvguard and tvguard-agent-bridge.
+# Capture the state available to the new package during the first integrated
+# upgrade. opkg removes the replaced standalone Bridge and runs the old main
+# package prerm before this new preinst. The legacy main prerm deliberately
+# leaves TV Guard in observer mode, so all user settings except active enforce
+# remain intact here; viewing counters and the Bridge key are still available.
 [ -n "${IPKG_INSTROOT:-}" ] && exit 0
 set -u
 umask 077
@@ -25,14 +27,10 @@ if [ -f /etc/config/tvguard ]; then
     mkdir -p "$UPGRADE"
     chmod 700 "$UPGRADE"
 
-    # Snapshot UCI before the legacy v0.1.13 prerm can run "enforce off".
+    # The old v0.1.13 prerm has already forced enforce=0 by this point.
+    # Preserve that fail-safe observer state together with every other current
+    # UCI setting (child name, Bark IDs, quotas, schedule, etc.).
     atomic_copy /etc/config/tvguard "$UPGRADE/config" || exit 1
-
-    # Flush the latest RAM accounting snapshot to durable storage first.
-    # sync does not add viewing time; it only makes the current count durable.
-    if [ -x /usr/libexec/tvguardctl ]; then
-        /usr/libexec/tvguardctl sync >/dev/null 2>&1 || :
-    fi
 
     state_src=''
     if [ -r /var/run/tvguard.state ]; then
@@ -52,11 +50,6 @@ if [ -f /etc/config/tvguard ]; then
 
     printf '%s\n' "$(date +%s 2>/dev/null || echo 0)" > "$PENDING"
     chmod 600 "$PENDING"
-
-    # Keep the existing durable configuration backup as a second recovery path.
-    if [ -x /usr/libexec/tvguard-data ]; then
-        /usr/libexec/tvguard-data backup-config >/dev/null 2>&1 || :
-    fi
 else
     : > "$MARK"
     chmod 600 "$MARK"
