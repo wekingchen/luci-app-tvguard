@@ -49,7 +49,9 @@ grep -q '^完整前台上下文: 18/18 · 覆盖 100% · com.mitv.tvhome.MainAct
 grep -q '^电视上下文: 音频活跃 5% · 屏幕亮 100% · 前台切换 0 次$' "$REPORT"
 grep -q '^联合质量: high$' "$REPORT"
 grep -q '高可信 Agent 联合人工学习会话' "$REPORT"
-awk -F, 'NF==18 && $2=="1700000000-1" && $3=="system_home" && $9==100 && $18=="high" {ok=1} END {exit !ok}' \
+awk -F, 'NF==29 && $2=="1700000000-1" && $3=="system_home" && $9==100 && $18=="high" &&
+          $19=="high" && $23=="com.mitv.tvhome" && $25=="com.mitv.tvhome.MainActivityUserMode" &&
+          $27==5 && $28==100 {ok=1} END {exit !ok}' \
     "$TMP/state/learning-sessions.csv"
 
 # Fresh transport with unknown/unknown foreground must never be called
@@ -77,4 +79,33 @@ if grep -q '高可信 Agent 联合人工学习会话' "$REPORT"; then
     exit 1
 fi
 
-echo 'PASS: learning session analysis + unknown-context quality gate'
+# Paired playing/paused sessions on the same exact context must persist their
+# Agent features so Fusion can learn audio semantics without app hard-coding.
+PKG=com.example.video
+ACT=com.example.video.PlayerActivity
+for label in playing paused; do
+    sid="1794476000-$label"
+    : > "$V5"
+    : > "$CSV"
+    i=0
+    while [ "$i" -lt 12 ]; do
+        ts=$((1794476000 + i * 10))
+        audio=0
+        [ "$label" = playing ] && audio=1
+        printf '%s,%s,%s,%s,80,1,79,20000\n' "$ts" "$sid" "$label" "$PKG" >> "$CSV"
+        printf '%s,%s,%s,fresh,1,%s,%s,%s,1,%s,80,1,79,20000,allowed,usage_events,full_context,full\n' \
+            "$ts" "$sid" "$label" "$PKG" "$ACT" "$audio" "$i" >> "$V5"
+        i=$((i + 1))
+    done
+    sh "$DST" "$sid" "$label" 120 general completed 1794476120
+done
+awk -F, -v p="$PKG" -v a="$ACT" '
+    NF==29 && $6=="completed" && $18=="high" && $19=="high" &&
+    $23==p && $24==100 && $25==a && $26==100 && $28==100 {
+        if ($3=="playing" && $27==100) play=1
+        if ($3=="paused" && $27==0) pause=1
+    }
+    END {exit !(play && pause)}
+' "$TMP/state/learning-sessions.csv"
+
+echo 'PASS: learning session analysis + Agent joint-feature persistence + unknown-context quality gate'
