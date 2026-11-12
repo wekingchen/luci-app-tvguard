@@ -27,7 +27,7 @@ case "${1:-status}" in
         esac
         [ -d "$RAM" ] &&
             printf 'ram_path=present\n' || printf 'ram_path=not_yet_created\n'
-        printf 'wire_protocol=TVG1_TVG2\n'
+        printf 'wire_protocol=TVG1_TVG2_TVG3\n'
         printf 'core_billing_modified=no\n'
         exit 0 ;;
     pairing)
@@ -122,10 +122,12 @@ esac
 usage_access=legacy
 foreground_source=legacy
 foreground_status=legacy
-IFS='|' read -r seen pkg activity audio screen client_ms seq usage_access foreground_source foreground_status < "$LATEST" || :
+activity_trail=none
+IFS='|' read -r seen pkg activity audio screen client_ms seq usage_access foreground_source foreground_status activity_trail < "$LATEST" || :
 usage_access="${usage_access:-legacy}"
 foreground_source="${foreground_source:-legacy}"
 foreground_status="${foreground_status:-legacy}"
+activity_trail="${activity_trail:-none}"
 case "${seen:-}" in ''|*[!0-9]*) echo 'agent=invalid'; exit 0 ;; esac
 now="$(date +%s)"
 age=$((now - seen))
@@ -201,9 +203,9 @@ else
     candidate=fusion_missing
 fi
 
-printf 'agent=online\nage_seconds=%s\nreceived_epoch=%s\nreport_seq=%s\nclient_epoch_ms=%s\npackage=%s\nactivity=%s\naudio_active=%s\nscreen_on=%s\nusage_access=%s\nforeground_source=%s\nforeground_status=%s\nnetwork_pps=%s\nnetwork_shadow=%s\nadaptive_state=%s\nadaptive_score=%s\nadaptive_reason=%s\npause_hint=%s\npause_score=%s\nadaptive_p50=%s\nadaptive_p90=%s\nadaptive_active_floor=%s\ncombined_state=%s\ncombined_candidate=%s\nfusion_pause_streak=%s\nbilling_effect=none\n' \
+printf 'agent=online\nage_seconds=%s\nreceived_epoch=%s\nreport_seq=%s\nclient_epoch_ms=%s\npackage=%s\nactivity=%s\naudio_active=%s\nscreen_on=%s\nusage_access=%s\nforeground_source=%s\nforeground_status=%s\nrecent_activity_trail=%s\nnetwork_pps=%s\nnetwork_shadow=%s\nadaptive_state=%s\nadaptive_score=%s\nadaptive_reason=%s\npause_hint=%s\npause_score=%s\nadaptive_p50=%s\nadaptive_p90=%s\nadaptive_active_floor=%s\ncombined_state=%s\ncombined_candidate=%s\nfusion_pause_streak=%s\nbilling_effect=none\n' \
    "$age" "$seen" "$seq" "$client_ms" "$pkg" "$activity" "$audio" "$screen" \
-   "$usage_access" "$foreground_source" "$foreground_status" \
+   "$usage_access" "$foreground_source" "$foreground_status" "$activity_trail" \
    "$network_pps" "$shadow" "$adaptive_state" "$adaptive_score" "$adaptive_reason" \
    "$pause_hint" "$pause_score" "$adaptive_p50" "$adaptive_p90" "$active_floor" \
    "$combined" "$candidate" "$fusion_streak"
