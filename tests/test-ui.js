@@ -113,6 +113,8 @@ const updates = [
     assert.match(source, /tvg-mode-row>\.btn:last-child\{grid-column:1\/-1/);
     assert.match(source, /background:rgba\(127,127,127,\.08\)/);
     assert.match(source, /metric\('儿童剩余'/);
+    assert.match(source, /设置 → 每日观看日报 · Bark/);
+    assert.doesNotMatch(source, /设置入口在“时间规则”/);
     assert.match(source, /tvg-state-note-good/);
     assert.doesNotMatch(source, /background:var\(--background-color-high,#fafafa\)/);
     assert.equal(polls.size, 1);
