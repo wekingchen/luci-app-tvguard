@@ -8,8 +8,23 @@ PATH=/usr/sbin:/usr/bin:/sbin:/bin
 export PATH
 FW=/usr/libexec/tvguard-fw
 AUDIT=/usr/libexec/tvguard-isolation-audit
+SHADOW=/usr/libexec/tvguard-shadow
+ADAPTIVE=/usr/libexec/tvguard-adaptive
+LEARN=/usr/libexec/tvguard-learn
+SOAK=/usr/libexec/tvguard-soak
+AGENT_BILLING=/usr/libexec/tvguard-agent-billing-hint
+BARK_REPORT=/usr/libexec/tvguard-daily-report
+BUILD_ID_FILE=/usr/share/tvguard/build-id
+# P0 safety gate: TX-only idle classifiers remain diagnostic until low-bitrate
+# playback has passed dedicated cross-bitrate/cross-app false-idle validation.
+# This is deliberately not UCI-tunable: re-enabling billing authority requires
+# a reviewed code change after validation.
+TX_IDLE_BILLING_AUTHORITY=0
 RUN=/var/run/tvguard.state
-DIR=/etc/tvguard
+DATA=/usr/libexec/tvguard-data
+DIR="$("$DATA" root)"
+DATA_MODE="$("$DATA" status 2>/dev/null | cut -d'|' -f1)"
+case "$DATA_MODE" in persistent|volatile) :;; *) DATA_MODE=unknown;; esac
 STATE="$DIR/state"
 EVENTS="$DIR/events.log"
 LOCK=/var/run/tvguard.lock
@@ -34,10 +49,17 @@ config() {
 }
 defaults() {
     STATE_PRESENT=0
+    DATA_ROOT_MODE="$DATA_MODE"
     TODAY="$(date +%Y-%m-%d)"
     MODE=child
     PARENT_UNTIL=0
     USED_S=0
+    WATCH_S=0
+    WATCH_SCOPE=legacy
+    WATCH_SCOPE_UPGRADED=0
+    PREV_DATE=none
+    PREV_WATCH_S=0
+    ROLLED_OVER=0
     BONUS_S=0
     LAST_BONUS_S=0
     LAST_BONUS_ID=0
@@ -69,16 +91,38 @@ defaults() {
     SHADOW_LABEL=unknown
     SHADOW_APP=none
     SHADOW_SCORE=0
+    ADAPTIVE_STATE=unready
+    ADAPTIVE_SCORE=0
+    ADAPTIVE_WINDOWS=0
+    ADAPTIVE_REASON=none
+    ADAPTIVE_IDLE_CEILING=0
+    ADAPTIVE_ACTIVE_FLOOR=0
+    ADAPTIVE_P50=0
+    ADAPTIVE_P90=0
+    ADAPTIVE_PAUSE_HINT=none
+    ADAPTIVE_PAUSE_SCORE=0
+    ADAPTIVE_BP50=0
+    ADAPTIVE_BP90=0
+    ADAPTIVE_ACTIVE_HITS=0
+    ADAPTIVE_TREND_PCT=0
+    # Billing is conservative: unknown/playing traffic charges immediately.
+    # Only a sustained high-confidence idle hint may pause child billing.
+    BILLING_STATE=charge
+    IDLE_REASON=none
+    IDLE_STREAK_S=0
+    IDLE_GRACE_S=0
     CAL_LABEL=none
     CAL_APP=none
     CAL_SESSION=none
     CAL_STARTED=0
     CAL_SAMPLES=0
     CAL_UNTIL=0
+    CAL_DURATION=0
     CAL_LAST_LABEL=none
     CAL_LAST_APP=none
     CAL_LAST_SESSION=none
     CAL_LAST_SAMPLES=0
+    CAL_LAST_DURATION=0
     CAL_LAST_FINISHED=0
     CAL_LAST_RESULT=none
     SAVED_EPOCH=0
@@ -87,6 +131,18 @@ defaults() {
 }
 load_state() {
     defaults
+    # /var/run is authoritative only while it belongs to the same selected
+    # data-root mode. If the mmc mount appears after boot, discard a volatile
+    # runtime snapshot and immediately reload the durable mmc state instead of
+    # letting a temporary fallback shadow it for the rest of this boot.
+    if [ -r "$RUN" ]; then
+        run_mode="$(awk -F= '$1=="DATA_ROOT_MODE" {print $2; exit}' "$RUN" 2>/dev/null || :)"
+        case "$run_mode" in persistent|volatile) :;; *) run_mode=unknown;; esac
+        if [ "$run_mode" != "$DATA_MODE" ]; then
+            rm -f "$RUN"
+        fi
+    fi
+
     # Only root-written files; never load untrusted input from a web request.
     if [ -r "$RUN" ]; then
         . "$RUN"
@@ -95,7 +151,53 @@ load_state() {
         . "$STATE"
         STATE_PRESENT=1
     fi
+    # A disk snapshot may have been created while using the RAM fallback.
+    # Once loaded from the currently selected root, normalize the marker to
+    # the current mode so the next runtime snapshot is self-consistent.
+    DATA_ROOT_MODE="$DATA_MODE"
+    # r18 wrongly counted parent sessions. Child USED_S is authoritative.
+    # Discard any old all-mode previous-day snapshot before Bark can send it.
+    if [ "$WATCH_SCOPE" != child ]; then
+        PREV_DATE=none
+        PREV_WATCH_S=0
+        WATCH_SCOPE_UPGRADED=1
+    fi
+    WATCH_SCOPE=child
+    WATCH_S="$USED_S"
+    case "$WATCH_S" in ''|*[!0-9]*) WATCH_S=0;; esac
+    case "$PREV_WATCH_S" in ''|*[!0-9]*) PREV_WATCH_S=0;; esac
+    case "$PREV_DATE" in none|[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]) :;; *) PREV_DATE=none;; esac
     case "$MODE" in child|parent|locked) :;; *) MODE=locked;; esac
+    case "$BILLING_STATE" in charge|idle_verified|idle_grace|idle_silent) :;; *) BILLING_STATE=charge;; esac
+    case "$IDLE_REASON" in none|system_home|idle|paused|app_home|adaptive|silent) :;; *) IDLE_REASON=none;; esac
+    case "$ADAPTIVE_STATE" in unready|warming|idle|active|ambiguous) :;; *) ADAPTIVE_STATE=unready;; esac
+    case "$ADAPTIVE_SCORE" in ''|*[!0-9]*) ADAPTIVE_SCORE=0;; esac
+    case "$ADAPTIVE_WINDOWS" in ''|*[!0-9]*) ADAPTIVE_WINDOWS=0;; esac
+    case "$ADAPTIVE_IDLE_CEILING" in ''|*[!0-9]*) ADAPTIVE_IDLE_CEILING=0;; esac
+    case "$ADAPTIVE_ACTIVE_FLOOR" in ''|*[!0-9]*) ADAPTIVE_ACTIVE_FLOOR=0;; esac
+    case "$ADAPTIVE_P50" in ''|*[!0-9]*) ADAPTIVE_P50=0;; esac
+    case "$ADAPTIVE_P90" in ''|*[!0-9]*) ADAPTIVE_P90=0;; esac
+    case "$ADAPTIVE_PAUSE_SCORE" in ''|*[!0-9]*) ADAPTIVE_PAUSE_SCORE=0;; esac
+    case "$ADAPTIVE_BP50" in ''|*[!0-9]*) ADAPTIVE_BP50=0;; esac
+    case "$ADAPTIVE_BP90" in ''|*[!0-9]*) ADAPTIVE_BP90=0;; esac
+    case "$ADAPTIVE_ACTIVE_HITS" in ''|*[!0-9]*) ADAPTIVE_ACTIVE_HITS=0;; esac
+    case "$ADAPTIVE_TREND_PCT" in
+        -[0-9]*|[0-9]*) :;;
+        *) ADAPTIVE_TREND_PCT=0;;
+    esac
+    case "$ADAPTIVE_PAUSE_HINT" in none|idle_overlap|bursty_pause|high_ratio_pause) :;; *) ADAPTIVE_PAUSE_HINT=none;; esac
+    case "$ADAPTIVE_REASON" in
+        none|no_model|need_sessions|overlap_model|need_window|clear_current|active_votes|active_median|stable_low|overlap) :;;
+        *) ADAPTIVE_REASON=none;;
+    esac
+    case "$IDLE_STREAK_S" in ''|*[!0-9]*) IDLE_STREAK_S=0;; esac
+    case "$IDLE_GRACE_S" in ''|*[!0-9]*) IDLE_GRACE_S=0;; esac
+    case "$CAL_DURATION" in 0|60|120|180|300) :;; *) CAL_DURATION=0;; esac
+    case "$CAL_LAST_DURATION" in 0|60|120|180|300) :;; *) CAL_LAST_DURATION=0;; esac
+    if [ "$CAL_LABEL" != none ] && [ "$CAL_DURATION" -eq 0 ] &&
+       [ "$CAL_UNTIL" -gt "$CAL_STARTED" ]; then
+        CAL_DURATION=$((CAL_UNTIL - CAL_STARTED))
+    fi
     # An enforced installation must not turn corruption/lost state into a
     # fresh, unspent child allowance after power failure.
     if [ "$ENFORCE" = 1 ] && [ "$STATE_PRESENT" = 0 ]; then
@@ -106,10 +208,15 @@ load_state() {
 save_runtime() {
     temp="${RUN}.$$"
     cat > "$temp" <<EOSTATE
+DATA_ROOT_MODE=$DATA_ROOT_MODE
 TODAY=$TODAY
 MODE=$MODE
 PARENT_UNTIL=$PARENT_UNTIL
 USED_S=$USED_S
+WATCH_S=$WATCH_S
+WATCH_SCOPE=$WATCH_SCOPE
+PREV_DATE=$PREV_DATE
+PREV_WATCH_S=$PREV_WATCH_S
 BONUS_S=$BONUS_S
 LAST_BONUS_S=$LAST_BONUS_S
 LAST_BONUS_ID=$LAST_BONUS_ID
@@ -140,16 +247,36 @@ TRAFFIC_CLASS=$TRAFFIC_CLASS
 SHADOW_LABEL=$SHADOW_LABEL
 SHADOW_APP=$SHADOW_APP
 SHADOW_SCORE=$SHADOW_SCORE
+ADAPTIVE_STATE=$ADAPTIVE_STATE
+ADAPTIVE_SCORE=$ADAPTIVE_SCORE
+ADAPTIVE_WINDOWS=$ADAPTIVE_WINDOWS
+ADAPTIVE_REASON=$ADAPTIVE_REASON
+ADAPTIVE_IDLE_CEILING=$ADAPTIVE_IDLE_CEILING
+ADAPTIVE_ACTIVE_FLOOR=$ADAPTIVE_ACTIVE_FLOOR
+ADAPTIVE_P50=$ADAPTIVE_P50
+ADAPTIVE_P90=$ADAPTIVE_P90
+ADAPTIVE_PAUSE_HINT=$ADAPTIVE_PAUSE_HINT
+ADAPTIVE_PAUSE_SCORE=$ADAPTIVE_PAUSE_SCORE
+ADAPTIVE_BP50=$ADAPTIVE_BP50
+ADAPTIVE_BP90=$ADAPTIVE_BP90
+ADAPTIVE_ACTIVE_HITS=$ADAPTIVE_ACTIVE_HITS
+ADAPTIVE_TREND_PCT=$ADAPTIVE_TREND_PCT
+BILLING_STATE=$BILLING_STATE
+IDLE_REASON=$IDLE_REASON
+IDLE_STREAK_S=$IDLE_STREAK_S
+IDLE_GRACE_S=$IDLE_GRACE_S
 CAL_LABEL=$CAL_LABEL
 CAL_APP=$CAL_APP
 CAL_SESSION=$CAL_SESSION
 CAL_STARTED=$CAL_STARTED
 CAL_SAMPLES=$CAL_SAMPLES
 CAL_UNTIL=$CAL_UNTIL
+CAL_DURATION=$CAL_DURATION
 CAL_LAST_LABEL=$CAL_LAST_LABEL
 CAL_LAST_APP=$CAL_LAST_APP
 CAL_LAST_SESSION=$CAL_LAST_SESSION
 CAL_LAST_SAMPLES=$CAL_LAST_SAMPLES
+CAL_LAST_DURATION=$CAL_LAST_DURATION
 CAL_LAST_FINISHED=$CAL_LAST_FINISHED
 CAL_LAST_RESULT=$CAL_LAST_RESULT
 SAVED_EPOCH=$SAVED_EPOCH
@@ -264,25 +391,35 @@ apply_gate() {
 }
 finish_calibration() {
     # Record an immutable summary before clearing the active session.
-    # No automatic smart-idle exemption can be granted by this function.
+    # Analysis is read-only with respect to billing/firewall decisions.
     [ "$CAL_LABEL" != none ] || return 0
     CAL_LAST_LABEL="$CAL_LABEL"
     CAL_LAST_APP="$CAL_APP"
     CAL_LAST_SESSION="$CAL_SESSION"
     CAL_LAST_SAMPLES="$CAL_SAMPLES"
+    CAL_LAST_DURATION="$CAL_DURATION"
     CAL_LAST_FINISHED="$NOW"
     CAL_LAST_RESULT="$1"
     event calibration_end "$CAL_APP/$CAL_LABEL: $CAL_SAMPLES samples ($1)"
+    if [ "$CAL_DURATION" -gt 0 ]; then
+        "$LEARN" "$CAL_SESSION" "$CAL_LABEL" "$CAL_DURATION" "$CAL_APP" "$1" "$NOW" >/dev/null 2>&1 || :
+    fi
     CAL_LABEL=none
     CAL_APP=none
     CAL_SESSION=none
     CAL_STARTED=0
     CAL_SAMPLES=0
     CAL_UNTIL=0
+    CAL_DURATION=0
 }
 rollover() {
+    ROLLED_OVER=0
     today="$(date +%Y-%m-%d)"
     if [ "$TODAY" != "$today" ]; then
+        PREV_DATE="$TODAY"
+        PREV_WATCH_S="$USED_S"
+        WATCH_S=0
+        ROLLED_OVER=1
         TODAY="$today"
         USED_S=0
         BONUS_S=0
@@ -293,6 +430,24 @@ rollover() {
         SHADOW_LABEL=unknown
         SHADOW_APP=none
         SHADOW_SCORE=0
+        ADAPTIVE_STATE=unready
+        ADAPTIVE_SCORE=0
+        ADAPTIVE_WINDOWS=0
+        ADAPTIVE_REASON=none
+        ADAPTIVE_IDLE_CEILING=0
+        ADAPTIVE_ACTIVE_FLOOR=0
+        ADAPTIVE_P50=0
+        ADAPTIVE_P90=0
+        ADAPTIVE_PAUSE_HINT=none
+        ADAPTIVE_PAUSE_SCORE=0
+        ADAPTIVE_BP50=0
+        ADAPTIVE_BP90=0
+        ADAPTIVE_ACTIVE_HITS=0
+        ADAPTIVE_TREND_PCT=0
+        BILLING_STATE=charge
+        IDLE_REASON=none
+        IDLE_STREAK_S=0
+        IDLE_GRACE_S=0
         if [ "$CAL_LABEL" != none ]; then
             finish_calibration interrupted
         fi
@@ -301,6 +456,7 @@ rollover() {
         CAL_STARTED=0
         CAL_SAMPLES=0
         CAL_UNTIL=0
+        CAL_DURATION=0
         event daily_reset "当天额度及奖励已重置"
     fi
 }
@@ -441,16 +597,71 @@ tick() {
     SHADOW_LABEL=unknown
     SHADOW_APP=none
     SHADOW_SCORE=0
-    if [ "$dt" -gt 0 ] && [ -x /usr/libexec/tvguard-shadow ]; then
-        guess="$(/usr/libexec/tvguard-shadow "$PPS" "$TCP_PPS" "$UDP_PPS" "$BYTES_PER_S" 2>/dev/null || echo 'unknown none 0')"
+    if [ "$dt" -gt 0 ] && [ -x "$SHADOW" ]; then
+        guess="$("$SHADOW" "$PPS" "$TCP_PPS" "$UDP_PPS" "$BYTES_PER_S" 2>/dev/null || echo 'unknown none 0')"
         set -- $guess
         if [ "$#" -eq 3 ]; then
-            case "$1" in playing|paused|app_home|system_home|sleep|unknown) SHADOW_LABEL="$1";; esac
+            case "$1" in playing|idle|paused|app_home|system_home|sleep|unknown) SHADOW_LABEL="$1";; esac
             case "$2" in general|tencent|iqiyi|mango|other|system|none) SHADOW_APP="$2";; esac
             case "$3" in ''|*[!0-9]*) :;; *) SHADOW_SCORE="$3";; esac
         fi
     fi
-    # Shadow suggestion never influences USED_S or BLOCKED.
+
+    ADAPTIVE_STATE=unready
+    ADAPTIVE_SCORE=0
+    ADAPTIVE_WINDOWS=0
+    ADAPTIVE_REASON=none
+    ADAPTIVE_IDLE_CEILING=0
+    ADAPTIVE_ACTIVE_FLOOR=0
+    ADAPTIVE_P50=0
+    ADAPTIVE_P90=0
+    ADAPTIVE_PAUSE_HINT=none
+    ADAPTIVE_PAUSE_SCORE=0
+    ADAPTIVE_BP50=0
+    ADAPTIVE_BP90=0
+    ADAPTIVE_ACTIVE_HITS=0
+    ADAPTIVE_TREND_PCT=0
+    if [ "$dt" -gt 0 ] && [ -x "$ADAPTIVE" ]; then
+        adaptive="$("$ADAPTIVE" "$NOW" "$PPS" "$TCP_PPS" "$UDP_PPS" "$BYTES_PER_S" 2>/dev/null || echo 'unready 0 0 no_model 0 0 0 0 none 0 0 0 0 0')"
+        set -- $adaptive
+        if [ "$#" -eq 14 ]; then
+            case "$1" in unready|warming|idle|active|ambiguous) ADAPTIVE_STATE="$1";; esac
+            case "$2" in ''|*[!0-9]*) :;; *) ADAPTIVE_SCORE="$2";; esac
+            case "$3" in ''|*[!0-9]*) :;; *) ADAPTIVE_WINDOWS="$3";; esac
+            case "$4" in
+                no_model|need_sessions|overlap_model|need_window|clear_current|active_votes|active_median|stable_low|overlap)
+                    ADAPTIVE_REASON="$4"
+                    ;;
+            esac
+            case "$5" in ''|*[!0-9]*) :;; *) ADAPTIVE_IDLE_CEILING="$5";; esac
+            case "$6" in ''|*[!0-9]*) :;; *) ADAPTIVE_ACTIVE_FLOOR="$6";; esac
+            case "$7" in ''|*[!0-9]*) :;; *) ADAPTIVE_P50="$7";; esac
+            case "$8" in ''|*[!0-9]*) :;; *) ADAPTIVE_P90="$8";; esac
+            case "$9" in none|idle_overlap|bursty_pause|high_ratio_pause) ADAPTIVE_PAUSE_HINT="$9";; esac
+            case "${10}" in ''|*[!0-9]*) :;; *) ADAPTIVE_PAUSE_SCORE="${10}";; esac
+            case "${11}" in ''|*[!0-9]*) :;; *) ADAPTIVE_BP50="${11}";; esac
+            case "${12}" in ''|*[!0-9]*) :;; *) ADAPTIVE_BP90="${12}";; esac
+            case "${13}" in ''|*[!0-9]*) :;; *) ADAPTIVE_ACTIVE_HITS="${13}";; esac
+            case "${14}" in ''|*[!0-9-]*) :;; *) ADAPTIVE_TREND_PCT="${14}";; esac
+        fi
+    fi
+
+    # Shadow Soak is observation-only. It receives a copy of already-computed
+    # telemetry and cannot return a billing state or firewall action.
+    if [ "$dt" -gt 0 ] && [ -x "$SOAK" ]; then
+        soak="$("$SOAK" "$NOW" "$MODE" "$ADAPTIVE_STATE" "$ADAPTIVE_SCORE"             "$ADAPTIVE_PAUSE_HINT" "$ADAPTIVE_PAUSE_SCORE" "$PPS" "$TCP_PPS" "$UDP_PPS" "$BYTES_PER_S"             "$ADAPTIVE_P50" "$ADAPTIVE_P90" "$ADAPTIVE_BP50" "$ADAPTIVE_BP90" "$ADAPTIVE_ACTIVE_HITS"             "$ADAPTIVE_TREND_PCT" "$SHADOW_LABEL" 2>/dev/null || echo 'none 0 0 0 0 0 0 0')"
+        set -- $soak
+        if [ "$#" -eq 8 ]; then
+            case "$1" in
+                enter)
+                    event soak_pause_enter "rulescore=$ADAPTIVE_PAUSE_SCORE adaptive=$ADAPTIVE_STATE pps=$PPS tcp=$TCP_PPS udp=$UDP_PPS bps=$BYTES_PER_S p50=$ADAPTIVE_P50 p90=$ADAPTIVE_P90 bp50=$ADAPTIVE_BP50 bp90=$ADAPTIVE_BP90 hits=$ADAPTIVE_ACTIVE_HITS trend=$ADAPTIVE_TREND_PCT"
+                    ;;
+                exit)
+                    event soak_pause_exit "duration=$2 adaptive=$ADAPTIVE_STATE pps=$PPS tcp=$TCP_PPS udp=$UDP_PPS bps=$BYTES_PER_S p50=$ADAPTIVE_P50 p90=$ADAPTIVE_P90 bp50=$ADAPTIVE_BP50 bp90=$ADAPTIVE_BP90 hits=$ADAPTIVE_ACTIVE_HITS trend=$ADAPTIVE_TREND_PCT"
+                    ;;
+            esac
+        fi
+    fi
     LAST_COUNT="$count"
     LAST_BYTE_COUNT="$bytes"
     LAST_TCP_COUNT="$tcp_count"
@@ -460,6 +671,166 @@ tick() {
         ACTIVITY=active
     else
         ACTIVITY=silent
+    fi
+
+    # Conservative formal billing:
+    # - true network silence remains free as before;
+    # - an optional fresh Agent bridge may grant free time ONLY for an explicit
+    #   system_home or app_home confirmation;
+    # - playing, paused, unknown, ambiguous, stale/missing Agent and malformed
+    #   hints are all chargeable while network activity is present.
+    #
+    # Adaptive/Shadow pause signals remain diagnostic-only. In particular,
+    # "paused" has NO free-time authority.
+    HOME_FREE_REASON=none
+    if [ "$ACTIVITY" = active ] && [ "$dt" -gt 0 ] && [ -x "$AGENT_BILLING" ]; then
+        home_hint="$("$AGENT_BILLING" "$NOW" "$PPS" "$SHADOW_LABEL" \
+            "$ADAPTIVE_STATE" "$ADAPTIVE_SCORE" "$ADAPTIVE_REASON" \
+            "$ADAPTIVE_PAUSE_HINT" "$ADAPTIVE_PAUSE_SCORE" "$ADAPTIVE_ACTIVE_FLOOR" \
+            2>/dev/null || echo 'charge unknown')"
+        set -- $home_hint
+        if [ "$#" -eq 2 ] && [ "$1" = free ]; then
+            case "$2" in
+                system_home|app_home) HOME_FREE_REASON="$2" ;;
+            esac
+        fi
+    fi
+
+    if [ "$ACTIVITY" = silent ]; then
+        BILLING_STATE=idle_silent
+        IDLE_REASON=silent
+        IDLE_STREAK_S=0
+        IDLE_GRACE_S=0
+    elif [ "$HOME_FREE_REASON" != none ]; then
+        BILLING_STATE=idle_verified
+        IDLE_REASON="$HOME_FREE_REASON"
+        IDLE_STREAK_S=0
+        IDLE_GRACE_S=0
+    elif [ "$dt" -gt 0 ] && [ "$TX_IDLE_BILLING_AUTHORITY" != 1 ]; then
+        BILLING_STATE=charge
+        IDLE_REASON=none
+        IDLE_STREAK_S=0
+        IDLE_GRACE_S=0
+    elif [ "$dt" -gt 0 ]; then
+        # Dormant legacy smart-idle path retained behind the code-review gate
+        # so it can be replay-tested while r12 gathers stronger evidence.
+        case "$ADAPTIVE_STATE" in
+            idle)
+                if [ "$IDLE_REASON" = adaptive ] &&
+                   [ "$BILLING_STATE" = idle_verified ]; then
+                    IDLE_STREAK_S=$((IDLE_STREAK_S + dt))
+                else
+                    IDLE_STREAK_S=$((ADAPTIVE_WINDOWS * 10))
+                fi
+                BILLING_STATE=idle_verified
+                IDLE_REASON=adaptive
+                IDLE_GRACE_S=0
+                ;;
+            active)
+                BILLING_STATE=charge
+                IDLE_REASON=none
+                IDLE_STREAK_S=0
+                IDLE_GRACE_S=0
+                ;;
+            ambiguous|warming)
+                # A rolling window already absorbs isolated noisy frames.
+                # If a previously verified adaptive idle has only just become
+                # ambiguous, keep at most the existing 20-second transition
+                # grace, but never across a learned active boundary.
+                case "$BILLING_STATE:$IDLE_REASON" in
+                    idle_verified:adaptive|idle_grace:adaptive)
+                        if [ "$ADAPTIVE_ACTIVE_FLOOR" -gt 0 ] &&
+                           [ "$PPS" -lt "$ADAPTIVE_ACTIVE_FLOOR" ] &&
+                           [ "$IDLE_GRACE_S" -lt 20 ]; then
+                            IDLE_GRACE_S=$((IDLE_GRACE_S + dt))
+                            if [ "$IDLE_GRACE_S" -le 20 ]; then
+                                BILLING_STATE=idle_grace
+                                IDLE_REASON=adaptive
+                            else
+                                BILLING_STATE=charge
+                                IDLE_REASON=none
+                                IDLE_STREAK_S=0
+                                IDLE_GRACE_S=0
+                            fi
+                        else
+                            BILLING_STATE=charge
+                            IDLE_REASON=none
+                            IDLE_STREAK_S=0
+                            IDLE_GRACE_S=0
+                        fi
+                        ;;
+                    *)
+                        BILLING_STATE=charge
+                        IDLE_REASON=none
+                        IDLE_STREAK_S=0
+                        IDLE_GRACE_S=0
+                        ;;
+                esac
+                ;;
+            unready)
+                case "$SHADOW_LABEL" in
+                    system_home|idle|paused|app_home)
+                        case "$IDLE_REASON" in
+                            system_home|idle|paused|app_home)
+                                IDLE_STREAK_S=$((IDLE_STREAK_S + dt))
+                                ;;
+                            *)
+                                IDLE_STREAK_S="$dt"
+                                ;;
+                        esac
+                        IDLE_REASON=idle
+                        IDLE_GRACE_S=0
+                        if [ "$IDLE_STREAK_S" -ge 30 ]; then
+                            BILLING_STATE=idle_verified
+                        else
+                            BILLING_STATE=charge
+                        fi
+                        ;;
+                    playing)
+                        BILLING_STATE=charge
+                        IDLE_REASON=none
+                        IDLE_STREAK_S=0
+                        IDLE_GRACE_S=0
+                        ;;
+                    unknown)
+                        case "$BILLING_STATE" in
+                            idle_verified|idle_grace)
+                                if [ "$TRAFFIC_CLASS" = low_traffic ] &&
+                                   [ "$IDLE_GRACE_S" -lt 20 ]; then
+                                    IDLE_GRACE_S=$((IDLE_GRACE_S + dt))
+                                    if [ "$IDLE_GRACE_S" -le 20 ]; then
+                                        BILLING_STATE=idle_grace
+                                        IDLE_REASON=idle
+                                    else
+                                        BILLING_STATE=charge
+                                        IDLE_REASON=none
+                                        IDLE_STREAK_S=0
+                                        IDLE_GRACE_S=0
+                                    fi
+                                else
+                                    BILLING_STATE=charge
+                                    IDLE_REASON=none
+                                    IDLE_STREAK_S=0
+                                    IDLE_GRACE_S=0
+                                fi
+                                ;;
+                            *)
+                                BILLING_STATE=charge
+                                IDLE_REASON=none
+                                IDLE_STREAK_S=0
+                                IDLE_GRACE_S=0
+                                ;;
+                        esac
+                        ;;
+                    *)
+                        BILLING_STATE=charge
+                        IDLE_REASON=none
+                        IDLE_STREAK_S=0
+                        IDLE_GRACE_S=0
+                        ;;
+                esac
+                ;;
+        esac
     fi
 
     if [ "$CAL_LABEL" != none ]; then
@@ -504,23 +875,125 @@ tick() {
         CAL_UNTIL=0
     fi
 
-    # Count children's network-use session, not claimed screen time.
-    # Both manual lock and quota exhaustion exclude blocked packets from billing.
-    if [ "$MODE" = child ] && [ "$ACTIVITY" = active ] && [ "$dt" -gt 0 ]; then
-        if [ "$ENFORCE" != 1 ] || [ "$BLOCKED" != 1 ]; then
-            USED_S=$((USED_S + dt))
-        fi
+    # Same child quota billing decision. Observation ENFORCE=0 does not
+    # cap used/watch seconds, even after the allowance is exhausted.
+    if [ "$MODE" = child ] && [ "$ACTIVITY" = active ] && [ "$dt" -gt 0 ] &&
+       [ "$BILLING_STATE" = charge ] &&
+       { [ "$ENFORCE" != 1 ] || [ "$BLOCKED" != 1 ]; }; then
+        USED_S=$((USED_S + dt))
+        WATCH_S="$USED_S"
     fi
     LAST_EPOCH="$NOW"
     calculate
     apply_gate
     save_runtime
     if [ $((NOW - SAVED_EPOCH)) -ge 60 ] ||
+       [ "$ROLLED_OVER" = 1 ] ||
+       [ "$WATCH_SCOPE_UPGRADED" = 1 ] ||
        [ "$BLOCKED" != "$previous_blocked" ] ||
        [ "$CAL_LAST_FINISHED" != "$previous_finished" ]; then
         persist
     fi
 }
+brief() {
+    quota
+    left=$((LIMIT_S - USED_S))
+    [ "$left" -gt 0 ] || left=0
+    firewall_state="$("$FW" inspect 2>/dev/null || echo unknown)"
+    case "$MODE" in
+        child) mode_name="儿童模式" ;;
+        parent) mode_name="家长模式" ;;
+        locked) mode_name="锁定模式" ;;
+        *) mode_name="未知" ;;
+    esac
+    case "$MODE" in
+        parent)
+            billing_name="已暂停（家长模式不计儿童额度）"
+            ;;
+        locked)
+            billing_name="已暂停（锁定模式）"
+            ;;
+        child)
+            case "$BILLING_STATE" in
+                idle_verified)
+                    case "$IDLE_REASON" in
+                        system_home) billing_name="已暂停（系统首页已确认）" ;;
+                        idle) billing_name="已暂停（App 首页/暂停已确认）" ;;
+                        paused) billing_name="已暂停（暂停已确认）" ;;
+                        app_home) billing_name="已暂停（App 首页已确认）" ;;
+                        adaptive) billing_name="已暂停（Adaptive 闲置已确认）" ;;
+                        *) billing_name="已暂停（闲置已确认）" ;;
+                    esac ;;
+                idle_grace) billing_name="已暂停（短暂无法判断，保持闲置）" ;;
+                idle_silent) billing_name="已暂停（网络静默）" ;;
+                *) billing_name="计时中" ;;
+            esac
+            ;;
+        *)
+            billing_name="计时状态未知"
+            ;;
+    esac
+    used_m=$((USED_S / 60)); used_r=$((USED_S % 60))
+    left_m=$((left / 60)); left_r=$((left % 60))
+    build_id="$(cat "$BUILD_ID_FILE" 2>/dev/null || echo unknown)"
+    printf '构建: %s\n' "$build_id"
+    printf '模式: %s\n' "$mode_name"
+    printf '计时: %s\n' "$billing_name"
+    printf '识别: %s · 连续闲置 %ss · 保持 %ss/20s\n' "$SHADOW_LABEL" "$IDLE_STREAK_S" "$IDLE_GRACE_S"
+    if [ "$ADAPTIVE_STATE" = unready ]; then
+        printf '自适应: 未就绪 · %s\n' "$ADAPTIVE_REASON"
+    else
+        printf '自适应: %s · %s%% · %s窗 · P50 %s / P90 %s · 边界 idle≤%s / active≥%s\n' \
+            "$ADAPTIVE_STATE" "$ADAPTIVE_SCORE" "$ADAPTIVE_WINDOWS" "$ADAPTIVE_P50" "$ADAPTIVE_P90" \
+            "$ADAPTIVE_IDLE_CEILING" "$ADAPTIVE_ACTIVE_FLOOR"
+        case "$ADAPTIVE_PAUSE_HINT" in
+            high_ratio_pause) pause_name="高流量暂停候选" ;;
+            bursty_pause) pause_name="突发型暂停候选" ;;
+            idle_overlap) pause_name="低活跃暂停/首页重叠" ;;
+            *) pause_name="无" ;;
+        esac
+        printf '暂停线索: %s · %s%% · B/P P50 %s / P90 %s · 活跃窗 %s · 趋势 %s%%\n' \
+            "$pause_name" "$ADAPTIVE_PAUSE_SCORE" "$ADAPTIVE_BP50" "$ADAPTIVE_BP90" \
+            "$ADAPTIVE_ACTIVE_HITS" "$ADAPTIVE_TREND_PCT"
+    fi
+    printf '用量: %dm%02ds · 剩余 %dm%02ds\n' "$used_m" "$used_r" "$left_m" "$left_r"
+    printf '今日儿童模式累计观看估算: %d 秒（家长模式不计入）\n' "$WATCH_S"
+    printf '流量: %s PPS (TCP %s / UDP %s) · %s B/s\n' "$PPS" "$TCP_PPS" "$UDP_PPS" "$BYTES_PER_S"
+    printf '控制: gate=%s · enforce=%s · armed=%s\n' "$firewall_state" "$ENFORCE" "$ARMED"
+}
+
+evidence() {
+    CSV="$DIR/calibration-v3.csv"
+    [ -s "$CSV" ] || {
+        echo "暂无校准样本"
+        return 0
+    }
+    awk -F, '
+        $2 ~ /^[0-9]+-[0-9]+$/ &&
+        $3 ~ /^(playing|paused|app_home|system_home|sleep)$/ {
+            key=$3
+            samples[key]++
+            seen[key SUBSEP $2]=1
+        }
+        END {
+            for (k in seen) {
+                split(k,a,SUBSEP)
+                sessions[a[1]]++
+            }
+            order[1]="playing"; order[2]="paused"; order[3]="app_home";
+            order[4]="system_home"; order[5]="sleep"
+            name["playing"]="正常播放"
+            name["paused"]="视频暂停"
+            name["app_home"]="App 首页"
+            name["system_home"]="系统首页"
+            name["sleep"]="待机"
+            for (i=1;i<=5;i++) {
+                k=order[i]
+                printf "%s: %d 样本 · %d 会话\n", name[k], samples[k]+0, sessions[k]+0
+            }
+        }' "$CSV"
+}
+
 status() {
     quota
     left=$((LIMIT_S - USED_S))
@@ -554,15 +1027,18 @@ status() {
     cal_active=0
     cal_app=none
     cal_session=none
+    cal_duration=0
     if [ "$CAL_LABEL" != none ]; then
         cal_app="$CAL_APP"
         cal_session="$CAL_SESSION"
         cal_elapsed=$((NOW - CAL_STARTED))
         [ "$cal_elapsed" -ge 0 ] || cal_elapsed=0
-        [ "$cal_elapsed" -le 120 ] || cal_elapsed=120
+        cal_duration="$CAL_DURATION"
+        [ "$cal_duration" -gt 0 ] || cal_duration=120
+        [ "$cal_elapsed" -le "$cal_duration" ] || cal_elapsed="$cal_duration"
         cal_remaining=$((CAL_UNTIL - NOW))
         [ "$cal_remaining" -ge 0 ] || cal_remaining=0
-        cal_percent=$((cal_elapsed * 100 / 120))
+        cal_percent=$((cal_elapsed * 100 / cal_duration))
         if [ "$NOW" -lt "$CAL_UNTIL" ]; then
             cal_phase=running
             cal_active=1
@@ -573,15 +1049,17 @@ status() {
         cal_phase="$CAL_LAST_RESULT"
     fi
 
-    printf '{"date":"%s","mode":"%s","activity":"%s","enforce":%s,"armed":%s,"would_block":%s,"blocked":%s,"firewall_state":"%s","used_seconds":%s,"quota_seconds":%s,"bonus_seconds":%s,"bonus_undo_available":%s,"bonus_limit_seconds":%s,"policy_reason":"%s","remaining_seconds":%s,"parent_until":%s,"last_packet_epoch":%s,"packet_counter":%s,"pps":%s,"tcp_pps":%s,"udp_pps":%s,"bytes_per_second":%s,"reply_observer":"%s","reply_sample_status":"%s","reply_prerouting_pps":%s,"reply_prerouting_bps":%s,"reply_local_pps":%s,"reply_local_bps":%s,"reply_coverage":"unverified","traffic_class":"%s","shadow_label":"%s","shadow_app":"%s","shadow_score":%s,"server_epoch":%s,"calibration_label":"%s","calibration_app":"%s","calibration_session":"%s","calibration_until":%s,"calibration_started":%s,"calibration_samples":%s,"calibration_phase":"%s","calibration_active":%s,"calibration_elapsed_seconds":%s,"calibration_remaining_seconds":%s,"calibration_percent":%s,"calibration_last_label":"%s","calibration_last_app":"%s","calibration_last_session":"%s","calibration_last_samples":%s,"calibration_last_finished":%s,"calibration_last_result":"%s"}\n' \
-        "$TODAY" "$MODE" "$ACTIVITY" "$ENFORCE" "$ARMED" "$BLOCKED" "$actual" "$firewall_state" \
+    printf '{"watch_seconds":%s,"previous_day_date":"%s","previous_day_seconds":%s,"date":"%s","mode":"%s","activity":"%s","enforce":%s,"armed":%s,"would_block":%s,"blocked":%s,"firewall_state":"%s","used_seconds":%s,"quota_seconds":%s,"bonus_seconds":%s,"bonus_undo_available":%s,"bonus_limit_seconds":%s,"policy_reason":"%s","remaining_seconds":%s,"parent_until":%s,"last_packet_epoch":%s,"packet_counter":%s,"pps":%s,"tcp_pps":%s,"udp_pps":%s,"bytes_per_second":%s,"reply_observer":"%s","reply_sample_status":"%s","reply_prerouting_pps":%s,"reply_prerouting_bps":%s,"reply_local_pps":%s,"reply_local_bps":%s,"reply_coverage":"unverified","traffic_class":"%s","shadow_label":"%s","shadow_app":"%s","shadow_score":%s,"adaptive_state":"%s","adaptive_score":%s,"adaptive_windows":%s,"adaptive_reason":"%s","adaptive_idle_ceiling":%s,"adaptive_active_floor":%s,"adaptive_window_p50":%s,"adaptive_window_p90":%s,"adaptive_pause_hint":"%s","adaptive_pause_score":%s,"adaptive_bp_p50":%s,"adaptive_bp_p90":%s,"adaptive_active_hits":%s,"adaptive_trend_percent":%s,"billing_state":"%s","idle_reason":"%s","idle_streak_seconds":%s,"idle_grace_seconds":%s,"server_epoch":%s,"calibration_label":"%s","calibration_app":"%s","calibration_session":"%s","calibration_until":%s,"calibration_started":%s,"calibration_samples":%s,"calibration_duration_seconds":%s,"calibration_phase":"%s","calibration_active":%s,"calibration_elapsed_seconds":%s,"calibration_remaining_seconds":%s,"calibration_percent":%s,"calibration_last_label":"%s","calibration_last_app":"%s","calibration_last_session":"%s","calibration_last_samples":%s,"calibration_last_duration_seconds":%s,"calibration_last_finished":%s,"calibration_last_result":"%s"}\n' \
+        "$WATCH_S" "$PREV_DATE" "$PREV_WATCH_S" "$TODAY" "$MODE" "$ACTIVITY" "$ENFORCE" "$ARMED" "$BLOCKED" "$actual" "$firewall_state" \
         "$USED_S" "$LIMIT_S" "$BONUS_S" "$bonus_undo_available" "$bonus_limit_seconds" "$policy_reason" "$left" "$PARENT_UNTIL" \
         "$LAST_PACKET_EPOCH" "$LAST_COUNT" "$PPS" "$TCP_PPS" "$UDP_PPS" \
         "$BYTES_PER_S" "$RX_STATE" "$RX_SAMPLE_STATUS" "$RX_LAN_PPS" "$RX_LAN_BPS" \
         "$RX_LOCAL_PPS" "$RX_LOCAL_BPS" "$TRAFFIC_CLASS" "$SHADOW_LABEL" "$SHADOW_APP" "$SHADOW_SCORE" \
-        "$NOW" "$CAL_LABEL" "$cal_app" "$cal_session" "$CAL_UNTIL" "$CAL_STARTED" \
-        "$CAL_SAMPLES" "$cal_phase" "$cal_active" "$cal_elapsed" "$cal_remaining" "$cal_percent" \
-        "$CAL_LAST_LABEL" "$CAL_LAST_APP" "$CAL_LAST_SESSION" "$CAL_LAST_SAMPLES" "$CAL_LAST_FINISHED" "$CAL_LAST_RESULT"
+        "$ADAPTIVE_STATE" "$ADAPTIVE_SCORE" "$ADAPTIVE_WINDOWS" "$ADAPTIVE_REASON" "$ADAPTIVE_IDLE_CEILING" "$ADAPTIVE_ACTIVE_FLOOR" "$ADAPTIVE_P50" "$ADAPTIVE_P90" \
+        "$ADAPTIVE_PAUSE_HINT" "$ADAPTIVE_PAUSE_SCORE" "$ADAPTIVE_BP50" "$ADAPTIVE_BP90" "$ADAPTIVE_ACTIVE_HITS" "$ADAPTIVE_TREND_PCT" \
+        "$BILLING_STATE" "$IDLE_REASON" "$IDLE_STREAK_S" "$IDLE_GRACE_S" "$NOW" "$CAL_LABEL" "$cal_app" "$cal_session" "$CAL_UNTIL" "$CAL_STARTED" \
+        "$CAL_SAMPLES" "$cal_duration" "$cal_phase" "$cal_active" "$cal_elapsed" "$cal_remaining" "$cal_percent" \
+        "$CAL_LAST_LABEL" "$CAL_LAST_APP" "$CAL_LAST_SESSION" "$CAL_LAST_SAMPLES" "$CAL_LAST_DURATION" "$CAL_LAST_FINISHED" "$CAL_LAST_RESULT"
 }
 mkdir -p /var/run "$DIR"
 config
@@ -590,6 +1068,16 @@ case "${1:-}" in
         load_state
         NOW="$(date +%s)"
         status
+        exit 0 ;;
+    brief)
+        load_state
+        NOW="$(date +%s)"
+        brief
+        exit 0 ;;
+    evidence)
+        load_state
+        NOW="$(date +%s)"
+        evidence
         exit 0 ;;
     log)
         tail -n 80 "$EVENTS" 2>/dev/null || :
@@ -600,7 +1088,10 @@ case "${1:-}" in
     calibration-v4)
         tail -n 80 "$DIR/calibration-v4.csv" 2>/dev/null || :
         exit 0 ;;
-    tick|mode|bonus|enforce|sync|calibrate)
+    learning)
+        cat "$DIR/learning-last.txt" 2>/dev/null || echo "暂无学习分析"
+        exit 0 ;;
+    tick|mode|bonus|enforce|sync|calibrate|bark-test)
         lock
         load_state
         NOW="$(date +%s)"
@@ -609,7 +1100,7 @@ case "${1:-}" in
             event recovery_lock "持久状态缺失，强制锁定直至家长确认"
         fi
         ;;
-    *) echo "usage: tvguardctl {status|log|calibration|calibration-v4|tick|sync|mode|bonus|calibrate|enforce}" >&2; exit 2 ;;
+    *) echo "usage: tvguardctl {status|brief|evidence|log|calibration|calibration-v4|learning|tick|sync|mode|bonus|calibrate|enforce|bark-test}" >&2; exit 2 ;;
 esac
 
 case "$1" in
@@ -628,6 +1119,19 @@ case "$1" in
         save_runtime
         persist
         "$FW" sync
+        ;;
+    bark-test)
+        # Authorized LuCI write action: refresh the packet sample under the
+        # existing controller lock, then persist the exact child-only count
+        # BEFORE asking the report worker to read it. Never touch daily dedup.
+        hook_state="$("$FW" inspect 2>/dev/null || echo absent)"
+        case "$hook_state" in
+            allowed|blocked) : ;;
+            *) "$FW" sync ;;
+        esac
+        tick
+        persist
+        "$BARK_REPORT" test
         ;;
     mode)
         case "${2:-}" in
@@ -682,24 +1186,48 @@ case "$1" in
         fi
         case "${2:-}" in
             playing|paused|app_home)
-                case "${3:-general}" in
-                    general|tencent|iqiyi|mango|other) CAL_APP="${3:-general}" ;;
-                    *) echo "unsupported application label" >&2; exit 2 ;;
+                # New learning UI passes: calibrate LABEL DURATION.
+                # Legacy development callers may still pass APP [DURATION].
+                case "${3:-120}" in
+                    60|120|180|300)
+                        CAL_APP=general
+                        CAL_DURATION="${3:-120}"
+                        ;;
+                    general|tencent|iqiyi|mango|other)
+                        CAL_APP="${3:-general}"
+                        CAL_DURATION="${4:-120}"
+                        case "$CAL_DURATION" in 60|120|180|300) :;; *) echo "invalid learning duration" >&2; exit 2;; esac
+                        ;;
+                    *) echo "unsupported application label or duration" >&2; exit 2 ;;
                 esac
                 CAL_LABEL="$2"
                 CAL_STARTED="$NOW"
                 CAL_SAMPLES=0
-                CAL_UNTIL=$((NOW + 120))
-                event calibration_start "手工标注 $CAL_APP/$CAL_LABEL：120 秒"
+                CAL_UNTIL=$((NOW + CAL_DURATION))
+                event calibration_start "学习 $CAL_LABEL：$CAL_DURATION 秒"
                 CAL_SESSION="$NOW-$EVENT_ID"
                 ;;
-            system_home|sleep)
+            system_home)
                 CAL_LABEL="$2"
                 CAL_APP=system
+                CAL_DURATION="${3:-120}"
+                case "$CAL_DURATION" in 60|120|180|300) :;; *) CAL_DURATION=120;; esac
                 CAL_STARTED="$NOW"
                 CAL_SAMPLES=0
-                CAL_UNTIL=$((NOW + 120))
-                event calibration_start "手工标注 $CAL_LABEL：120 秒"
+                CAL_UNTIL=$((NOW + CAL_DURATION))
+                event calibration_start "学习 $CAL_LABEL：$CAL_DURATION 秒"
+                CAL_SESSION="$NOW-$EVENT_ID"
+                ;;
+            sleep)
+                # Kept only for backward-compatible development data; the new
+                # learning center intentionally exposes four user-facing states.
+                CAL_LABEL="$2"
+                CAL_APP=system
+                CAL_DURATION=120
+                CAL_STARTED="$NOW"
+                CAL_SAMPLES=0
+                CAL_UNTIL=$((NOW + CAL_DURATION))
+                event calibration_start "手工标注 $CAL_LABEL：$CAL_DURATION 秒"
                 CAL_SESSION="$NOW-$EVENT_ID"
                 ;;
             stop)

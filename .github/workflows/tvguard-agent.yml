@@ -1,0 +1,124 @@
+name: TVGuard Agent Android 6 build
+
+on:
+  workflow_call:
+    secrets:
+      TVGUARD_KEYSTORE_B64:
+        required: false
+      TVGUARD_STORE_PASSWORD:
+        required: false
+      TVGUARD_KEY_ALIAS:
+        required: false
+      TVGUARD_KEY_PASSWORD:
+        required: false
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  android6:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Check hosted Android SDK
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "ANDROID_HOME=$ANDROID_HOME"
+          ls -la "$ANDROID_HOME/platforms"
+          if [ ! -f "$ANDROID_HOME/platforms/android-35/android.jar" ]; then
+            sdkmanager --install 'platforms;android-35' 'build-tools;35.0.0'
+          fi
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.7'
+      - name: Check no-write source contract
+        run: python3 tvguard-agent/tests/test_source_guards.py
+      - name: Run foreground state unit tests
+        working-directory: tvguard-agent
+        run: gradle --no-daemon :app:testDebugUnitTest
+      - name: Build debug APK for API 23 smoke test
+        working-directory: tvguard-agent
+        run: gradle --no-daemon :app:assembleDebug
+      - name: Validate debug APK and size
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK=tvguard-agent/app/build/outputs/apk/debug/app-debug.apk
+          test -s "$APK"
+          test "$(stat -c%s "$APK")" -lt 1048576
+          unzip -l "$APK" | grep -q classes.dex
+          echo "Debug APK bytes: $(stat -c%s "$APK")"
+      - name: Enable KVM on hosted runner
+        run: |
+          if [ -e /dev/kvm ]; then sudo chmod 666 /dev/kvm; fi
+      - name: Android 6 API 23 emulator smoke test
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 23
+          target: default
+          arch: x86_64
+          profile: Nexus 5
+          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim
+          script: bash tvguard-agent/tests/emulator_smoke.sh
+
+      - name: Prepare stable release keystore
+        if: github.event_name != 'pull_request'
+        shell: bash
+        env:
+          TVGUARD_KEYSTORE_B64: ${{ secrets.TVGUARD_KEYSTORE_B64 }}
+        run: |
+          set -euo pipefail
+          test -n "$TVGUARD_KEYSTORE_B64"
+          KEYSTORE="$RUNNER_TEMP/tvguard-release.p12"
+          printf '%s' "$TVGUARD_KEYSTORE_B64" | base64 --decode > "$KEYSTORE"
+          chmod 600 "$KEYSTORE"
+          ACTUAL_SHA256="$(sha256sum "$KEYSTORE" | awk '{print $1}')"
+          EXPECTED_SHA256="96e920be816ff3a59c8b914f99909a5da9c6c59b07ccc833ee901b2700bc74a8"
+          test "$ACTUAL_SHA256" = "$EXPECTED_SHA256"
+          echo "TVGUARD_KEYSTORE_PATH=$KEYSTORE" >> "$GITHUB_ENV"
+          echo "Release keystore SHA256 verified."
+
+      - name: Build stable signed release APK
+        if: github.event_name != 'pull_request'
+        working-directory: tvguard-agent
+        env:
+          TVGUARD_STORE_PASSWORD: ${{ secrets.TVGUARD_STORE_PASSWORD }}
+          TVGUARD_KEY_ALIAS: ${{ secrets.TVGUARD_KEY_ALIAS }}
+          TVGUARD_KEY_PASSWORD: ${{ secrets.TVGUARD_KEY_PASSWORD }}
+        run: gradle --no-daemon :app:assembleRelease
+
+      - name: Verify release APK signature and identity
+        if: github.event_name != 'pull_request'
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK=tvguard-agent/app/build/outputs/apk/release/app-release.apk
+          test -s "$APK"
+          test "$(stat -c%s "$APK")" -lt 1048576
+          unzip -l "$APK" | grep -q classes.dex
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose --print-certs "$APK" | tee "$RUNNER_TEMP/apksigner.txt"
+          EXPECTED_CERT_SHA256="f4c300999b1bb3f04f4f80a630ebd5273dd268810a35b25b6c4c60a63cf376fa"
+          ACTUAL_CERT_SHA256="$(sed -n 's/^Signer #1 certificate SHA-256 digest: //p' "$RUNNER_TEMP/apksigner.txt" | head -n1 | tr '[:upper:]' '[:lower:]' | tr -d ':[:space:]')"
+          test "$ACTUAL_CERT_SHA256" = "$EXPECTED_CERT_SHA256"
+          echo "Release signer SHA256 verified: $ACTUAL_CERT_SHA256"
+          echo "Release APK bytes: $(stat -c%s "$APK")"
+
+      - name: Upload stable signed release APK
+        if: github.event_name != 'pull_request'
+        uses: actions/upload-artifact@v4
+        with:
+          name: tvguard-agent-0.2.8-release-signed-apk
+          path: tvguard-agent/app/build/outputs/apk/release/app-release.apk
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Remove temporary release keystore
+        if: always()
+        shell: bash
+        run: rm -f "$RUNNER_TEMP/tvguard-release.p12"

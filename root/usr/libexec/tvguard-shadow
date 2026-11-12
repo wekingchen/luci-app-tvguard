@@ -6,7 +6,9 @@
 set -eu
 PATH=/usr/sbin:/usr/bin:/sbin:/bin
 export PATH
-CSV=/etc/tvguard/calibration-v3.csv
+DATA=/usr/libexec/tvguard-data
+DIR="$("$DATA" root)"
+CSV="$DIR/calibration-v3.csv"
 
 [ "$#" -eq 4 ] || { echo 'unknown none 0'; exit 0; }
 for number in "$@"; do
@@ -17,27 +19,78 @@ done
 awk -F, -v p="$1" -v t="$2" -v u="$3" -v b="$4" '
 function low(a,b) { return a < b ? a : b }
 function high(a,b) { return a > b ? a : b }
-function ready(label) {
-    if (samples[label]<18 || sess_n[label]<3) return 0
-    # The system launcher is unique; other labels must contain independent
-    # samples from at least two different video applications.
-    if (label=="system_home") return 1
-    return app_n[label]>=2
+function ready_sessions(label) {
+    return samples[label]>=18 && sess_n[label]>=3
+}
+function ready_cross_app(label) {
+    return ready_sessions(label) && app_n[label]>=2
+}
+function playback_reference_ready() {
+    # For device-local idle safety, playback is only a negative overlap
+    # reference. One real labelled playback session with >=6 windows is enough
+    # to reject obvious overlap; the exempted class still needs its own evidence.
+    return samples["playing"]>=6 && sess_n["playing"]>=1
+}
+function local_app_home_ready() {
+    # A manually labelled App-home session is useful on this TV even before
+    # cross-App generalization is proven. Require enough windows to avoid a
+    # one-off transition sample; unknown Apps that do not match remain charged.
+    return samples["app_home"]>=10 && sess_n["app_home"]>=1
+}
+function local_pause_reference_ready() {
+    # Pause is never granted a local exemption from one session because it
+    # overlaps playback, but even one labelled pause session is useful as a
+    # negative reference for deciding whether a sample is clearly playback.
+    return samples["paused"]>=6 && sess_n["paused"]>=1
 }
 function inside(label) {
-    # A sample must resemble the observed multi-app range across ALL metrics.
     return p>=pmin[label]-5 && p<=pmax[label]+5 &&
            t>=tmin[label]-3 && t<=tmax[label]+3 &&
            u>=umin[label]-5 && u<=umax[label]+5 &&
            b>=bmin[label]-4096 && b<=bmax[label]+4096
 }
+function inside_system_home_robust() {
+    # The launcher produces occasional TCP/byte bursts while visually idle.
+    # Keep PPS itself inside the low-activity home envelope, then accept one
+    # noisy secondary dimension. This is stricter than a generic low-PPS rule:
+    # it still needs 3/4 calibrated feature matches plus playback separation.
+    hits=0
+    if (p>=pmin["system_home"]-5 && p<=pmax["system_home"]+5) hits++
+    if (t>=tmin["system_home"]-4 && t<=tmax["system_home"]+4) hits++
+    if (u>=umin["system_home"]-5 && u<=umax["system_home"]+5) hits++
+    if (b>=bmin["system_home"]-4096 && b<=bmax["system_home"]+8192) hits++
+    return p<=pmax["system_home"]+5 && hits>=3
+}
 function separated_from(label) {
-    # A different class must have at least one nonoverlapping feature with
-    # conservative margins. If ranges overlap in every feature, abstain.
     return p<pmin[label]-10 || p>pmax[label]+10 ||
            t<tmin[label]-5 || t>tmax[label]+5 ||
            u<umin[label]-10 || u>umax[label]+10 ||
            b<bmin[label]-10240 || b>bmax[label]+10240
+}
+function clear_local_playing() {
+    # "playing" is informational and never grants free time. Therefore it can
+    # use a lower evidence threshold than idle, but it still must be clearly
+    # outside every available idle/pause reference. Ambiguous overlap remains
+    # unknown and continues billing.
+    if (!playback_reference_ready()) return 0
+    if (local_app_home_ready() && !separated_from("app_home")) return 0
+    if (ready_sessions("system_home") && !separated_from("system_home")) return 0
+    if (local_pause_reference_ready() && !separated_from("paused")) return 0
+
+    # A point inside the labelled playback envelope is enough once all
+    # conflicting references have been excluded.
+    if (inside("playing")) return 1
+
+    # Playback can burst above the small labelled sample. Accept that only
+    # when activity is clearly beyond every local pause/home ceiling.
+    if (local_pause_reference_ready() &&
+        p>pmax["paused"]+20 &&
+        (!local_app_home_ready() || p>pmax["app_home"]+20) &&
+        (!ready_sessions("system_home") || p>pmax["system_home"]+20) &&
+        p<=pmax["playing"] + high(100, pmax["playing"]-pmin["playing"]))
+        return 1
+
+    return 0
 }
 $2 ~ /^[0-9]+-[0-9]+$/ &&
 $3 ~ /^(playing|paused|app_home|system_home|sleep)$/ &&
@@ -45,7 +98,7 @@ $4 ~ /^(general|tencent|iqiyi|mango|other|system)$/ &&
 $5 ~ /^[0-9]+$/ && $6 ~ /^[0-9]+$/ &&
 $7 ~ /^[0-9]+$/ && $8 ~ /^[0-9]+$/ {
     label=$3
-    # Sleep may be packets bypassing N1; never train it as a proven sleep.
+    # Zero traffic alone cannot prove sleep/path integrity.
     if (label=="sleep") next
     if (label=="system_home" && $4!="system") next
     if (label!="system_home" && $4=="system") next
@@ -56,16 +109,13 @@ $7 ~ /^[0-9]+$/ && $8 ~ /^[0-9]+$/ {
         tmin[label]=tmax[label]=$6
         umin[label]=umax[label]=$7
         bmin[label]=bmax[label]=$8
-    }
-    else {
+    } else {
         pmin[label]=low(pmin[label],$5); pmax[label]=high(pmax[label],$5)
         tmin[label]=low(tmin[label],$6); tmax[label]=high(tmax[label],$6)
         umin[label]=low(umin[label],$7); umax[label]=high(umax[label],$7)
         bmin[label]=low(bmin[label],$8); bmax[label]=high(bmax[label],$8)
     }
     session_seen[label SUBSEP $2]=1
-    # "other" and "general" may represent many unnamed apps; neither is
-    # proof of a second *independent* application for cross-app validation.
     if ($4=="tencent" || $4=="iqiyi" || $4=="mango")
         app_seen[label SUBSEP $4]=1
 }
@@ -79,39 +129,76 @@ END {
         app_n[parts[1]]++
     }
 
-    # Until three mutually distinguishable classes are adequately represented,
-    # with some cross-app evidence, the generic model must say "unknown".
-    if (!ready("playing") || !ready("paused") || !ready("app_home")) {
-        print "unknown none 0"
+    # The Xiaomi system launcher is a device-level state. It may be learned
+    # from repeated system-home sessions without pretending we know the app,
+    # but it is exempted only when it is clearly outside an observed playback
+    # envelope. This fixes the "sitting on TV home still consumes quota" case
+    # without making a generic low-PPS exemption.
+    # If two independently safe idle envelopes overlap, we know the TV is
+    # idle but cannot honestly claim which home screen is foreground. Emit a
+    # neutral idle label instead of whichever rule happens to run first.
+    if (ready_sessions("system_home") && local_app_home_ready() &&
+        playback_reference_ready() &&
+        inside_system_home_robust() && inside("app_home") &&
+        separated_from("playing")) {
+        print "idle general 95"
         exit
     }
 
-    candidates=0
-    for (i=1;i<=4;i++) {
-        if (i==1) label="playing"
-        else if (i==2) label="paused"
-        else if (i==3) label="app_home"
-        else label="system_home"
+    if (ready_sessions("system_home") && playback_reference_ready() &&
+        inside_system_home_robust() && separated_from("playing")) {
+        # Once App-home evidence exists, the same low-activity network shape
+        # may represent either screen. Report the billing-relevant truth
+        # (idle) instead of pretending network-only evidence knows the UI.
+        if (local_app_home_ready())
+            print "idle general 95"
+        else
+            print "system_home system 100"
+        exit
+    }
 
-        if (!ready(label) || !inside(label)) continue
-        distinct=1
-        for (j=1;j<=4;j++) {
-            if (j==1) rival="playing"
-            else if (j==2) rival="paused"
-            else if (j==3) rival="app_home"
-            else rival="system_home"
-            if (rival==label || !ready(rival)) continue
-            if (!separated_from(rival)) distinct=0
-        }
-        if (distinct) {
-            candidates++
-            selected=label
-        }
+    # App-home and pause are both non-watching states for billing. They need
+    # not be distinguishable from each other. Generic idle is allowed only
+    # after cross-app evidence for playing + both idle classes, and the live
+    # point must still be conservatively separated from playback.
+    if (ready_cross_app("playing") && ready_cross_app("paused") &&
+        ready_cross_app("app_home") &&
+        (inside("paused") || inside("app_home")) &&
+        separated_from("playing")) {
+        print "idle general 100"
+        exit
     }
-    if (candidates==1) {
-        # No per-App identity is inferred, no accuracy percentage is claimed.
-        app=(selected=="system_home" ? "system" : "general")
-        print selected " " app " 0"
+
+    # Before cross-App generalization is ready, reuse a sufficiently long
+    # manually labelled App-home session as a device-local idle fingerprint.
+    # It must match the App-home envelope across all metrics AND be clearly
+    # outside the observed playback envelope. This never turns arbitrary low
+    # PPS into free time; non-matching/unknown states continue to charge.
+    if (local_app_home_ready() && playback_reference_ready() &&
+        inside("app_home") && separated_from("playing")) {
+        if (ready_sessions("system_home"))
+            print "idle general 90"
+        else
+            print "app_home general 90"
+        exit
     }
-    else print "unknown none 0"
+
+    # Preserve the higher-confidence cross-App playing hint when that
+    # stronger evidence exists. This remains informational and billable.
+    if (ready_cross_app("playing") && inside("playing") &&
+        (!ready_cross_app("paused") || separated_from("paused")) &&
+        (!ready_cross_app("app_home") || separated_from("app_home"))) {
+        print "playing general 100"
+        exit
+    }
+
+    # A playing hint is informational only; unknown also charges. Use local
+    # labelled playback as soon as it is clearly separated from pause/home,
+    # while keeping ambiguous overlap as unknown.
+    if (clear_local_playing()) {
+        print "playing general 95"
+        exit
+    }
+
+    print "unknown none 0"
 }' "$CSV"

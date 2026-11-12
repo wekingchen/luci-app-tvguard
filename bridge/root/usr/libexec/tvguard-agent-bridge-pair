@@ -1,0 +1,41 @@
+#!/bin/sh
+# Explicit 120-second pairing window enabled by N1 administrator. RAM only.
+set -eu
+umask 077
+PATH=/usr/sbin:/usr/bin:/sbin:/bin
+export PATH
+DIR=/var/run/tvguard-agent-bridge
+WINDOW="$DIR/pair-window"
+case "${1:-status}" in
+  open)
+    [ -s /etc/tvguard/agent-bridge.key ] || {
+      echo "配对密钥不存在，请检查 Bridge 安装。" >&2; exit 1;
+    }
+    mkdir -p "$DIR"
+    now="$(date +%s)"
+    expiry=$((now + 120))
+    tmp="$DIR/pair-window.$$"
+    printf '%s\n' "$expiry" > "$tmp"
+    chmod 600 "$tmp"
+    mv -f "$tmp" "$WINDOW"
+    echo "已开放120秒的一次性电视自动配对窗口。现在在电视按「自动配对 N1」。"
+    ;;
+  close)
+    rm -f "$WINDOW"
+    echo "已关闭配对窗口。"
+    ;;
+  status)
+    if [ ! -r "$WINDOW" ]; then
+      echo "pairing_window=closed"; exit 0;
+    fi
+    IFS= read -r expiry < "$WINDOW" || :
+    case "${expiry:-}" in ''|*[!0-9]*) echo "pairing_window=invalid"; exit 0 ;; esac
+    now="$(date +%s)"
+    if [ "$expiry" -gt "$now" ] && [ "$expiry" -le "$((now + 120))" ]; then
+      printf 'pairing_window=open\nremaining_seconds=%s\n' "$((expiry - now))"
+    else
+      echo "pairing_window=expired"
+    fi
+    ;;
+  *) echo "usage: tvguard-agent-bridge-pair [open|status|close]" >&2; exit 2 ;;
+esac

@@ -13,6 +13,8 @@ case "$2" in
     tvguard.main.enforce) echo "${TVG_COMPAT_ENFORCE:-0}" ;;
     tvguard.main.allow_enforcement) echo "${TVG_COMPAT_ARMED:-0}" ;;
     tvguard.main.observe_reply) echo "${TVG_COMPAT_OBSERVE:-0}" ;;
+    firewall.@defaults\[0\].flow_offloading) echo "${TVG_COMPAT_FLOW_SW:-0}" ;;
+    firewall.@defaults\[0\].flow_offloading_hw) echo "${TVG_COMPAT_FLOW_HW:-0}" ;;
     firewall.tvguard) echo "${TVG_COMPAT_INCLUDE_TYPE:-include}" ;;
     firewall.tvguard.type) echo "${TVG_COMPAT_INCLUDE_MODE:-script}" ;;
     firewall.tvguard.path) echo "${TVG_COMPAT_INCLUDE_PATH:-/usr/libexec/tvguard-firewall-include}" ;;
@@ -104,6 +106,8 @@ export TVG_COMPAT_TABLE_DIR="$TMP/tables"
 export TVG_COMPAT_ENFORCE=0
 export TVG_COMPAT_ARMED=0
 export TVG_COMPAT_OBSERVE=0
+export TVG_COMPAT_FLOW_SW=0
+export TVG_COMPAT_FLOW_HW=0
 export TVG_COMPAT_AUDIT=ok
 export TVG_COMPAT_GATE=allowed
 export TVG_COMPAT_FAIL_TABLE=none
@@ -117,7 +121,27 @@ sh "$CHECK" > "$TMP/pass"
 grep -q '^result=PASS$' "$TMP/pass"
 grep -q '^proxy_rules_unchanged=1$' "$TMP/pass"
 grep -q '^isolation_audit=ok$' "$TMP/pass"
+grep -q '^flow_offloading_uci=0$' "$TMP/pass"
+grep -q '^flow_offloading_hw_uci=0$' "$TMP/pass"
+grep -q '^flowoffload_rule_present=0$' "$TMP/pass"
+grep -q '^flow_offload_observation_risk=0$' "$TMP/pass"
 grep -q 'iptables v1.8.7 (legacy)' "$TMP/pass"
+
+# Flow offload is diagnostic risk only: do not fail or mutate it.
+export TVG_COMPAT_FLOW_SW=1
+sh "$CHECK" > "$TMP/pass-flow"
+grep -q '^result=PASS$' "$TMP/pass-flow"
+grep -q '^flow_offloading_uci=1$' "$TMP/pass-flow"
+grep -q '^flow_offload_observation_risk=1$' "$TMP/pass-flow"
+export TVG_COMPAT_FLOW_SW=0
+
+# Detect an actual FLOWOFFLOAD rule even if UCI metadata says disabled.
+printf '%s\n' '-A FORWARD -m conntrack --ctstate RELATED,ESTABLISHED -j FLOWOFFLOAD' >> "$TMP/tables/filter"
+sh "$CHECK" > "$TMP/pass-flow-rule"
+grep -q '^result=PASS$' "$TMP/pass-flow-rule"
+grep -q '^flowoffload_rule_present=1$' "$TMP/pass-flow-rule"
+grep -q '^flow_offload_observation_risk=1$' "$TMP/pass-flow-rule"
+sed -i '/FLOWOFFLOAD/d' "$TMP/tables/filter"
 
 # Reset raw table and simulate an accidental non-TVG rule change.
 cat > "$TMP/tables/raw" <<'EOF'

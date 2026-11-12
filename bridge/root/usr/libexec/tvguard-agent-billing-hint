@@ -1,0 +1,88 @@
+#!/bin/sh
+# Conservative formal-billing hint for TVGuard core.
+# This helper NEVER edits quota, firewall, UCI or persistent state.
+#
+# Contract:
+#   free system_home  - only when generic fusion explicitly confirms TV launcher
+#   free app_home     - only when generic fusion explicitly confirms app-side non-playing UI
+#   charge <state>    - every other state, including playing/paused/unknown
+#
+# Missing/stale/invalid Agent context always fails closed to "charge unknown".
+set -eu
+PATH=/usr/sbin:/usr/bin:/sbin:/bin
+export PATH
+
+RAM=/var/run/tvguard-agent-bridge
+LATEST="$RAM/latest"
+FUSION=/usr/libexec/tvguard-agent-fusion
+
+[ "$#" -eq 9 ] || {
+    echo "charge unknown"
+    exit 0
+}
+
+now="$1"
+pps="$2"
+shadow="$3"
+adaptive_state="$4"
+adaptive_score="$5"
+adaptive_reason="$6"
+pause_hint="$7"
+pause_score="$8"
+active_floor="$9"
+
+for n in "$now" "$pps" "$adaptive_score" "$pause_score" "$active_floor"; do
+    case "$n" in ''|*[!0-9]*) echo "charge unknown"; exit 0 ;; esac
+done
+
+[ -r "$LATEST" ] || {
+    echo "charge unknown"
+    exit 0
+}
+IFS='|' read -r seen pkg activity audio screen client_ms seq < "$LATEST" || :
+for n in "${seen:-}" "${seq:-}" "${audio:-}" "${screen:-}"; do
+    case "$n" in ''|*[!0-9]*) echo "charge unknown"; exit 0 ;; esac
+done
+case "$audio:$screen" in 0:0|0:1|1:0|1:1) : ;; *) echo "charge unknown"; exit 0 ;; esac
+[ -n "${pkg:-}" ] && [ -n "${activity:-}" ] || {
+    echo "charge unknown"
+    exit 0
+}
+
+age=$((now - seen))
+# Billing authority is stricter than transport diagnostics. A delayed Agent
+# report may be useful for forensics but may never grant free time.
+if [ "$age" -lt 0 ] || [ "$age" -gt 20 ]; then
+    echo "charge unknown"
+    exit 0
+fi
+
+[ -x "$FUSION" ] || {
+    echo "charge unknown"
+    exit 0
+}
+
+fusion="$("$FUSION" "$now" "$seen" "$seq" "$pkg" "$activity" "$audio" "$screen" \
+    "$pps" "$shadow" "$adaptive_state" "$adaptive_score" "$adaptive_reason" \
+    "$pause_hint" "$pause_score" "$active_floor" 2>/dev/null || echo 'unknown fusion_error 0')"
+set -- $fusion
+[ "$#" -eq 3 ] || {
+    echo "charge unknown"
+    exit 0
+}
+
+case "$1" in
+    system_home)
+        echo "free system_home"
+        ;;
+    app_home)
+        echo "free app_home"
+        ;;
+    playing|paused|unknown)
+        # Explicitly conservative: pause remains Shadow-only research.
+        echo "charge $1"
+        ;;
+    *)
+        echo "charge unknown"
+        ;;
+esac

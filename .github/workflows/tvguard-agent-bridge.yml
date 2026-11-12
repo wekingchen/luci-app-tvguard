@@ -1,0 +1,65 @@
+name: Agent + N1 bridge shadow integration
+
+on:
+  workflow_call:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  bridge:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check complete TVGuard integration layout
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f root/usr/libexec/tvguard-adaptive
+          test -f root/usr/libexec/tvguard-learn
+          test -f root/usr/libexec/tvguard-soak
+          test -f root/usr/libexec/tvguard-daily-report
+          test -f bridge/root/usr/libexec/tvguard-agent-billing-hint
+          test -f bridge/root/usr/libexec/tvguard-agent-fusion
+          test -f tvguard-agent/app/src/main/java/com/tvguard/agent/MonitorService.java
+          echo "complete TVGuard core + Agent + bridge integration layout: PASS"
+      - name: Check executable scripts and isolation
+        shell: bash
+        run: |
+          set -euo pipefail
+          for file in bridge/root/www/cgi-bin/tvguard-agent bridge/root/usr/libexec/tvguard-agent-bridge-report bridge/root/usr/libexec/tvguard-agent-bridge-soak bridge/root/usr/libexec/tvguard-agent-bridge-pair bridge/root/usr/libexec/tvguard-agent-billing-hint bridge/root/usr/libexec/tvguard-agent-fusion bridge/root/etc/init.d/tvguard-agent-bridge bridge/ipkg/postinst bridge/ipkg/prerm scripts/build-agent-bridge-ipk.sh; do
+            dash -n "$file"
+          done
+          python3 bridge/tests/test_source_contract.py
+      - name: Verify installation on BusyBox without od and repair malformed key
+        run: python3 bridge/tests/test_busybox_postinst.py
+      - name: Run one-shot remote pairing protocol and security tests
+        run: python3 bridge/tests/test_pairing.py
+      - name: Run testable bridge HTTP ingress contract
+        run: python3 bridge/tests/test_http_bridge.py
+      - name: Verify conservative home-only billing hint
+        run: python3 bridge/tests/test_billing_hint.py
+      - name: Verify v0.2.8 generic learned-context fusion
+        run: python3 bridge/tests/test_fusion.py
+      - name: Lock low-bitrate and shared-Activity regression matrix
+        run: python3 bridge/tests/test_fusion_matrix.py
+      - name: Regress real 576p periodic-burst normal playback
+        run: python3 bridge/tests/test_real_576p_burst_guard.py
+      - name: Verify bounded RAM fusion summary
+        run: python3 bridge/tests/test_report_summary.py
+      - name: Verify fresh, repeated and stale RAM fusion samples
+        run: python3 bridge/tests/test_shadow_freshness.py
+      - name: Package standalone OpenWrt companion IPK
+        run: |
+          sh scripts/build-agent-bridge-ipk.sh
+          tar -tzf dist/tvguard-agent-bridge_0.2.8-4_all.ipk | grep -q './data.tar.gz'
+          tar -xOzf dist/tvguard-agent-bridge_0.2.8-4_all.ipk ./data.tar.gz | tar -tzf - | grep -q './www/cgi-bin/tvguard-agent'
+          tar -xOzf dist/tvguard-agent-bridge_0.2.8-4_all.ipk ./control.tar.gz | tar -tzf - > /tmp/bridge-control-list
+          ! grep -q 'conffiles$' /tmp/bridge-control-list
+          tar -xOzf dist/tvguard-agent-bridge_0.2.8-4_all.ipk ./control.tar.gz | tar -xOzf - ./control | grep -q 'Version: 0.2.8-4'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: tvguard-agent-bridge-0.2.8-r4-ipk
+          path: dist/tvguard-agent-bridge_0.2.8-4_all.ipk
+          retention-days: 7

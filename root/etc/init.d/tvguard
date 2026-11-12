@@ -4,6 +4,9 @@ STOP=10
 USE_PROCD=1
 
 start_service() {
+    /usr/libexec/tvguard-data prepare || return 1
+    /usr/libexec/tvguard-data config-sync >/dev/null 2>&1 ||
+        logger -t tvguard "UCI config persistence sync failed; continuing with live config"
     /usr/libexec/tvguardctl sync || return 1
     procd_open_instance
     procd_set_param command /usr/libexec/tvguardd
@@ -14,8 +17,10 @@ start_service() {
 }
 
 reload_service() {
-    # TV Guard config is read on each controller command. Refresh only our
-    # own raw rules/state; do not restart the daemon or global firewall.
+    # Persist committed UCI changes before refreshing TV Guard state. This
+    # never restarts the global firewall or other proxy services.
+    /usr/libexec/tvguard-data config-sync >/dev/null 2>&1 ||
+        logger -t tvguard "UCI config backup failed during reload"
     /usr/libexec/tvguardctl sync
 }
 

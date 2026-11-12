@@ -25,6 +25,10 @@ fail() {
 enforce="$(uci -q get tvguard.main.enforce || echo 0)"
 armed="$(uci -q get tvguard.main.allow_enforcement || echo 0)"
 observe="$(uci -q get tvguard.main.observe_reply || echo 0)"
+flow_sw="$(uci -q get 'firewall.@defaults[0].flow_offloading' || echo unknown)"
+flow_hw="$(uci -q get 'firewall.@defaults[0].flow_offloading_hw' || echo unknown)"
+case "$flow_sw" in 0|1) :;; *) flow_sw=unknown;; esac
+case "$flow_hw" in 0|1) :;; *) flow_hw=unknown;; esac
 [ "$enforce" = 0 ] || fail enforce_must_be_0
 [ "$armed" = 0 ] || fail allow_enforcement_must_be_0
 [ "$observe" = 0 ] || fail observe_reply_must_be_0
@@ -51,6 +55,17 @@ snapshot() {
 }
 
 snapshot "$tmp/before" || fail snapshot_before_unavailable
+
+# Flow offload may bypass later Netfilter hooks for established packets. This
+# is read-only diagnostics: never change global firewall acceleration here.
+flow_rule=0
+if grep -Eq '(^|[[:space:]])-j[[:space:]]+FLOWOFFLOAD([[:space:]]|$)' "$tmp/before"; then
+    flow_rule=1
+fi
+flow_risk=0
+if [ "$flow_sw" = 1 ] || [ "$flow_hw" = 1 ] || [ "$flow_rule" = 1 ]; then
+    flow_risk=1
+fi
 
 # No firewall reload, no network reload, no proxy command: only TV Guard's
 # isolated raw-table sync path.
@@ -84,4 +99,8 @@ echo "enforce=0"
 echo "allow_enforcement=0"
 echo "observe_reply=0"
 echo "reply_coverage=unverified"
+echo "flow_offloading_uci=$flow_sw"
+echo "flow_offloading_hw_uci=$flow_hw"
+echo "flowoffload_rule_present=$flow_rule"
+echo "flow_offload_observation_risk=$flow_risk"
 echo "iptables_version=$("$IPT" --version 2>/dev/null | head -n 1)"

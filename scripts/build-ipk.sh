@@ -5,7 +5,8 @@
 set -eu
 
 ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
-VERSION="${1:-0.1.12}"
+VERSION="${1:-0.1.13}"
+RELEASE="${2:-21}"
 OUT="$ROOT/dist"
 PACKAGE="luci-app-tvguard"
 ARCH="all"
@@ -25,7 +26,14 @@ for f in \
     usr/libexec/tvguard-firewall-include \
     usr/libexec/tvguard-isolation-audit \
     usr/libexec/tvguard-compat-check \
-    usr/libexec/tvguard-shadow; do
+    usr/libexec/tvguard-shadow \
+    usr/libexec/tvguard-learn \
+    usr/libexec/tvguard-adaptive \
+    usr/libexec/tvguard-retention \
+    usr/libexec/tvguard-data \
+    usr/libexec/tvguard-soak \
+    usr/libexec/tvguard-soak-report \
+    usr/libexec/tvguard-daily-report; do
     chmod 755 "$WORK/data/$f"
 done
 
@@ -41,18 +49,18 @@ INSTALLED_SIZE="$(gzip -cd "$WORK/data.tar.gz" | wc -c | tr -d ' ')"
 
 cat > "$WORK/control/control" <<EOF
 Package: $PACKAGE
-Version: $VERSION-1
+Version: $VERSION-$RELEASE
 Architecture: $ARCH
 Maintainer: TV Guard contributors
 Section: luci
 Priority: optional
 Installed-Size: $INSTALLED_SIZE
-Depends: luci-base, rpcd
+Depends: luci-base, rpcd, curl
 Description: TV Guard LuCI and shadow time-control service for firewall3 / iptables-legacy
 EOF
 
-cp "$ROOT/ipkg/postinst" "$ROOT/ipkg/prerm" "$ROOT/ipkg/conffiles" "$WORK/control/"
-chmod 755 "$WORK/control/postinst" "$WORK/control/prerm"
+cp "$ROOT/ipkg/preinst" "$ROOT/ipkg/postinst" "$ROOT/ipkg/prerm" "$ROOT/ipkg/conffiles" "$WORK/control/"
+chmod 755 "$WORK/control/preinst" "$WORK/control/postinst" "$WORK/control/prerm"
 
 (
     cd "$WORK/control"
@@ -61,7 +69,7 @@ chmod 755 "$WORK/control/postinst" "$WORK/control/prerm"
 )
 printf '2.0\n' > "$WORK/debian-binary"
 
-OUTPUT="$OUT/${PACKAGE}_${VERSION}-1_${ARCH}.ipk"
+OUTPUT="$OUT/${PACKAGE}_${VERSION}-${RELEASE}_${ARCH}.ipk"
 rm -f "$OUTPUT"
 (
     cd "$WORK"

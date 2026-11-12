@@ -1,0 +1,62 @@
+#!/bin/sh
+[ -n "${IPKG_INSTROOT:-}" ] && exit 0
+set -eu
+umask 077
+
+# OpenWrt/LEDE BusyBox builds may omit od(1). The previous postinst could
+# leave a newline-only key that passes the old "-s" test. Validate contents.
+KEY=/etc/tvguard/agent-bridge.key
+mkdir -p /etc/tvguard
+current=''
+if [ -f "$KEY" ]; then
+    IFS= read -r current < "$KEY" || :
+fi
+valid=1
+case "$current" in ''|*[!0123456789abcdef]*) valid=0 ;; esac
+[ "${#current}" -eq 32 ] || valid=0
+
+if [ "$valid" -eq 0 ]; then
+    command -v sha256sum >/dev/null 2>&1 || {
+        echo 'TVGuard Bridge: sha256sum not found; refusing weak pairing token' >&2
+        exit 1
+    }
+    raw=''
+    next=''
+    cleanup() {
+        [ -z "$raw" ] || rm -f "$raw"
+        [ -z "$next" ] || rm -f "$next"
+    }
+    trap cleanup 0
+    trap 'exit 1' 1 2 3 15
+    raw="$(mktemp /tmp/tvguard-agent-seed.XXXXXX)"
+    next="$(mktemp /etc/tvguard/.agent-bridge-key.XXXXXX)"
+    # 32 actual kernel CSPRNG bytes; fail closed on short/failed reads.
+    dd if=/dev/urandom of="$raw" bs=32 count=1 2>/dev/null
+    [ "$(wc -c < "$raw" | tr -d '[:space:]')" = 32 ] || {
+        echo 'TVGuard Bridge: random read incomplete' >&2
+        exit 1
+    }
+    digest="$(sha256sum "$raw")"
+    digest="${digest%% *}"
+    next_key="$(printf '%s' "$digest" | cut -c 1-32)"
+    case "$next_key" in ''|*[!0123456789abcdef]*)
+        echo 'TVGuard Bridge: invalid hash output' >&2
+        exit 1 ;;
+    esac
+    [ "${#next_key}" -eq 32 ] || {
+        echo 'TVGuard Bridge: incomplete hash output' >&2
+        exit 1
+    }
+    printf '%s\n' "$next_key" > "$next"
+    chmod 600 "$next"
+    mv -f "$next" "$KEY"
+    next=''
+    cleanup
+    trap - 0 1 2 3 15
+fi
+
+chmod 600 "$KEY"
+chmod 755 /www/cgi-bin/tvguard-agent /usr/libexec/tvguard-agent-bridge-report /usr/libexec/tvguard-agent-bridge-soak /usr/libexec/tvguard-agent-bridge-pair /usr/libexec/tvguard-agent-billing-hint /usr/libexec/tvguard-agent-fusion /etc/init.d/tvguard-agent-bridge
+/etc/init.d/tvguard-agent-bridge enable
+/etc/init.d/tvguard-agent-bridge start
+echo 'TVGuard Agent bridge 0.2.8-r4 configured; learned player Activity is protected from one-off page-load bursts.'

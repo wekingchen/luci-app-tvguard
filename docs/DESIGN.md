@@ -8,7 +8,7 @@
 - 电视 MAC `B0:41:1D:65:8B:94`；已在 N1 配 DHCP 静态规则，但不代表电视不能手动改网关/IP
 - SSR 使用 `nat PREROUTING REDIRECT` 和 `mangle PREROUTING TPROXY`：FORWARD 不能覆盖所有代理接管流量
 - N1 的 `send_redirects` 曾为 1；实际运行时须校验。即使关闭 ICMP Redirect，也无法阻止电视手动直连主路由
-- 不增加智能插座、不依赖电视 App
+- 不增加智能插座；基础控制/统计不依赖电视端 App。r21 的高可信 `system_home/app_home` 免计时由可选电视 Agent + N1 bridge 提供
 
 ## 实测数据（2026-11-08）
 
@@ -23,11 +23,14 @@
 
 ## 默认策略：智能平衡
 
-- 可靠确认观看：计时。
-- 可靠确认系统首页、视频 App 首页、暂停、熄屏待机：不计时。
-- 不能确认：计时（防止误判绕过）。
+- 明确正常播放：计时。
+- fresh Agent + Fusion 明确系统首页：不计时。
+- fresh Agent + Fusion 明确视频 App 首页：不计时。
+- 暂停：正式策略继续计时；暂停识别只保留为 Shadow 研究。
+- 不能确认 / ambiguous / Agent 失联或过期：计时（防止误判绕过）。
+- 网络真正静默：沿用 `idle_silent` 不计时。
 - 家长模式：不扣儿童额度、不受儿童允许时段限制，并持续生效直到手动切回儿童模式；锁定模式禁联网。
-- v0.1 **仅提供联网会话影子计时**，还没有可信的前台 App / 暂停识别器，也**不自动把低 PPS 免计时**。
+- r21 仍**绝不自动把低 PPS 当作首页或暂停**；Home-only 免费时间必须来自 fresh Agent + generic Fusion 的明确 `system_home/app_home`。
 - `enforce=0` 默认只记录；在现场验证后须家长主动启用真实阻断。
 
 ## 数据路径
@@ -93,7 +96,7 @@ SSR 透明代理或正常路由
 - 手动锁定不能被奖励解除；家长模式不设倒计时。孩子临时多看的需求只通过当日奖励时间处理。
 - 操作日志为 `时间戳|事件序号|类型|备注`，最多约 256 KiB 后截取最近 1500 行，避免日志无限增长。
 - 重要限制：当前 LuaCI 只能确认操作者具备管理权限，不记录精确的个人身份。
-- v0.1 对网络活动采取 60 秒静默窗口，计时误差可能大于 1 分钟，且系统首页可能仍被计时。**不能宣传为实际亮屏/观看时长**。
+- v0.1.12 对网络活动采取 60 秒静默窗口，系统首页仍可能被计时。v0.1.13 增加 `billing_state=idle_verified`：高可信闲置连续约 30 秒后暂停儿童计时；无法确认仍计时。它仍不是操作系统级“真实亮屏/观看时长”。
 
 ## 安全边界
 
@@ -120,3 +123,241 @@ SSR 透明代理或正常路由
 - 防火墙规则变更会影响全局转发；在真实 N1 上测试前不得启用 `enforce=1`。
 - 已在 N1 验证 v0.1.1 的 opkg 安装、LuCI 打开、RAW 出站统计及双重封禁开关的默认关闭；后续开发分支及被动回程计数仍待单独真机验证。
 - LuCI 上传 v0.1.3 曾报 malformed package，但同一用户通过页面文件局部修复继续了标注；包兼容性仍须独立于 CI 检查。
+
+## 当前最高优先级：低码率正常观看不漏计（2026-11-09 决策）
+
+**P0 — 儿童真实观看必须计时，特别是无会员视频 App 的免费 576p / 720p 播放。** 这不是边缘压力测试，而是日常使用场景。原先主要依据 4K 片源标注形成的 Adaptive PPS 阈值，不能默认推广到低码率播放。
+
+使用约束补充：孩子实际只看流媒体，不会主动把视频下载/缓存成离线文件，本地也没有可供播放的视频文件。因此 P0 不需要覆盖“纯本地离线播放”这一不可观测场景；但流媒体播放器自身的预缓冲仍可能造成几十秒甚至更长的低流量/静默窗口，仍必须纳入计费安全设计。
+
+现场证据（N1，电视固定 IPv4 `192.168.101.76`，Shadow Soak schema=v2 / Phase 2A）：
+
+- 芒果 TV 576p，已由现场确认画面持续播放、进度条前进：2026-11-09 21:25 与 21:28 两个窗口分别仅 24 / 22 PPS，Adaptive `idle/stable_low`，`billing_state=idle_verified`，`idle_streak_seconds` 从 101 增至 290。当前 `mode=parent`，因此 `used_seconds` 不增加**不能**作为儿童模式漏计已经实证的结论；仍须审计并在 `enforce=0` 下核验儿童计时。
+- 同日 4K 正常播放，21:40 与 21:43 两个窗口为 109 / 182 PPS，Adaptive `active`，`billing_state=charge`；`high_ratio_pause` 候选累计数保持 98 不变。结果支持现有模型的清晰度泛化不足，但**不能**单凭此排除缓存、出站包方向和网络路径差异。
+- 当前现场阈值 `adaptive_idle_ceiling=70`、`adaptive_active_floor=138`（来自旧模型）；这不是应继续盲目降低的推荐阈值。Shadow Soak 中 `high_ratio_pause` 只是重叠特征，不是暂停概率。
+
+工作顺序（按优先级；修改前先诊断，不能跳过验收）：
+
+1. **P0**：核对 `tvguard-adaptive` 的 `idle/stable_low → billing_state=idle_verified` 路径与儿童模式实际 `USED_S` 增量；在观察模式 `enforce=0` 下验证 576p / 720p 正常播放不能长期被免计时，未知状态应遵循“证据不足则计时”。
+2. **P0 观测完整性**：利用固定电视 IP 归属流量；确认 `raw PREROUTING -i br-lan -s 电视IP` 目前只统计出站 IPv4，测试既有 `TVG_RX_LAN` / `TVG_RX_LOCAL` 无动作回程计数器的覆盖程度与硬件卸载、透明代理、IPv6、旁路限制；先独立只读/旁路验证，**不直接拿回程计数驱动计费或 gate**。如需连接级特征，优先考虑轻量、有界、隐私最小化的 IP 五元组/方向/速率/持续性统计；不把加密 TLS/QUIC 负载当作可直接识别的视频内容。
+3. **P1**：同时保持 4K/1080p 播放不退化，首页/暂停不能轻易误判为播放；以独立状态标注、跨清晰度与跨 App 反例、离线回放为门槛，拒绝按 App 名称硬编码和直接下调 PPS 阈值。
+4. **P2**：暂停免计时继续保留在 Shadow Soak 旁路研究；不能让 `high_ratio_pause` 或未验证的回程观察影响 `USED_S`、`billing_state` 或防火墙。
+5. **工程保护**：保留儿童/家长/锁定、奖励及撤销、额度、正式 gate、SSR/代理隔离和已有回滚保障；所有实际防火墙变更必须继续满足原隔离门禁。严禁为了观测新增 NAT/mangle/路由改写。
+
+**可观测性边界**：固定 IP 能识别这台电视**经过 N1** 的包及连接，不等于能观察所有网络路径；能够识别高吞吐连接或疑似视频流量，不等于能从 HTTPS/QUIC 加密流量断言屏幕正在播放、暂停或使用哪个前台 App。长缓冲或本地缓存播放与暂停可能网络表现相同。必须承认不可判定状态，避免“低流量=已确认停止观看”的推断。
+
+## r12 P0 验证候选：先撤销 TX-only 闲置的计费授权
+
+r12 的第一步不是重新调低 PPS 阈值，而是把“识别标签”和“免计时授权”重新分开：
+
+- `tvguard-adaptive`、`tvguard-shadow` 和 Shadow Soak 继续原样输出，用于观察、学习和离线回放；
+- 生产代码固定 `TX_IDLE_BILLING_AUTHORITY=0`，不是 UCI/UI 开关；在该门关闭时，只要电视仍有经过 N1 的非静默网络窗口，儿童模式保持 `billing_state=charge`，即使 Adaptive 输出 `idle/stable_low` 或 Shadow 输出首页/idle；
+- 旧的智能闲置状态机暂时保留在代码中但没有生产授权，测试可以显式开启它，避免后续恢复时失去回归覆盖；
+- `ACTIVITY=silent → idle_silent` 暂时保留为“网络会话结束”边界，而**不是屏幕空闲证明**。这一点仍是 P0 剩余风险：必须用真实 576p/720p 长时间播放确认是否会出现超过当前 `silence_seconds=60` 的无包缓冲间隔；若出现，优先设计有界的 recent-playback hold，而不是让电视关机后无限计时；
+- Reply Observer 仍默认关闭且没有 billing authority。r12 只给兼容检查增加 flow-offload 风险报告；若系统启用 software/hardware flow offload 或实际存在 `FLOWOFFLOAD` 规则，只标记观测完整性风险，不自动关闭/修改全局加速。
+
+r12 的 P0 验收硬门槛：真实正常播放（含免费 576p/720p）不得出现 `dangerous_idle_false_hints` 导致的免计时；暂停/首页暂时继续计时属于保守退化，可以接受，但必须显式记录，不能伪装成识别成功。
+
+## 分支生命周期
+
+- `main`：只承载已经完成 N1 真机验收、可作为稳定恢复基线的版本；不直接在 `main` 上做实验。
+- `feat/v0.1.13-smart-billing`：v0.1.13 这一代的临时集成分支。P0/P1/P2 的验证成果先汇总到这里，直到 v0.1.13 完成真机验收。
+- `feat/v0.1.13-rNN-*`：一次性任务/验证分支，只从当前 v0.1.13 集成分支创建；通过 CI 后以 PR 合回集成分支，合并完成即应删除，不作为新的长期开发线。
+- v0.1.13 真机验收完成后：将集成分支合入 `main`，以稳定 release/tag 固化，然后删除 `feat/v0.1.13-smart-billing`；后续版本从最新 `main` 新建自己的集成分支，不沿用旧版本开发线。
+- 禁止长期同时维护多个互相分叉的同版本集成分支；若出现临时分支，必须在 PR/文档中明确目标基线和退出条件。
+
+## 2026-11-09 N1 现场路由观测
+
+在 r11 真机上只读检查得到：
+
+- `firewall.@defaults[0].flow_offloading=0`、`flow_offloading_hw=0`，filter 表没有 `FLOWOFFLOAD` 规则；当前低码率问题不能优先归因于 OpenWrt flow offload。
+- `ip -4 route get 1.1.1.1 from 192.168.101.76 iif br-lan` 返回 `via 192.168.101.1 dev br-lan` 且带 `cache <redirect>`；电视经 N1 转发到主路由时入/出接口同为 `br-lan`，满足 Linux 发送 ICMP Redirect 的典型条件。
+- `net.ipv4.conf.all.send_redirects=1`、`net.ipv4.conf.br-lan.send_redirects=1`，且 `/proc/net/snmp` 的 `OutRedirects=7233`。这证明 N1 已经实际发送过大量 Redirect；但该计数是全局的，尚不能单凭它证明全部来自电视或某个视频 CDN。
+- 电视 IPv6 邻居目前只观察到 link-local `fe80::b241:1dff:fe65:8b94`；尚无证据证明视频流正在通过可路由 IPv6 绕过当前 IPv4 TVG_RAW。
+- N1 未安装 `tcpdump`，但有 BusyBox/系统 `timeout`。
+
+工程含义：在继续调整 576p/720p Adaptive 阈值前，必须先确认 ICMP Redirect 是否导致电视部分流媒体连接绕过 N1。若存在，任何仅基于 N1 IPv4 TX 计数的低流量分类都可能把“路径绕过”误读成“空闲/暂停”。在证据明确前，不修改 `send_redirects`、不安装抓包工具、不改变现有代理/防火墙路径。
+
+### 576p Redirect 关联采样（2026-11-09）
+
+在不修改 N1 配置的条件下，对芒果首页约 120 秒和芒果 576p 正常播放约 301 秒分别每 10 秒读取 `TVG_RAW/TVG_COUNT` 与 `/proc/net/snmp OutRedirects`：
+
+- 首页：`TVG_RAW` 增量 1085 包 / 474369 字节 / 120 秒，约 9.0 PPS、3.95 KB/s；`OutRedirects` +15，约 0.125/s。
+- 576p 播放：`TVG_RAW` 增量 26178 包 / 2642481 字节 / 301 秒，约 87.0 PPS、8.78 KB/s；`OutRedirects` +73，约 0.243/s。
+- 576p 的 10 秒窗口 PPS 约 P10=46、P50=74、P90=134，最低约 32、最高约 198；BPS 约 P10=5.7 KB/s、P50=7.7 KB/s、P90=13.3 KB/s。
+- 播放期间 Redirect 速率确实高于首页，但 TVG 可见流量同时显著增高；逐窗口 Redirect 速率与 TVG PPS/BPS 没有明显负相关。因此本轮数据**不支持**“Redirect 导致 576p 播放流量被持续绕走”作为主要解释。
+- 由于 `OutRedirects` 是全局计数，本轮仍不能证明这些 Redirect 全部发给电视。`send_redirects=1` 仍属于单臂旁路由的路径完整性风险，后续可以用电视目标地址的无动作计数或短时抓包做归属验证，但不能据此直接调整 Adaptive 阈值。
+- 本轮 5 分钟流媒体播放没有出现 10 秒级零包窗口，暂未观察到 `silence_seconds=60` 的风险条件；这只降低风险，不等于跨 App/片源已经证明不存在。
+
+结论：r12 的 `TX_IDLE_BILLING_AUTHORITY=0` 方向成立。现阶段优先把 TX-only `idle/stable_low` 降级为诊断信号，而不是试图通过单一 PPS 阈值解决 576p 泛化；Redirect 与 60 秒 silence 分别作为路径/长缓冲风险继续旁路验证。
+
+### 同片源 576p 两段原始窗口对比（2026-11-09）
+
+将两次芒果 576p 正常播放的 `/var/run/tvguard-soak-window.csv` 原始 10 秒窗口直接对齐后发现：
+
+- 早期低流量段（36 窗、约 366 秒）：Adaptive `idle` 26 窗、`ambiguous` 9 窗、`active` 1 窗；PPS 中位约 21.5。自 1794230668 至 1794230919 连续约 251 秒共 25 窗全部为 `idle`，该连续段 PPS 中位约 17、P90 约 39、平均约 18.2；TCP 平均约 2.4 PPS、UDP 平均约 15.4 PPS，明显以 UDP 为主。
+- 最新 576p 段（30 窗、约 304 秒）：Adaptive `active` 11 窗、`ambiguous` 19 窗、`idle` 0 窗；PPS 中位约 75、P90 约 134；TCP 平均约 77.5 PPS、UDP 平均约 7.4 PPS，明显以 TCP 为主。
+- 两段均由现场确认画面持续播放，且均无 10 秒级零包窗口。因此“同为 576p”并不能唯一决定网络画像；CDN/传输协议/连接策略切换会让 PPS 与 TCP/UDP 结构发生数量级差异。
+- 这进一步否定了“降低一个 PPS 阈值即可解决低码率播放”的方案，也说明不能把 UDP-heavy/TCP-heavy 任一协议形态硬编码为播放或空闲。
+- r12 的安全策略应保持：Adaptive/Shadow 仍可输出 `idle/ambiguous/active` 供研究，但 TX-only `idle/stable_low` 不再获得儿童免计时授权。当前真实流媒体样本尚未出现 60 秒完全静默，因此 r12 P0 真机验证前暂不增加 recent-playback hold，避免提前引入新的关机/首页多计时副作用。
+
+### r12 P0 第一阶段真机验收（2026-11-09）
+
+真机安装 Actions run 42636829888（#446）产物，构建标识 `v0.1.13-r12-low-bitrate-p0`、包版本 `0.1.13-12`；`TX_IDLE_BILLING_AUTHORITY=0`、`tvguard-isolation-audit=ok`，`enforce=0`。
+
+芒果 576p 正常连续播放，儿童模式下：
+
+- 测试前 22:44:36：`used_seconds=6662`，Adaptive `idle/stable_low`，P50/P90=20/26，`billing_state=charge`。
+- 约 2 分钟 22:47:29：`used_seconds=6829`（+167 秒），Adaptive 仍为 `idle/stable_low`，P50/P90=23/62，`billing_state=charge`。
+- 约 5 分钟 22:50:30：`used_seconds=7018`（相对测试前 +356 秒），Adaptive 仍为 `idle/stable_low`，P50/P90=14/37，`billing_state=charge`。
+- 以 status 的 `server_epoch` 计，测试前至末次检查约 354 秒，而 `used_seconds` 增加 356 秒，误差仅为轮询/采样边界量级；未出现因 Adaptive `idle` 而停止儿童扣时。
+- Shadow Soak 继续旁路运行，暂停线索/idle_overlap 没有获得 `USED_S` 或 firewall gate 权限。
+
+结论：**r12 P0 第一阶段真机通过。** 已实证切断 `TX-only idle/stable_low → idle_verified/free time` 的危险链。下一阶段仍需在不破坏此安全底线的前提下恢复“高可信首页/真正暂停免计时”的体验能力，并继续旁路验证 Redirect、IPv6、长静默等观测完整性风险。
+
+### P1 入口约束：Shadow idle 也暂不具备计费授权
+
+r12 真机前后的 576p 原始窗口表明，真实正常播放期间不仅 Adaptive 会输出 `idle/stable_low`，Shadow 也曾在个别窗口输出 `idle`。因此 P1 不能简单把计费授权从 Adaptive 转交给 Shadow：
+
+- `shadow=idle/app_home/paused` 继续只作为诊断/学习标签，不直接暂停 `USED_S`；
+- r13 若恢复任何免计时状态，必须使用比 generic `idle` 更窄的“verified”证据，并通过真实播放反例回放确保 `dangerous_idle_false_hints=0`；
+- 首选候选是设备级 `system_home`，但只能在其人工标注会话数量、稳定性、与真实 576p/4K 播放样本分离度足够时开放；
+- 如果系统首页与 App 首页/低码率播放的网络包络重叠，则宁可继续计时，也不为了体验恢复广义低流量免计时；
+- `paused` 仍属于 P2：网络层暂停与预缓冲播放天然可能重叠，在没有更强证据前不获得计费授权。
+
+### P1 现有人工学习数据结论（2026-11-09）
+
+N1 当前学习库：`playing` 53 样本/4 会话，`paused` 65/4，`app_home` 30/2，`system_home` 52/4。已完成高质量分析会话分别为 playing 2、paused 3、app_home 1、system_home 1。
+
+- `system_home` 已完成会话 PPS P10/P50/P90 约 9/14/34；而已确认真实播放的 576p 低流量连续段 PPS 中位约 17、P90 约 39，区间高度重叠。真实 576p 播放原始窗口中 Shadow 也曾实际输出 `idle`。因此即使 system_home 原始会话数量达到 Shadow 的 `ready_sessions` 门槛，也**不能**据此授予免计时权限。
+- `app_home` 已完成会话 PPS 约 28/41/61，仅 1 个高质量完成会话、原始共 2 会话；该范围与 576p 正常播放大量窗口重叠，且跨 App 证据不足。
+- `paused` 三个高质量完成会话分别约 12/18/101、19/21/35、45/115/184 PPS，表现明显多模态，同时覆盖低码率播放与更高活动区间；继续作为 P2 旁路研究，不能用 aggregate PPS/BPS 直接授权。
+- `playing` 两个高质量完成会话约 138/160/233 与 168/402/715 PPS，但真实 576p 已出现长时间 2–41 PPS 的播放形态，说明现有 playing 训练集缺少低码率/不同 CDN/协议传输 regime。
+
+结论：当前四类 aggregate TX 画像均不足以安全恢复任何非静默免计时。P1 下一步应提升**观测维度**，而不是继续收紧/放宽 PPS 阈值。优先验证已实现且默认关闭的 Reply Observer，判断 N1 对电视下行是否具有稳定覆盖；同时评估 conntrack/流级元数据是否可用。所有新信号先进入 Shadow/离线回放，`TX_IDLE_BILLING_AUTHORITY=0` 保持不变。
+
+### P1-A Reply Observer 真机结论（2026-11-09）
+
+在 r12 真机、`enforce=0`、`TX_IDLE_BILLING_AUTHORITY=0` 下显式启用 `tvguard.main.observe_reply=1`，`tvguard-isolation-audit=ok`，`tvguard-fw inspect-reply=ready`。两条规则均为 raw 表无 target 计数规则：
+
+- `PREROUTING -i br-lan -d 192.168.101.76 ... TVG_RX_LAN`
+- `OUTPUT -o br-lan -d 192.168.101.76 ... TVG_RX_LOCAL`
+
+对系统首页、芒果 576p 正常播放、同片暂停各约 2 分钟采样：
+
+- `RX_LAN_PPS/BPS` 三种状态全程均为 0；说明正常电视下行没有经过 N1 的 raw PREROUTING 回程观察点。
+- `RX_LOCAL` 绝大多数窗口为 0 PPS，仅有约 41–71 B/s 的极小本机输出，偶发 1–9 PPS / 数百 B/s；与视频播放吞吐量不匹配，不能作为视频下行代理。
+- 576p 播放仍能在 TX 侧观察到约 9–44 PPS / 3–8 KB/s，而系统首页约 3 PPS、暂停约 9–11 PPS；这再次说明当前 N1 主要可见的是电视发出的请求/ACK/QUIC 控制与上行，而不是完整下载方向。
+- 因此现有 Reply Observer 对该单臂旁路由拓扑**没有足够回程覆盖**，不能进入 `USED_S`、`billing_state` 或任何 verified-idle 授权逻辑。测试结束后应恢复 `observe_reply=0` 并删除两条 observer 规则。
+
+工程结论：P1 下一步不再投入现有 RX counter 方案；应评估连接/流级元数据（如 conntrack 只读统计）能否在不改 NAT/mangle/路由、不依赖 payload 的情况下提供比 aggregate TX 更强的状态证据。若仍无法与低码率播放可靠分离，则继续采用保守 charge，而不是恢复免计时。
+
+### P1-B Conntrack 能力预检（2026-11-09）
+
+N1 当前未安装 `conntrack` 用户态工具，但 `/proc/net/nf_conntrack` 可读，`nf_conntrack_count=669`、`nf_conntrack_max=327680`，并已加载 `nf_conntrack_netlink`。这意味着无需安装软件即可先用 proc 表做只读流级验证；后续若需要事件驱动再评估 netlink。
+
+`nf_flow_table`/`xt_FLOWOFFLOAD` 模块虽已加载，但此前 UCI software/hardware flow offload 均为 0 且无 `FLOWOFFLOAD` 规则，因此模块存在本身不视为当前观测绕过证据。
+
+下一步只读确认 `nf_conntrack_acct` 是否启用、proc 条目是否含双向 `packets/bytes`，以及能否稳定过滤出 `192.168.101.76` 的 TCP/UDP 流。任何 conntrack 信号在真机区分度验证前仍只进入 Shadow/离线分析，不获得 billing authority。
+
+### P1-B Conntrack 真机能力边界（2026-11-09）
+
+N1 现场：`nf_conntrack_acct=1`、`nf_conntrack_timestamp=0`，`/proc/net/nf_conntrack` 可读；电视当前约 64 条相关记录（约 TCP 20 / UDP 38）。
+
+- N1 本地服务连接（例如电视到 `192.168.101.99:53` DNS）可看到双向 `packets/bytes`，说明 conntrack accounting 本身工作正常。
+- 电视到公网的 TCP 连接大量表现为 `[UNREPLIED]`，例如 `src=192.168.101.76 dst=<公网IP> dport=80/443 ... packets>0 bytes>0`，回复 tuple 的 `packets=0 bytes=0`。这与 Reply Observer 的 `RX_LAN=0` 一致：公网回程大多绕过 N1，因此 conntrack 不能作为完整下载方向统计。
+- 因此不能利用 conntrack reply bytes/packets 直接推断视频播放；但 conntrack 仍提供 aggregate TX 没有的流级维度：目的 IP/端口、协议、TCP state、UNREPLIED/ASSURED、同时流数量、每条流原始方向 packet/byte 增量。
+- 下一步只做差分 Shadow 验证：比较 `system_home / 576p playing / paused` 三种状态的公网 80/443 TCP/UDP 流数量、原始方向字节增量、新建/消失流数量与状态分布。若这些流级特征仍与低码率播放重叠，则不继续尝试从网络层恢复 verified-idle。
+
+约束保持：不安装 `conntrack` 工具、不启用 timestamp、不修改 sysctl/NAT/mangle/路由；conntrack 仅只读，`TX_IDLE_BILLING_AUTHORITY=0` 不变。
+
+### P1-B 三状态 Conntrack 差分结论（2026-11-09）
+
+对 `system_home / PLAY_576P / paused` 各约 2 分钟读取 `/proc/net/nf_conntrack`。采样脚本中的 `NEW` 字段把“真正新流”和“同 key 计数回退/重建”混在一起，因此本轮不使用该字段做结论；其余 `FLOWS/DESTS/ACTIVE/TCP443/UDP443/DPKTS/DBYTES/UNREPLIED` 可用。
+
+- 三组公网流几乎 100% 为 `UNREPLIED`，再次证明 N1 只看到原始方向，流表中的回复计数不能代表视频下载。
+- `PLAY_576P` 的总流库存明显更高（本轮约 19–105，均值约 64），但随着旧连接超时快速下降；`system_home` 约 7–61（均值约 31），`paused` 约 17–30（均值约 22）。该差异包含大量历史连接寿命，不能作为当前屏幕状态的即时证据。
+- 最近窗口真正有原始方向增量的 `ACTIVE` 高度重叠：system_home 0–3，播放 0–6，暂停 0–13；暂停甚至出现比播放更高的活动窗。
+- `DPKTS/DBYTES` 同样重叠：播放可出现 0 增量，暂停也可出现较大突发。因此 conntrack 的流数量/端口/原始方向字节不能安全授予 idle。
+- 本轮再次观察到时间结构差异：暂停长段 TX PPS 约 9–11 且较稳定，而真实低码率播放虽然也会掉到个位/十位 PPS，但在此前 251 秒样本中呈现 2–41 PPS 周期性突发。下一步只研究**连续窗口节奏/波动/突发间隔**，不继续堆叠静态阈值。
+
+结论：conntrack 作为 P1 billing signal 暂停推进；不新增常驻 conntrack observer。P1-C 转向离线/Shadow 时序验证，继续坚持 `uncertain => charge` 和 `TX_IDLE_BILLING_AUTHORITY=0`。
+
+### r13 P1-C 候选：时序低位平台 Shadow
+
+静态 TX、Reply Observer、conntrack 流级静态特征均不足以安全恢复 idle authority 后，r13 只增加一个**旁路时序候选**，不改变 r12 计费语义。
+
+- Shadow Soak 从内存环读取最近 12 个约 10 秒窗口，计算 PPS 的 P10/P50/P90、P90-P10 spread 与 max。
+- 只有在 12 窗齐全、`P90<=20`、`spread<=5`、`max<=25` 时输出诊断候选 `stable_low_plateau`（score=70）。这些阈值只用于候选搜集，不代表“已确认暂停/首页”。
+- 候选只记录进入/退出、累计时长、最长时长和最近窗口统计；不返回给 `tvguardctl` 的 billing state，也不修改 `USED_S`、firewall gate、NAT/mangle/route。
+- CI 固化两段真实正常 576p 回归：UDP-heavy 低流量连续段与 TCP-heavy 段均不得触发该候选；当前真实暂停 9–11 PPS 稳定段应能触发，用来验证 observer 本身工作。
+- 即使 r13 真机长期观察没有误报，也不能仅凭这一轮样本自动开放免计时；至少还需跨 App、跨清晰度、跨 CDN/协议的真实播放反例和首页/暂停正例。
+
+r13 的目的不是“恢复暂停免计时”，而是建立一个可被真实数据证伪的窄时序候选；任何播放误触发都应优先淘汰候选，而不是调高授权概率。
+
+### r14 P1-C 真机修正：时序状态持久与暂停正例（2026-11-09）
+
+r13 真机首次三状态观察得到：
+
+- 系统首页命中 `stable_low_plateau`，12 窗约 `P10/P50/P90=7/8/8`、spread=1、max=14；说明低位稳定平台候选本身可观察。
+- 芒果 576p 正常播放约 5 分钟未命中，末窗约 `7/9/43`、spread=36、max=48；安全方向符合预期。
+- 同片暂停约 3 分钟未命中，末窗约 `5/5/13`、spread=8、max=16；r13 的 `spread<=5` 过窄，属于保守漏判。
+- 同时发现 r13 状态恢复代码 `eval` 写错，导致 `TEMPORAL_ENTERS/EXITS/CANDIDATE_SAMPLES` 每 tick 被重置，出现“当前候选已命中但进入/退出仍为 0/0”的显示错误；另有临时文件名 `$$` 少一 `$`，一并修正。
+
+r14 仍然是 Shadow-only 修正：将候选条件的 spread 上限从 5 放宽到 10，并把真实暂停 `5/5/13, spread=8, max=16` 固化为正例；两段真实 576p（UDP-heavy 与 TCP-heavy）继续作为硬反例，必须 0 次触发。`TX_IDLE_BILLING_AUTHORITY=0`、controller billing 与 firewall gate 均不改变。
+
+### r15 P1-C 状态迁移修复（2026-11-10）
+
+r14 真机按“播放 → 暂停 → 暂停 → 播放”观察时，播放两次均为 `stable_low_plateau=none`，暂停第一次命中 `5/6/15, spread=10`，暂停第二次因背景突发达到 `P90=60/max=99` 而保守退出。该退出属于预期的 uncertain=>charge，不继续放宽阈值。
+
+同时发现升级状态污染：r13 曾可能留下 `TEMPORAL_LAST_HINT=stable_low_plateau` 但 `TEMPORAL_CANDIDATE_START=0`；r14 修复状态持久后首次退出会计算 `NOW-0`，从而产生约 Unix epoch 大小的虚假累计/最长时长。r15 为 temporal observer 引入独立 `TEMPORAL_STATE_SCHEMA=v2`，升级时只重置 temporal 候选/累计，保留原始 ring 与 high-B/P Soak 历史；只读 report 在 writable migration 发生前也会隐藏旧污染值。
+
+r15 不修改 `TX_IDLE_BILLING_AUTHORITY=0`、controller billing、firewall gate、NAT/mangle/route。
+
+### r16 P1-C 静默样本去重（2026-11-10）
+
+r15 重启后的干净 RAM ring 显示前 10 个窗口均为 `PPS=0`；按原条件，满 12 窗后纯静默也会满足低位稳定平台。纯静默已有 `activity=silent / billing_state=idle_silent` 专门处理，不应重复计入 `stable_low_plateau` 研究样本。
+
+r16 在 Shadow-only 条件中增加 `TEMPORAL_P50 > 0`：纯静默以及“11 个静默窗 + 1 个零星包”的近静默历史均不得进入候选；已确认系统首页、真实暂停正例和两段 576p 播放反例保持原有判定。该修改不改变 `TX_IDLE_BILLING_AUTHORITY=0`、controller billing、firewall gate、NAT/mangle/route。
+
+
+## r17 保守 Home-only 正式计时（2026-11-11）
+
+真机已证明：576p 正常播放与真实暂停后的预取/缓存流量高度重叠，PPS/BPS/UDP 占比均不足以可靠区分；Android `audio_active=0` 在恢复播放后也可能继续出现。因此正式计时不再追求“必须识别 paused”。
+
+r17 的正式规则收敛为：
+
+- `ACTIVITY=silent`：沿用现有网络静默边界，不扣儿童额度；
+- fresh Agent + generic fusion 明确 `system_home`：不扣；
+- fresh Agent + generic fusion 明确 `app_home`：不扣；
+- `playing / paused / unknown / ambiguous`：只要网络活动存在，一律扣；
+- Agent missing/stale/invalid、bridge 缺失或 billing hint 异常：fail-closed，网络活动存在则扣；
+- Adaptive pause hints、burst guard、pause streak 继续只做 Shadow 研究，不具备免计时授权。
+
+实现上由独立 `tvguard-agent-billing-hint` 输出唯一窄接口：`free system_home`、`free app_home` 或 `charge <state>`。它不读取/修改 USED_S、BILLING_STATE、iptables、UCI；核心 `tvguardctl` 是唯一正式计时写入方。
+
+
+## r21 设置页与双 Bark 接收设备（2026-11-11）
+
+- LuCI 顶部页签“时间规则”改名为“设置”，页面标题同步为“TV Guard · 设置”。
+- 保留原有 `bark_key` 作为第 1 个推送 ID，新增可选 `bark_key2`，最多同时向两台 Bark 设备发送同一份日报/测试消息。
+- 两个 ID 相同会自动去重，只发送一次；只填写任意一个 ID 也可正常工作。
+- 定时日报按设备分别保存当天送达标记。一台成功、一台失败时，5 分钟后只重试失败设备，避免成功设备收到重复日报。
+- 手动测试会向所有已填写设备发送，并明确返回“成功/失败设备数”；测试不会写入正式日报去重标记。
+- 两个 Bark ID 都不会通过状态接口或操作记录输出。
+
+
+## r21 + bridge 0.2.8-r4 真机验收（2026-11-12）
+
+N1 / 小米电视实机完成 Home-only 正式计时闭环：
+
+- 系统首页：Agent/Fusion = `system_home / system_home_confirmed`；核心 = `idle_verified / system_home`；
+- App 首页：`ChannelHomeActivity` 经 r4 通用 Activity-switch guard 后稳定进入 `app_home / app_nonplaying_confirmed`；核心 = `idle_verified / app_home`；
+- 儿童模式 App 首页连续 30 秒：`watch_seconds/used_seconds = 117 → 117`；
+- 儿童模式正常播放：`117 → 170`，核心 `billing_state=charge`；
+- 同一播放器暂停：继续 `charge`，累计时间继续增长，符合“暂停无法可靠区分则计时”的正式策略；
+- 回到系统首页后连续 30 秒：`297 → 297`；
+- bridge r4 的 fusion schema 为 v4，已验证 learned media Activity 保持播放器 `VodDynamicActivity`，首页加载突发不会再把 `ChannelHomeActivity` 污染成播放上下文；
+- r21 LuCI「设置」页、两个 Bark 推送 ID、00:05 前一日儿童观看日报及双设备测试推送均已真机验证。
+
+因此正式产品语义固定为 **Home-only free / uncertain charge**；paused 的更精细免计时属于后续优化，不是 r21 合入门槛。

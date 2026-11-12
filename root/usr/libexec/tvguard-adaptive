@@ -1,0 +1,289 @@
+#!/bin/sh
+# TV Guard Adaptive Engine Phase 2A.
+# Phase 1 billing semantics stay intact: learned rolling windows classify
+# idle/active/ambiguous. Phase 2A additionally learns pause prototypes from
+# high-quality manual sessions and emits diagnostic pause hints only.
+set -eu
+PATH=/usr/sbin:/usr/bin:/sbin:/bin
+export PATH
+
+DATA=/usr/libexec/tvguard-data
+DIR="$("$DATA" root)"
+MODEL="$DIR/learning-sessions.csv"
+RAW="$DIR/calibration-v3.csv"
+WINDOW=/var/run/tvguard-adaptive-window.csv
+
+[ "$#" -eq 5 ] || {
+    echo "usage: tvguard-adaptive EPOCH PPS TCP_PPS UDP_PPS BPS" >&2
+    exit 2
+}
+now="$1"; pps="$2"; tcp="$3"; udp="$4"; bps="$5"
+for n in "$now" "$pps" "$tcp" "$udp" "$bps"; do
+    case "$n" in ''|*[!0-9]*) echo "non-numeric adaptive sample" >&2; exit 2;; esac
+done
+
+mkdir -p /var/run
+tmp="${WINDOW}.$$"
+: > "$tmp"
+if [ -s "$WINDOW" ]; then
+    last_epoch="$(tail -n 1 "$WINDOW" 2>/dev/null | cut -d, -f1)"
+    case "$last_epoch" in ''|*[!0-9]*) last_epoch=0;; esac
+    gap=$((now - last_epoch))
+    if [ "$gap" -ge 0 ] && [ "$gap" -le 30 ]; then
+        tail -n 11 "$WINDOW" >> "$tmp" 2>/dev/null || :
+    fi
+fi
+printf '%s,%s,%s,%s,%s\n' "$now" "$pps" "$tcp" "$udp" "$bps" >> "$tmp"
+chmod 600 "$tmp"
+mv -f "$tmp" "$WINDOW"
+
+# Output fields (all single tokens):
+# state score windows reason idle_ceiling active_floor p50 p90
+# pause_hint pause_score bp50 bp90 active_hits trend_pct
+emit() {
+    printf '%s %s %s %s %s %s %s %s %s %s %s %s %s %s\n' "$@"
+}
+
+windows="$(wc -l < "$WINDOW" | tr -d ' ')"
+if [ ! -s "$MODEL" ]; then
+    emit unready 0 "$windows" no_model 0 0 0 0 none 0 0 0 0 0
+    exit 0
+fi
+
+model="$(awk -F, '
+$6=="completed" && $18=="high" {
+    label=$3
+    if (label=="system_home" || label=="app_home") {
+        idle_n++
+        if (idle_n==1 || $11+0>idle_p50_max) idle_p50_max=$11+0
+        if (idle_n==1 || $12+0>idle_p90_max) idle_p90_max=$12+0
+    } else if (label=="playing") {
+        active_n++
+        if (active_n==1 || $10+0<active_p10_min) active_p10_min=$10+0
+    } else if (label=="paused") {
+        pause_n++
+    }
+}
+END {
+    af=active_p10_min
+    if (af<0) af=0
+    if (idle_n>=2 && active_n>=2)
+        printf "ready %d %d %d %d %d %d\n", idle_n,active_n,pause_n,idle_p50_max,idle_p90_max,af
+    else
+        printf "unready %d %d %d %d %d %d\n", idle_n,active_n,pause_n,idle_p50_max,idle_p90_max,af
+}' "$MODEL")"
+
+set -- $model
+model_state="$1"; idle_sessions="$2"; active_sessions="$3"; pause_sessions="$4"
+idle_p50_max="$5"; idle_p90_max="$6"; active_floor="$7"
+
+if [ "$model_state" != ready ]; then
+    emit unready 0 "$windows" need_sessions 0 "$active_floor" 0 0 none 0 0 0 0 0
+    exit 0
+fi
+
+gap=$((active_floor - idle_p90_max))
+[ "$gap" -gt 0 ] || {
+    emit unready 0 "$windows" overlap_model 0 "$active_floor" 0 0 none 0 0 0 0 0
+    exit 0
+}
+margin=$((gap / 8))
+[ "$margin" -ge 5 ] || margin=5
+[ "$margin" -le 15 ] || margin=15
+idle_ceiling=$((idle_p90_max + margin))
+[ "$idle_ceiling" -lt "$active_floor" ] || idle_ceiling=$((active_floor - 1))
+midpoint=$(((idle_ceiling + active_floor) / 2))
+idle_median_ceiling=$((idle_p50_max + 10))
+[ "$idle_median_ceiling" -le "$idle_ceiling" ] || idle_median_ceiling="$idle_ceiling"
+
+# Learn pause prototypes without collapsing all paused sessions into one
+# average. Only completed+high sessions from learning-sessions.csv are used.
+# A high-ratio prototype is enabled only when its per-session median B/P is
+# strongly separated from the P90 of trusted playing windows.
+pause_model="0 0 0 0 0"
+if [ -s "$RAW" ] && [ "$pause_sessions" -gt 0 ]; then
+    pause_model="$(awk -F, -v idlemed="$idle_median_ceiling" -v idleceil="$idle_ceiling" '
+function sortarr(a,n,    i,j,x) {
+    for (i=2;i<=n;i++) {
+        x=a[i]; j=i-1
+        while (j>=1 && a[j]>x) { a[j+1]=a[j]; j-- }
+        a[j+1]=x
+    }
+}
+function q(a,n,num,den,    idx) {
+    idx=int((n*num + den - 1)/den)
+    if (idx<1) idx=1
+    if (idx>n) idx=n
+    return a[idx]
+}
+FNR==NR {
+    if ($6=="completed" && $18=="high" && ($3=="playing" || $3=="paused"))
+        trusted[$2]=$3
+    next
+}
+{
+    sid=$2
+    label=$3
+    if (!(sid in trusted) || trusted[sid]!=label) next
+    p=$5+0; b=$8+0
+    if (p<=0) next
+    ratio=int(b/p)
+    if (label=="playing") {
+        pn++; play[pn]=ratio
+    } else if (label=="paused") {
+        n=++pc[sid]
+        pr[sid SUBSEP n]=ratio
+        pp[sid SUBSEP n]=p
+    }
+}
+END {
+    if (pn<6) { print "0 0 0 0 0"; exit }
+    sortarr(play,pn)
+    play90=q(play,pn,9,10)
+
+    for (sid in pc) {
+        n=pc[sid]
+        if (n<6) continue
+        for (z in rr) delete rr[z]
+        for (z in pv) delete pv[z]
+        for (i=1;i<=n;i++) {
+            rr[i]=pr[sid SUBSEP i]
+            pv[i]=pp[sid SUBSEP i]
+        }
+        sortarr(rr,n); sortarr(pv,n)
+        bp50=q(rr,n,1,2)
+        p50=q(pv,n,1,2)
+        p90=q(pv,n,9,10)
+
+        if (p50<=idlemed && p90<=idleceil)
+            low++
+        else if (p50<=idlemed && p90>idleceil)
+            burst++
+
+        # Diagnostic only: require at least ~2x playing P90 plus an absolute
+        # 300 B/P separation before calling a session high-ratio pause.
+        if (p50>idlemed && bp50>=play90*2 && bp50-play90>=300) {
+            high++
+            if (high==1 || bp50<high_min) high_min=bp50
+        }
+    }
+    if (high>0) {
+        floor=int((play90+high_min)/2)
+        # Never put the diagnostic boundary below playing P90 + 200.
+        if (floor<play90+200) floor=play90+200
+    } else floor=0
+    printf "%d %d %d %d %d\n", play90,low,burst,high,floor
+}' "$MODEL" "$RAW")"
+fi
+set -- $pause_model
+play_bp_p90="$1"; pause_low_n="$2"; pause_burst_n="$3"; pause_high_n="$4"; pause_ratio_floor="$5"
+
+recent="${WINDOW}.recent.$$"
+tail -n 6 "$WINDOW" > "$recent"
+trap 'rm -f "$recent"' EXIT HUP INT TERM
+
+calc="$(awk -F, -v idle="$idle_ceiling" -v active="$active_floor" '
+function sortarr(a,n,    i,j,x) {
+    for (i=2;i<=n;i++) {
+        x=a[i]; j=i-1
+        while (j>=1 && a[j]>x) { a[j+1]=a[j]; j-- }
+        a[j+1]=x
+    }
+}
+function q(a,n,num,den,    idx) {
+    idx=int((n*num + den - 1)/den)
+    if (idx<1) idx=1
+    if (idx>n) idx=n
+    return a[idx]
+}
+{
+    n++
+    p[n]=$2+0
+    ratio=0
+    if ($2+0>0) ratio=int(($5+0)/($2+0))
+    bp[n]=ratio
+    if ($2+0<=idle) idle_n++
+    if ($2+0>=active) active_n++
+}
+END {
+    if (n<1) { print "0 0 0 0 0 0 0"; exit }
+    for (i=1;i<=n;i++) {
+        ps[i]=p[i]; bs[i]=bp[i]
+    }
+    sortarr(ps,n); sortarr(bs,n)
+    p50=q(ps,n,1,2); p90=q(ps,n,9,10)
+    bp50=q(bs,n,1,2); bp90=q(bs,n,9,10)
+
+    # Positive trend means the second half has decayed from the first half.
+    h=int(n/2)
+    trend=0
+    if (h>=2) {
+        for (z in first) delete first[z]
+        for (z in last) delete last[z]
+        for (i=1;i<=h;i++) first[i]=p[i]
+        j=0
+        for (i=n-h+1;i<=n;i++) last[++j]=p[i]
+        sortarr(first,h); sortarr(last,h)
+        f50=q(first,h,1,2); l50=q(last,h,1,2)
+        if (f50>0) trend=int((f50-l50)*100/f50)
+    }
+    printf "%d %d %d %d %d %d %d\n", n,p50,p90,bp50,bp90,active_n,trend
+}' "$recent")"
+set -- $calc
+n="$1"; p50="$2"; p90="$3"; bp50="$4"; bp90="$5"; active_hits="$6"; trend_pct="$7"
+
+pause_hint=none
+pause_score=0
+
+# Phase 2A pause hints are diagnostic only and NEVER change the Phase 1
+# billing state below. The strongest prototype is high B/P pause, learned
+# dynamically from trusted playing and paused sessions.
+if [ "$n" -ge 4 ] && [ "$pause_high_n" -gt 0 ] &&
+   [ "$pause_ratio_floor" -gt 0 ] && [ "$bp50" -ge "$pause_ratio_floor" ] &&
+   [ "$pps" -lt "$active_floor" ] && [ "$trend_pct" -ge -20 ]; then
+    # High B/P alone is not enough. N1 real-device playback after pause can
+    # also show very high B/P. A current clear-active PPS sample or a strongly
+    # rising 60-second PPS trend vetoes the pause hint immediately.
+    pause_hint=high_ratio_pause
+    pause_score=90
+    [ "$n" -ge 6 ] && pause_score=95
+elif [ "$n" -ge 4 ] && [ "$pause_burst_n" -gt 0 ] &&
+     [ "$p50" -le "$idle_median_ceiling" ] &&
+     [ "$p90" -gt "$idle_ceiling" ]; then
+    pause_hint=bursty_pause
+    pause_score=75
+elif [ "$n" -ge 4 ] && [ "$pause_low_n" -gt 0 ] &&
+     [ "$p50" -le "$idle_median_ceiling" ] &&
+     [ "$p90" -le "$idle_ceiling" ]; then
+    # This prototype overlaps ordinary home-idle. Do not pretend the exact
+    # foreground scene can be known from TX traffic alone.
+    pause_hint=idle_overlap
+    pause_score=60
+fi
+
+if [ "$n" -lt 4 ]; then
+    emit warming 0 "$n" need_window "$idle_ceiling" "$active_floor" "$p50" "$p90"         "$pause_hint" "$pause_score" "$bp50" "$bp90" "$active_hits" "$trend_pct"
+    exit 0
+fi
+
+# ----- Phase 1 billing classifier: intentionally unchanged by pause hints. -----
+if [ "$pps" -ge "$active_floor" ]; then
+    emit active 100 "$n" clear_current "$idle_ceiling" "$active_floor" "$p50" "$p90"         "$pause_hint" "$pause_score" "$bp50" "$bp90" "$active_hits" "$trend_pct"
+    exit 0
+fi
+if [ "$active_hits" -ge 2 ]; then
+    emit active 95 "$n" active_votes "$idle_ceiling" "$active_floor" "$p50" "$p90"         "$pause_hint" "$pause_score" "$bp50" "$bp90" "$active_hits" "$trend_pct"
+    exit 0
+fi
+if [ "$p50" -ge "$midpoint" ]; then
+    emit active 85 "$n" active_median "$idle_ceiling" "$active_floor" "$p50" "$p90"         "$pause_hint" "$pause_score" "$bp50" "$bp90" "$active_hits" "$trend_pct"
+    exit 0
+fi
+if [ "$p50" -le "$idle_median_ceiling" ] && [ "$p90" -le "$idle_ceiling" ]; then
+    score=90
+    [ "$n" -ge 6 ] && score=95
+    emit idle "$score" "$n" stable_low "$idle_ceiling" "$active_floor" "$p50" "$p90"         "$pause_hint" "$pause_score" "$bp50" "$bp90" "$active_hits" "$trend_pct"
+    exit 0
+fi
+
+emit ambiguous 50 "$n" overlap "$idle_ceiling" "$active_floor" "$p50" "$p90"     "$pause_hint" "$pause_score" "$bp50" "$bp90" "$active_hits" "$trend_pct"
