@@ -1,9 +1,9 @@
 # TV Guard · 家庭电视时间管理
-## v0.1.14-r2 · Agent Bridge 整合 + 明确暂停免计时（开发候选）
+## v0.1.14-r3 · Agent Bridge 整合 + 明确暂停免计时 + Agent 联合学习（开发候选）
 
-- N1 只安装 `luci-app-tvguard_0.1.14-2_all.ipk`，已包含 CGI、Fusion、Home-only billing hint、配对、观察报告和 bridge 服务；电视仍需单独安装原签名的 0.2.8 Agent APK。
+- N1 只安装 `luci-app-tvguard_0.1.14-3_all.ipk`，已包含 CGI、Fusion、Home-only billing hint、配对、观察报告和 bridge 服务；电视仍需单独安装原签名的 0.2.8 Agent APK。
 - 主包声明 `Conflicts / Replaces: tvguard-agent-bridge`，由 opkg 正规替换旧独立包，不使用 `--force-overwrite`。配对密钥由 N1 生成、保持 0600 且从不打进 IPK；UCI 与持久统计保留。首次迁移时旧 Bridge 的卸载脚本会清理其 RAM 暂存信息，之后电视重新上报即可恢复。
-- 本版不修改 v0.1.13 的 Home-only 正式计时和默认非强制断网策略；回退 v0.1.13 时需一并安装旧的独立 Bridge IPK 才能恢复电视联动。
+- r3 不放宽 r2 的计费门槛：系统/App 首页与当前严格确认的暂停可免计时；普通 idle/pause hint 继续计时。新增的是学习中心对 fresh Agent 上下文的联合采集与自动 App 识别；电视 APK 仍为 0.2.8，无需为本次 N1 升级重装。
 - 本分支已通过首次 N1 真机无损整合迁移；正式发布前继续完成 Home-only 计时与重启恢复复验。
 
 
@@ -23,7 +23,7 @@
 
 面向 OpenWrt/LEDE 的电视使用时间管理。当前优先适配 **Phicomm N1 / LEDE R26.11.3 / fw3 / iptables-legacy** 的单网口旁路由环境。
 
-> **状态：v0.1.14-r2 整合候选。** 当前 LuCI 顶部页签为“概览 / 设置”；N1 主包已整合 Bridge，首次从 v0.1.13-r21 + 独立 Bridge 升级到单主包的真机迁移已通过。 v0.1.1 已通过 N1 的基础安装、LuCI、RAW 出站计数验证；v0.1.5 完成代理隔离硬化，v0.1.6 完成 LuCI 信息架构重构，v0.1.7 将家长模式明确为持续模式，并把孩子临时多看的需求统一归入奖励时间。 v0.1.8 根据 iPhone 深色主题实机截图重新收紧移动端响应式布局：顶部状态固定 2×2、模式/奖励按钮规则化、卡片改为深浅主题兼容的透明层级，并去掉 Argon 下过重的嵌套标题块。v0.1.9 进一步把 LuCI 顶部导航改成明确的“概览 / 时间规则”双 tab，去掉单独悬着的“时间规则”导航块。v0.1.10 收口移动端文案与视觉：顶部改为“儿童剩余”，家长模式摘要压缩，观察/家长状态提示改为轻量边框样式，减少深色主题中的高饱和色块。 v0.1.11 仅收口操作记录：奖励撤销日志记录具体分钟数，并兼容隐藏旧版本内部事件编号。2026-11-09 用户确认 v0.1.11 在 N1 完成日志、手机端界面与代理兼容检查的真机验收；同日第一轮正式锁定实测也通过：`TVG_GATE=DROP` 时电视实际断网，而手机、电脑保持正常联网。正式锁定测试结束后的安全收尾也已验证：恢复为 `enforce=0 / armed=0 / gate=allowed`，且 `tvguard-compat-check` 再次 `PASS`、`proxy_rules_unchanged=1`。v0.1.12 又完成了正式控制完整手动链路真机验证：`locked` 时 `TVG_GATE=DROP` 且电视断网，不关闭 enforce 直接切换 `parent` 后 gate 原位恢复为 `RETURN`、电视恢复联网；最终退出正式控制后兼容检查仍 `PASS`。儿童额度自动控制也已真机通过：额度耗尽自动 `DROP`，+15 分钟奖励立即恢复 `RETURN`，撤销奖励再次 `DROP`，家长模式可随时放行；最终兼容检查仍 `PASS`。TV Guard 自身 service reload 也已真机通过：daemon PID 不变，locked 时继续 `DROP`，parent 时继续 `RETURN`，最终兼容检查仍 `PASS`。全局 fw3/firewall reload 也已真机通过：fw3 清空并重建 raw 表后，TV Guard include 能按当前持久状态恢复目标电视 hook，locked 继续 `DROP`、parent 继续 `RETURN`，daemon PID 不变，最终兼容检查仍 `PASS`。N1 整机重启持久恢复也已真机通过：parent 模式跨重启恢复 `RETURN`，locked 模式跨重启恢复 `DROP`，已用额度保持不变，开机自启和代理兼容检查均正常。至此 v0.1.12 的**控制执行层**（模式、额度封禁、奖励恢复、reload/reboot、代理隔离）已完成真机闭环并作为稳定基线发布；但它仍按网络活动扣儿童时间，尚未完成最初要求的“系统首页/App 首页/明确暂停不计时”。v0.1.13 开始把经过保守验证的闲置识别正式接入儿童计时。实验性回程观测仍默认关闭。正式恢复链路复测时又暴露 N1 BusyBox `sleep` 不接受 `0.1` 的锁竞争兼容问题；v0.1.12 将锁等待改为整数秒重试并新增回归测试。默认 `enforce=0`、`allow_enforcement=0`、`observe_reply=0`。
+> **状态：v0.1.14-r3 整合候选。** 当前 LuCI 顶部页签为“概览 / 设置”；N1 主包已整合 Bridge，首次从 v0.1.13-r21 + 独立 Bridge 升级到单主包的真机迁移已通过。 v0.1.1 已通过 N1 的基础安装、LuCI、RAW 出站计数验证；v0.1.5 完成代理隔离硬化，v0.1.6 完成 LuCI 信息架构重构，v0.1.7 将家长模式明确为持续模式，并把孩子临时多看的需求统一归入奖励时间。 v0.1.8 根据 iPhone 深色主题实机截图重新收紧移动端响应式布局：顶部状态固定 2×2、模式/奖励按钮规则化、卡片改为深浅主题兼容的透明层级，并去掉 Argon 下过重的嵌套标题块。v0.1.9 进一步把 LuCI 顶部导航改成明确的“概览 / 时间规则”双 tab，去掉单独悬着的“时间规则”导航块。v0.1.10 收口移动端文案与视觉：顶部改为“儿童剩余”，家长模式摘要压缩，观察/家长状态提示改为轻量边框样式，减少深色主题中的高饱和色块。 v0.1.11 仅收口操作记录：奖励撤销日志记录具体分钟数，并兼容隐藏旧版本内部事件编号。2026-11-09 用户确认 v0.1.11 在 N1 完成日志、手机端界面与代理兼容检查的真机验收；同日第一轮正式锁定实测也通过：`TVG_GATE=DROP` 时电视实际断网，而手机、电脑保持正常联网。正式锁定测试结束后的安全收尾也已验证：恢复为 `enforce=0 / armed=0 / gate=allowed`，且 `tvguard-compat-check` 再次 `PASS`、`proxy_rules_unchanged=1`。v0.1.12 又完成了正式控制完整手动链路真机验证：`locked` 时 `TVG_GATE=DROP` 且电视断网，不关闭 enforce 直接切换 `parent` 后 gate 原位恢复为 `RETURN`、电视恢复联网；最终退出正式控制后兼容检查仍 `PASS`。儿童额度自动控制也已真机通过：额度耗尽自动 `DROP`，+15 分钟奖励立即恢复 `RETURN`，撤销奖励再次 `DROP`，家长模式可随时放行；最终兼容检查仍 `PASS`。TV Guard 自身 service reload 也已真机通过：daemon PID 不变，locked 时继续 `DROP`，parent 时继续 `RETURN`，最终兼容检查仍 `PASS`。全局 fw3/firewall reload 也已真机通过：fw3 清空并重建 raw 表后，TV Guard include 能按当前持久状态恢复目标电视 hook，locked 继续 `DROP`、parent 继续 `RETURN`，daemon PID 不变，最终兼容检查仍 `PASS`。N1 整机重启持久恢复也已真机通过：parent 模式跨重启恢复 `RETURN`，locked 模式跨重启恢复 `DROP`，已用额度保持不变，开机自启和代理兼容检查均正常。至此 v0.1.12 的**控制执行层**（模式、额度封禁、奖励恢复、reload/reboot、代理隔离）已完成真机闭环并作为稳定基线发布；但它仍按网络活动扣儿童时间，尚未完成最初要求的“系统首页/App 首页/明确暂停不计时”。v0.1.13 开始把经过保守验证的闲置识别正式接入儿童计时。实验性回程观测仍默认关闭。正式恢复链路复测时又暴露 N1 BusyBox `sleep` 不接受 `0.1` 的锁竞争兼容问题；v0.1.12 将锁等待改为整数秒重试并新增回归测试。默认 `enforce=0`、`allow_enforcement=0`、`observe_reply=0`。
 
 ## 已实现的基础能力
 
@@ -34,17 +34,17 @@
 - 独立 fw3 RAW PREROUTING 计数链：电视出站总包、TCP、UDP；不覆盖现有 SSR 透明代理、Docker 防火墙链
 - **实验性回程观测（默认关闭）**：另在 raw PREROUTING、OUTPUT 增加无动作目标的只计数规则，分别观察经过 N1 的回程包与本地代理回程包；与计时、封禁完全隔离，尚未完成真机验证
 - 10 秒间隔的轻量级联网活动影子计时
-- **可选的手工校准**：仅用于开发验证，家长可以标记 120 秒的播放、暂停、应用首页、系统首页或待机。视频 App 名称是实验标签，不是日常使用条件；不需要逐个配置所有视频 App
+- **四状态智能识别学习**：家长只选择系统首页 / App 首页 / 正常播放 / 视频暂停和采集时长；N1 保留原有网络窗口，同时自动同步 fresh Agent 的 package、Activity、audio、screen、report seq。App 不再需要手工选择；Agent 不可用时自动降级为 network-only 学习，不伪造联合高可信样本
 - 设置页按“每日额度 / 可使用时段 / 计时判断 / 每日观看日报 · Bark / 设备绑定”分区，时间输入有格式校验；正式控制和实验回程观测不出现在普通设置页
 - 数据持久化及规则重载恢复，模拟环境回归测试和 GitHub Actions 开发版 IPK
 
 ## 默认智能平衡策略：设计目标与现状
 
-**当前正式规则（v0.1.14-r2，Bridge 0.2.8-r4 已并入主包）**：正常播放计时；明确识别为电视系统首页或视频 App 首页时不计时；只有 Fusion 输出当前确认态 `paused_confirmed_learned_context` 时暂停免计时；`paused_temporal_hold`、普通 pause hint、`stable_low/idle_overlap`、unknown/ambiguous、Agent 失联/过期均继续计时。网络真正静默仍沿用 `idle_silent` 免计时。家长模式不扣儿童额度。
+**当前正式规则（v0.1.14-r3，Bridge 0.2.8-r4 已并入主包）**：正常播放计时；明确识别为电视系统首页或视频 App 首页时不计时；只有 Fusion 输出当前确认态 `paused_confirmed_learned_context` 时暂停免计时；`paused_temporal_hold`、普通 pause hint、`stable_low/idle_overlap`、unknown/ambiguous、Agent 失联/过期均继续计时。网络真正静默仍沿用 `idle_silent` 免计时。家长模式不扣儿童额度。
 
 **v0.1.12 稳定版现状**：控制执行层已真机闭环，但儿童计时仍主要依据网络活动，所以电视停留系统首页也可能持续消耗额度。这是已确认的功能缺口，不应把“断网控制稳定”误认为“智能计时完成”。
 
-**v0.1.14-r2 正式计时规则：**
+**v0.1.14-r3 正式计时规则（沿用 r2 门槛）：**
 - fresh Agent + Fusion 明确 `system_home` → `idle_verified/system_home`，不扣儿童时间；
 - fresh Agent + Fusion 明确 `app_home` → `idle_verified/app_home`，不扣儿童时间；
 - Fusion 当前明确 `paused_confirmed_learned_context` → `idle_verified/paused`，不扣儿童时间；
@@ -53,6 +53,16 @@
 - bridge 0.2.8-r4 防止 App 首页加载突发覆盖已学习的播放器 Activity；新 Activity 必须连续 3 次 strong-play 才能晋升为播放上下文；
 - 网络静默继续沿用既有 `idle_silent`；主动封禁产生的零流量不会被当作可用额度恢复依据；
 - 2026-11-12 N1 + 小米电视真机已验证：儿童模式 App 首页 30 秒 `117→117`、正常播放 `117→170`、暂停继续增长、系统首页 30 秒 `297→297`。
+
+### r3 · Agent-assisted Learning
+
+- `calibration-v3.csv` 继续保存旧网络特征，保持现有 Adaptive/Shadow 模型与历史数据兼容；
+- 新增 `calibration-v5.csv`：每个人工真值窗口同步记录 Agent freshness、package、Activity、audio、screen、report seq，以及同窗 PPS/TCP/UDP/BPS；
+- `tvguard-learn` 自动计算 Agent 覆盖率、主 package/Activity 稳定度、音频/屏幕比例和前台切换次数；只有网络样本完整且 Agent 覆盖充分时才称为“高可信 Agent 联合人工学习会话”；
+- LuCI 开始学习前直接显示电视 Agent 当前识别的 App/Activity；Agent stale/missing 时仍允许采集，但明确降级为 network-only；
+- `scripts/evaluate-generalization.py` 同时支持旧 v3 和新 v5。读取 v5 时直接按真实 package 做 leave-one-app-out，不再依赖人工填写腾讯/爱奇艺/芒果标签；
+- v5 与 v3 一样由 N1 持久数据根管理，mmc 暂不可用时只落 `/var/run`，恢复后一次性合并；总 append-only 持久预算仍为 1 MiB；
+- Agent package/Activity/audio/screen 是学习证据，不是独立计费授权；它们不会绕过 r3 的 confirmed-pause / home-only 安全门槛。
 
 ## 代理工具隔离是硬约束
 
