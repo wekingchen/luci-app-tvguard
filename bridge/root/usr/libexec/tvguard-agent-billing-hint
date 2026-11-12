@@ -41,7 +41,7 @@ done
     echo "charge unknown"
     exit 0
 }
-IFS='|' read -r seen pkg activity audio screen client_ms seq usage_access foreground_source foreground_status < "$LATEST" || :
+IFS='|' read -r seen pkg activity audio screen client_ms seq usage_access foreground_source foreground_status activity_trail < "$LATEST" || :
 for n in "${seen:-}" "${seq:-}" "${audio:-}" "${screen:-}"; do
     case "$n" in ''|*[!0-9]*) echo "charge unknown"; exit 0 ;; esac
 done
