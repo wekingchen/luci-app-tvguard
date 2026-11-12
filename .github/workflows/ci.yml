@@ -143,6 +143,9 @@ jobs:
           grep -q 'calibration-v5)' root/usr/libexec/tvguard-status
           grep -q 'AGENT_LATEST=/var/run/tvguard-agent-bridge/latest' root/usr/libexec/tvguardctl
           grep -q 'calibration-v5.csv' root/usr/libexec/tvguardctl
+          grep -q 'AGENT_SAMPLE_ACTIVITY_TRAIL' root/usr/libexec/tvguardctl
+          grep -q 'recent_activity_trail=' bridge/root/usr/libexec/tvguard-agent-bridge-report
+          grep -q 'TVG3' bridge/root/www/cgi-bin/tvguard-agent
           grep -q 'storage)' root/usr/libexec/tvguard-status
           grep -q 'soak)' root/usr/libexec/tvguard-status
           grep -q 'SOAK=/usr/libexec/tvguard-soak' root/usr/libexec/tvguardctl
@@ -175,17 +178,17 @@ jobs:
       - name: Build and validate OpenWrt-compatible development IPK
         run: |
           set -eu
-          sh scripts/build-ipk.sh 0.1.15 1
-          PKG=dist/luci-app-tvguard_0.1.15-1_all.ipk
+          sh scripts/build-ipk.sh 0.1.15 2
+          PKG=dist/luci-app-tvguard_0.1.15-2_all.ipk
           test -f "$PKG"
           # OpenWrt ipkg-build uses gzip-compressed tar, not Debian ar.
           test "$(od -An -tx1 -N2 "$PKG" | tr -d ' \n')" = 1f8b
           tar -tzf "$PKG" | grep -q './control.tar.gz'
-          python3 scripts/verify-ipk.py "$PKG" 0.1.15 1
+          python3 scripts/verify-ipk.py "$PKG" 0.1.15 2
           sha256sum "$PKG"
       - name: Upload development IPK
         uses: actions/upload-artifact@v4
         with:
-          name: tvguard-v0.1.15-r1-multi-app-nonplaying-ipk
+          name: tvguard-v0.1.15-r2-agent-activity-trail-ipk
           path: dist/*.ipk
           if-no-files-found: error
