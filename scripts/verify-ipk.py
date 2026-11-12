@@ -47,6 +47,7 @@ for field in (
     "Depends: luci-base, rpcd, curl, uhttpd",
     "Conflicts: tvguard-agent-bridge",
     "Replaces: tvguard-agent-bridge",
+    "Provides: tvguard-agent-bridge",
 ):
     if field not in metadata.splitlines():
         raise SystemExit(f"FAIL: missing opkg metadata {field}")
