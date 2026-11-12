@@ -6,7 +6,7 @@ LUCI_DEPENDS:=+luci-base +rpcd +curl +uhttpd
 LUCI_PKGARCH:=all
 PKG_LICENSE:=MIT
 PKG_VERSION:=0.1.14
-PKG_RELEASE:=3
+PKG_RELEASE:=4
 
 # luci.mk only stages ./root by default. Merge the separately tested Bridge
 # sources into that tree for OpenWrt-feed builds as well as script-built IPKs.

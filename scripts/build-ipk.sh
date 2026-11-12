@@ -6,7 +6,7 @@ set -eu
 
 ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
 VERSION="${1:-0.1.14}"
-RELEASE="${2:-3}"
+RELEASE="${2:-4}"
 OUT="$ROOT/dist"
 PACKAGE="luci-app-tvguard"
 ARCH="all"

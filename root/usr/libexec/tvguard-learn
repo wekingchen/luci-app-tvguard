@@ -94,6 +94,10 @@ stability="${12}"; quality="${13}"
 agent_total=0
 agent_fresh=0
 agent_coverage=0
+agent_package_known=0
+agent_package_coverage=0
+agent_full_context=0
+agent_full_coverage=0
 dominant_pkg=unknown
 dominant_pkg_share=0
 dominant_activity=unknown
@@ -108,49 +112,68 @@ if [ -s "$V5" ]; then
         total++
         if ($4=="fresh") {
             fresh++
-            pkg[$6]++
-            act[$7]++
             audio += $8+0
             screen += $9+0
-            key=$6 "/" $7
-            if (prev!="" && key!=prev) changes++
-            prev=key
+            if ($6!="" && $6!="unknown") {
+                known++
+                pkg[$6]++
+            }
+            if ($6!="" && $6!="unknown" && $7!="" && $7!="unknown") {
+                full++
+                act[$7]++
+                key=$6 "/" $7
+                if (prev!="" && key!=prev) changes++
+                prev=key
+            }
         }
     }
     END {
         dp="unknown"; da="unknown"; dpn=0; dan=0
         for (k in pkg) if (pkg[k]>dpn) { dpn=pkg[k]; dp=k }
         for (k in act) if (act[k]>dan) { dan=act[k]; da=k }
-        cov=(total>0 ? int(fresh*100/total) : 0)
-        dps=(fresh>0 ? int(dpn*100/fresh) : 0)
-        das=(fresh>0 ? int(dan*100/fresh) : 0)
+        tcov=(total>0 ? int(fresh*100/total) : 0)
+        pcov=(total>0 ? int(known*100/total) : 0)
+        fcov=(total>0 ? int(full*100/total) : 0)
+        dps=(known>0 ? int(dpn*100/known) : 0)
+        das=(full>0 ? int(dan*100/full) : 0)
         ar=(fresh>0 ? int(audio*100/fresh) : 0)
         sr=(fresh>0 ? int(screen*100/fresh) : 0)
-        printf "%d|%d|%d|%s|%d|%s|%d|%d|%d|%d\n",
-            total+0,fresh+0,cov,dp,dps,da,das,ar,sr,changes+0
+        printf "%d|%d|%d|%d|%d|%d|%d|%s|%d|%s|%d|%d|%d|%d\n",
+            total+0,fresh+0,tcov,known+0,pcov,full+0,fcov,
+            dp,dps,da,das,ar,sr,changes+0
     }' "$V5")"
     old_ifs="$IFS"
     IFS='|'
     set -- $context_stats
     IFS="$old_ifs"
-    if [ "$#" -eq 10 ]; then
+    if [ "$#" -eq 14 ]; then
         agent_total="$1"
         agent_fresh="$2"
         agent_coverage="$3"
-        dominant_pkg="$4"
-        dominant_pkg_share="$5"
-        dominant_activity="$6"
-        dominant_activity_share="$7"
-        audio_ratio="$8"
-        screen_ratio="$9"
-        context_changes="${10}"
+        agent_package_known="$4"
+        agent_package_coverage="$5"
+        agent_full_context="$6"
+        agent_full_coverage="$7"
+        dominant_pkg="$8"
+        dominant_pkg_share="$9"
+        dominant_activity="${10}"
+        dominant_activity_share="${11}"
+        audio_ratio="${12}"
+        screen_ratio="${13}"
+        context_changes="${14}"
     fi
 fi
 
 joint_quality=network_only
-if [ "$agent_coverage" -ge 75 ] && [ "$dominant_pkg_share" -ge 75 ]; then
+if [ "$agent_full_coverage" -ge 75 ] &&
+   [ "$dominant_pkg_share" -ge 75 ] &&
+   [ "$dominant_activity_share" -ge 75 ] &&
+   [ "$dominant_pkg" != unknown ] &&
+   [ "$dominant_activity" != unknown ]; then
     joint_quality=high
-elif [ "$agent_coverage" -ge 50 ]; then
+elif [ "$agent_package_coverage" -ge 50 ] &&
+     [ "$dominant_pkg_share" -ge 60 ] &&
+     [ "$dominant_pkg" != unknown ]; then
     joint_quality=medium
 fi
 
@@ -195,9 +218,9 @@ PPS: P10 $p10 · 中位 $p50 · P90 $p90
 TCP/UDP: 中位 $t50 / $u50 PPS
 字节速率: 中位 $b50 B/s · P90 $b90 B/s
 窗口波动: $stability_name · 相对跨度 ${spread_ratio}%
-Agent 联动: ${agent_fresh}/${agent_total} fresh · 覆盖 ${agent_coverage}%
-自动应用: $dominant_pkg · 稳定 ${dominant_pkg_share}%
-主要页面: $dominant_activity · 稳定 ${dominant_activity_share}%
+Agent 传输: ${agent_fresh}/${agent_total} fresh · 覆盖 ${agent_coverage}%
+应用包上下文: ${agent_package_known}/${agent_total} · 覆盖 ${agent_package_coverage}% · $dominant_pkg · 稳定 ${dominant_pkg_share}%
+完整前台上下文: ${agent_full_context}/${agent_total} · 覆盖 ${agent_full_coverage}% · $dominant_activity · 稳定 ${dominant_activity_share}%
 电视上下文: 音频活跃 ${audio_ratio}% · 屏幕亮 ${screen_ratio}% · 前台切换 ${context_changes} 次
 联合质量: $joint_quality
 处理: $verdict

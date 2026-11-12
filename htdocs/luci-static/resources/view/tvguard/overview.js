@@ -545,17 +545,24 @@ return view.extend({
         var count = Math.max(0, Number(state.calibration_samples) || 0);
         var progress = clamp(state.calibration_percent, 0, 100);
         var agentFresh = state.agent_state === 'fresh';
+        var contextQuality = String(state.agent_context_quality || 'unknown');
+        var contextFull = agentFresh && contextQuality === 'full';
         this._lastCalibrationState = state;
 
         n.agentStatus.textContent = agentFresh ?
-            '电视 Agent 已连接 · ' + String(state.agent_age_seconds || 0) + ' 秒前上报' :
+            ('电视 Agent 已连接 · ' + String(state.agent_age_seconds || 0) + ' 秒前上报 · ' +
+                (contextQuality === 'full' ? '前台识别完整' :
+                    (contextQuality === 'package_only' ? '仅识别到应用' : '前台上下文未确认'))) :
             (state.agent_state === 'stale' ? '电视 Agent 上报已过期' :
                 (state.agent_state === 'invalid' ? '电视 Agent 上报异常' : '电视 Agent 暂无上报'));
         n.agentContext.textContent = agentFresh ?
             '当前应用：' + String(state.agent_package || 'unknown') +
                 ' · 页面：' + String(state.agent_activity || 'unknown') +
                 ' · 音频：' + (Number(state.agent_audio_active || 0) ? '活跃' : '无') +
-                ' · 屏幕：' + (Number(state.agent_screen_on || 0) ? '亮' : '灭') :
+                ' · 屏幕：' + (Number(state.agent_screen_on || 0) ? '亮' : '灭') +
+                ' · 权限判断：' + String(state.agent_usage_access || 'legacy') +
+                ' · 来源：' + String(state.agent_foreground_source || 'legacy') +
+                ' · 诊断：' + String(state.agent_foreground_status || 'legacy') :
             '本次仍可学习网络特征，但不会伪装成 Agent 联合高可信样本。';
 
         n.bar.value = active ? progress : (phase === 'completed' ? 100 : 0);
@@ -572,9 +579,9 @@ return view.extend({
             n.title.textContent = '正在学习 · ' + sceneName(state.calibration_label);
             n.detail.textContent = '已进行 ' + elapsed + ' / ' + configuredDuration +
                 ' 秒 · 剩余 ' + remaining + ' 秒 · 已保存 ' + count + ' 条有效窗口';
-            n.hint.textContent = agentFresh ?
-                '保持电视当前状态不变即可；网络窗口会和电视端 App / Activity / 音频 / 屏幕上下文同步保存。' :
-                '保持电视当前状态不变即可；Agent 暂不可用时仍保留网络样本，后续可再补联合样本。';
+            n.hint.textContent = contextFull ?
+                '保持电视当前状态不变即可；网络窗口会和完整 App / Activity / 音频 / 屏幕上下文同步保存。' :
+                '保持电视当前状态不变即可；当前 Agent 上下文不完整，网络样本照常保存，但不会标成联合高可信。';
         }
         else if (phase === 'finishing') {
             n.title.textContent = '采集完成，正在自动分析…';
@@ -592,9 +599,11 @@ return view.extend({
         else {
             n.title.textContent = '准备学习';
             n.detail.textContent = '先选择电视当前真实状态，再选择采集时长。推荐 3 分钟；App 和页面由电视 Agent 自动识别。';
-            n.hint.textContent = agentFresh ?
-                'Agent 已就绪。本次会同时保存网络特征和电视端上下文；人工选择的状态仍是唯一真值。' :
-                'Agent 当前不可用也可以开始，但本次只会作为兼容网络学习样本。';
+            n.hint.textContent = contextFull ?
+                'Agent 前台上下文完整。本次会同步保存网络与电视端证据；人工选择的状态仍是唯一真值。' :
+                (agentFresh ?
+                    'Agent 传输在线，但前台上下文尚不完整。本次可以学习网络特征，不会冒充高可信联合样本。' :
+                    'Agent 当前不可用也可以开始，但本次只会作为兼容网络学习样本。');
         }
     },
 
@@ -784,9 +793,14 @@ return view.extend({
                 var seconds = durationSelect.value || '180';
                 var minutes = Math.round(Number(seconds) / 60);
                 var live = this._lastCalibrationState || s;
+                var liveQuality = String(live.agent_context_quality || 'unknown');
                 var agentNote = live.agent_state === 'fresh' ?
-                    '电视 Agent 当前识别：' + String(live.agent_package || 'unknown') +
-                        ' / ' + String(live.agent_activity || 'unknown') + '。' :
+                    ('电视 Agent 当前识别：' + String(live.agent_package || 'unknown') +
+                        ' / ' + String(live.agent_activity || 'unknown') +
+                        '（' + (liveQuality === 'full' ? '完整前台上下文' :
+                            (liveQuality === 'package_only' ? '仅应用包' : '上下文未确认')) + '）。' +
+                        (liveQuality === 'full' ? '' :
+                            ' 本次不会标成联合高可信。')) :
                     '电视 Agent 当前不可用，本次会保留网络学习样本，但不会标成联合高可信。';
                 return this.handleAction(
                     ['calibrate', selectedScene, seconds],

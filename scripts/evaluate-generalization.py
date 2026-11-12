@@ -29,12 +29,11 @@ VALID_SCENES = set(SCENES) | {"system_home", "sleep"}
 def parse_rows(path: Path):
     """Normalize legacy v3 or Agent-enriched v5 into v3-shaped rows.
 
-    v5 columns:
-      epoch,session,scene,agent_state,agent_age,package,activity,
-      audio,screen,seq,pps,tcp_pps,udp_pps,bps
+    v5 legacy columns (14) end at bps. r4 rows add:
+      usage_access,foreground_source,foreground_status,context_quality
 
-    Only fresh Agent rows may establish an automatic app identity. Missing or
-    stale context is intentionally skipped for cross-app claims.
+    Only fresh rows with a known package AND full package+Activity context may
+    establish an automatic app identity for cross-app billing safety claims.
     """
     rows = []
     source_schema = None
@@ -48,20 +47,24 @@ def parse_rows(path: Path):
                 package_like = bool(re.fullmatch(r"[A-Za-z0-9._$]+", app))
                 if scene not in VALID_SCENES or not (app in VALID_APPS or package_like):
                     raise ValueError(f"line {number}: invalid scene/app label")
-            elif len(parts) == 14:
+            elif len(parts) in (14, 18):
                 schema = "v5"
+                base = parts[:14]
                 (stamp, session, scene, agent_state, _agent_age, package,
-                 _activity, _audio, _screen, _seq, *metrics) = parts
+                 activity, _audio, _screen, _seq, *metrics) = base
+                context_quality = parts[17] if len(parts) == 18 else (
+                    "full" if package not in ("", "unknown") and
+                    activity not in ("", "unknown") else "unknown")
                 if scene not in VALID_SCENES:
                     raise ValueError(f"line {number}: invalid scene label")
-                if agent_state != "fresh":
+                if agent_state != "fresh" or context_quality != "full":
                     continue
                 if not package or package == "unknown" or "," in package:
                     continue
                 app = package
             else:
                 raise ValueError(
-                    f"line {number}: expected v3 (8) or v5 (14) CSV fields")
+                    f"line {number}: expected v3 (8) or v5 (14/18) CSV fields")
             if source_schema is None:
                 source_schema = schema
             elif source_schema != schema:
