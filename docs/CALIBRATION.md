@@ -92,7 +92,7 @@ pps,tcp_pps,udp_pps,outbound_bytes_per_second
 - `agent_state=fresh` 只在 N1 接收时间不超过 20 秒且格式有效时成立；stale/missing/invalid 不会沿用最后一次 package/Activity 伪装成当前上下文；
 - package/Activity 用于自动区分不同视频 App 和页面上下文；audio/screen 只作为辅助证据，不能单独证明播放或暂停；
 - `calibration-v3.csv` 继续作为现有 Adaptive/Shadow 的兼容网络数据源，历史模型不会因 r3 升级失效；
-- `tvguard-learn` 会从 v5 计算 Agent 覆盖率、主 package/Activity 稳定度、音频/屏幕比例和前台切换次数；Agent 覆盖不足时明确降级为 network-only，而不是伪造联合高可信。
+- `tvguard-learn` 会从 v5 计算 Agent 覆盖率、主 package/Activity 稳定度、音频/屏幕比例和前台切换次数；Agent 覆盖不足时明确降级为 network-only，而不是伪造联合高可信。r6 起这些联合统计还会追加进入 `learning-sessions.csv`（原 18 列保持不变，后追加 11 个 Agent 特征），因此高可信人工会话终于可以被运行时 Fusion 复用。
 
 v5 同样由 `tvguard-data` 管理：持久分区不可用时只写 `/var/run/tvguard-data`，挂载恢复后只合并中断期间的新记录。电视端仍然不保存学习历史。
 
@@ -283,3 +283,26 @@ r3 重新定义“选择电视当前状态 → 学习”的职责：用户只负
 6. `scripts/evaluate-generalization.py` 可直接读取 v5，按真实 package 做 leave-one-app-out，避免再依赖手工的腾讯/爱奇艺/芒果标签。
 
 这一阶段**没有**把 package/Activity/audio/screen 变成新的免计时规则。正式计时仍只接受既有 Home-only 与 `paused_confirmed_learned_context` 的窄授权；其他状态继续计时、继续学习。
+
+
+## v0.1.14-r6：成对人工学习的 Agent 音频画像
+
+r6 针对真机已确认的关键反例补齐最后一段学习链：同一个播放器 Activity 在“正在播放”和“暂停”时可能完全不变，而且暂停后仍会出现数百 PPS 的下载突发。因此网络 active 不能永远覆盖人工学习出来的暂停上下文。
+
+运行时不会使用任何视频 App 白名单。只有同时满足以下条件，exact package+Activity 才获得 learned-audio profile：
+
+1. 至少一个 completed + high 的 playing 人工会话；
+2. 至少一个 completed + high 的 paused 人工会话；
+3. 两类会话的 Agent joint quality 都为 high，dominant package/Activity 稳定度均 ≥75%，屏幕亮比例 ≥90%；
+4. 两类会话必须是同一 exact package+Activity；
+5. playing 平均 audio-active 比例 ≥70%，paused ≤30%，两者差值至少 50 个百分点；
+6. 若同一 exact context 还出现高可信 app_home 会话，则禁用该音频画像，避免把共享 Activity 误当播放器专属页面。
+
+满足后：
+- 当前 exact context + audio=1：直接确认 playing，即使 PPS 暂时很低，也继续计时，优先保护 576p/720p；
+- 当前 exact context + audio=0：连续 3 个新的 Agent report 后才确认 paused；确认前仍是 unknown/charge；
+- paused 已确认后，即使后台预取让 PPS 突然升高，也不能单凭网络 active 覆盖人工学习出的暂停状态；
+- audio 恢复为 1 时立即退出 paused 并恢复 playing；
+- Agent stale、package-only、unknown Activity、无成对高可信样本、音频分离不足时全部 fail-closed，继续沿用原来的保守 Fusion/计时路径。
+
+2026-11-12 真机观察到芒果 TV 播放与暂停均处于同一 `VodDynamicActivity`，播放 audio=1、暂停 audio=0；暂停后一度出现 PPS≈198，随后降至 51–98，又可再次升到 349。该反例正是 r6 不再允许“网络 active 无条件否决暂停”的原因，但上述包名/Activity 只记录在测试文档中，不进入决策白名单。
