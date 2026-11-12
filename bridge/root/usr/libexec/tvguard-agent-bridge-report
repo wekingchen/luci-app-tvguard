@@ -185,7 +185,7 @@ elif [ -x "$FUSION" ]; then
         "$pause_hint" "$pause_score" "$active_floor" 2>/dev/null || echo 'unknown fusion_error 0')"
     set -- $fusion
     if [ "$#" -eq 3 ]; then
-        case "$1" in playing|paused|app_home|system_home|unknown) combined="$1" ;; esac
+        case "$1" in playing|paused|app_home|system_home|nonplaying|unknown) combined="$1" ;; esac
         case "$2" in ''|*[!A-Za-z0-9_]*) candidate=fusion_invalid ;; *) candidate="$2" ;; esac
         case "$3" in ''|*[!0-9]*) fusion_streak=0 ;; *) fusion_streak="$3" ;; esac
     else
