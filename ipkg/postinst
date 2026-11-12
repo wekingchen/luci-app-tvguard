@@ -35,4 +35,14 @@ fi
 /etc/init.d/rpcd reload 2>/dev/null || :
 /etc/init.d/tvguard enable
 /etc/init.d/tvguard start
+
+# Core stays up even if the integrated bridge setup fails.
+if [ ! -x /usr/libexec/tvguard-agent-bridge-setup ]; then
+    echo 'TV Guard: integrated bridge setup missing' >&2
+    exit 1
+fi
+if ! /usr/libexec/tvguard-agent-bridge-setup; then
+    echo 'TV Guard: bridge setup failed; core remains running' >&2
+    exit 1
+fi
 exit 0

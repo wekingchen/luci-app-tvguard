@@ -1,3 +1,5 @@
+> 从 v0.1.14 起，本目录只保留独立 Bridge 源码及测试；它的运行文件已由主 IPK 打包。旧 Bridge IPK 仅用于回退 v0.1.13。N1 设备上的密钥与观看记录不打包、不删除。
+
 # TVGuard Agent + N1 Bridge · 双端联动 0.2.8（通用上下文 + Home-only 计时提示）
 
 ## 为何不把旧的 TVGuard 全量 IPK 重打包？

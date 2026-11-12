@@ -68,7 +68,7 @@ exit 0
 SH
 
 chmod +x "$TMP/bin/uci" "$TMP/mock-action"
-for name in rpcd tvguard tvguardctl; do
+for name in rpcd tvguard tvguardctl tvguard-agent-bridge tvguard-agent-bridge-setup; do
     cp "$TMP/mock-action" "$TMP/$name"
 done
 
@@ -97,7 +97,9 @@ import sys
 src, dst, tmp = sys.argv[1:]
 text = Path(src).read_text()
 text = text.replace("/etc/init.d/rpcd", tmp + "/rpcd")
+text = text.replace("/etc/init.d/tvguard-agent-bridge", tmp + "/tvguard-agent-bridge")
 text = text.replace("/etc/init.d/tvguard", tmp + "/tvguard")
+text = text.replace("/usr/libexec/tvguard-agent-bridge-setup", tmp + "/tvguard-agent-bridge-setup")
 text = text.replace("/usr/libexec/tvguardctl", tmp + "/tvguardctl")
 text = text.replace("/usr/libexec/tvguard-fw", tmp + "/tvguard-fw")
 Path(dst).write_text(text)
@@ -162,7 +164,142 @@ grep -q '^firewall.tvguard.type=script$' "$STATE"
 grep -q '^firewall.tvguard.path=/usr/libexec/tvguard-firewall-include$' "$STATE"
 grep -q '^commit firewall$' "$LOG"
 grep -q '^tvguard enable$' "$LOG"
+grep -q '^tvguard start
+! grep -q 'firewall restart\|firewall reload' "$LOG"
+
+# Existing owned section: accept without rewriting firewall UCI.
+owned_state
+: > "$LOG"
+sh "$TMP/postinst"
+assert_proxy_section
+! grep -q '^set firewall\.' "$LOG"
+! grep -q '^commit firewall$' "$LOG"
 grep -q '^tvguard start$' "$LOG"
+
+# Foreign same-name section: hard stop and no mutation/start.
+foreign_state
+cp "$STATE" "$TMP/foreign.before"
+: > "$LOG"
+if sh "$TMP/postinst" >"$TMP/out" 2>"$TMP/err"; then
+    echo "FAIL: postinst accepted foreign firewall.tvguard" >&2
+    exit 1
+fi
+cmp "$STATE" "$TMP/foreign.before"
+assert_proxy_section
+! grep -q '^set firewall\.' "$LOG"
+! grep -q '^delete firewall\.' "$LOG"
+! grep -q '^tvguard start$' "$LOG"
+
+# Foreign section on uninstall: never delete it.
+foreign_state
+cp "$STATE" "$TMP/foreign.before"
+: > "$LOG"
+sh "$TMP/prerm"
+cmp "$STATE" "$TMP/foreign.before"
+assert_proxy_section
+! grep -q '^delete firewall\.tvguard$' "$LOG"
+grep -q '^tvguardctl enforce off$' "$LOG"
+grep -q '^tvguard stop$' "$LOG"
+grep -q '^tvguard-fw remove$' "$LOG"
+
+# Failed firewall detach: abort uninstall, retain UCI, resume own daemon.
+owned_state
+cp "$STATE" "$TMP/owned.before"
+: > "$LOG"
+export TVG_FW_REMOVE_EXIT=9
+if sh "$TMP/prerm" >"$TMP/out" 2>"$TMP/err"; then
+    echo "FAIL: prerm ignored TV firewall detach failure" >&2
+    exit 1
+fi
+cmp "$STATE" "$TMP/owned.before"
+assert_proxy_section
+grep -q '^firewall.tvguard=include$' "$STATE"
+! grep -q '^delete firewall\.tvguard$' "$LOG"
+grep -q 'aborting uninstall' "$TMP/err"
+grep -q '^tvguardctl enforce off$' "$LOG"
+grep -q '^tvguard stop$' "$LOG"
+grep -q '^tvguard start$' "$LOG"
+export TVG_FW_REMOVE_EXIT=0
+
+# Successful uninstall: remove only owned TV Guard metadata; proxy survives.
+owned_state
+: > "$LOG"
+sh "$TMP/prerm"
+assert_proxy_section
+! grep -q '^firewall.tvguard=' "$STATE"
+grep -q '^delete firewall.tvguard$' "$LOG"
+grep -q '^commit firewall$' "$LOG"
+
+echo "PASS: package lifecycle preserves proxy UCI and aborts incomplete TVG detach safely"
+ "$LOG"
+grep -q '^tvguard-agent-bridge-setup 
+! grep -q 'firewall restart\|firewall reload' "$LOG"
+
+# Existing owned section: accept without rewriting firewall UCI.
+owned_state
+: > "$LOG"
+sh "$TMP/postinst"
+assert_proxy_section
+! grep -q '^set firewall\.' "$LOG"
+! grep -q '^commit firewall$' "$LOG"
+grep -q '^tvguard start$' "$LOG"
+
+# Foreign same-name section: hard stop and no mutation/start.
+foreign_state
+cp "$STATE" "$TMP/foreign.before"
+: > "$LOG"
+if sh "$TMP/postinst" >"$TMP/out" 2>"$TMP/err"; then
+    echo "FAIL: postinst accepted foreign firewall.tvguard" >&2
+    exit 1
+fi
+cmp "$STATE" "$TMP/foreign.before"
+assert_proxy_section
+! grep -q '^set firewall\.' "$LOG"
+! grep -q '^delete firewall\.' "$LOG"
+! grep -q '^tvguard start$' "$LOG"
+
+# Foreign section on uninstall: never delete it.
+foreign_state
+cp "$STATE" "$TMP/foreign.before"
+: > "$LOG"
+sh "$TMP/prerm"
+cmp "$STATE" "$TMP/foreign.before"
+assert_proxy_section
+! grep -q '^delete firewall\.tvguard$' "$LOG"
+grep -q '^tvguardctl enforce off$' "$LOG"
+grep -q '^tvguard stop$' "$LOG"
+grep -q '^tvguard-fw remove$' "$LOG"
+
+# Failed firewall detach: abort uninstall, retain UCI, resume own daemon.
+owned_state
+cp "$STATE" "$TMP/owned.before"
+: > "$LOG"
+export TVG_FW_REMOVE_EXIT=9
+if sh "$TMP/prerm" >"$TMP/out" 2>"$TMP/err"; then
+    echo "FAIL: prerm ignored TV firewall detach failure" >&2
+    exit 1
+fi
+cmp "$STATE" "$TMP/owned.before"
+assert_proxy_section
+grep -q '^firewall.tvguard=include$' "$STATE"
+! grep -q '^delete firewall\.tvguard$' "$LOG"
+grep -q 'aborting uninstall' "$TMP/err"
+grep -q '^tvguardctl enforce off$' "$LOG"
+grep -q '^tvguard stop$' "$LOG"
+grep -q '^tvguard start$' "$LOG"
+export TVG_FW_REMOVE_EXIT=0
+
+# Successful uninstall: remove only owned TV Guard metadata; proxy survives.
+owned_state
+: > "$LOG"
+sh "$TMP/prerm"
+assert_proxy_section
+! grep -q '^firewall.tvguard=' "$STATE"
+grep -q '^delete firewall.tvguard$' "$LOG"
+grep -q '^commit firewall$' "$LOG"
+
+echo "PASS: package lifecycle preserves proxy UCI and aborts incomplete TVG detach safely"
+ "$LOG"
 ! grep -q 'firewall restart\|firewall reload' "$LOG"
 
 # Existing owned section: accept without rewriting firewall UCI.

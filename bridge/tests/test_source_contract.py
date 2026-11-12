@@ -5,7 +5,7 @@ cgi = (p / 'root/www/cgi-bin/tvguard-agent').read_text()
 report = (p / 'root/usr/libexec/tvguard-agent-bridge-report').read_text()
 fusion = (p / 'root/usr/libexec/tvguard-agent-fusion').read_text()
 soak = (p / 'root/usr/libexec/tvguard-agent-bridge-soak').read_text()
-ipk = (p / '../scripts/build-agent-bridge-ipk.sh').resolve().read_text()
+ipk = (p / '../scripts/build-ipk.sh').resolve().read_text()
 postinst = (p / 'ipkg/postinst').read_text()
 pair = (p / 'root/usr/libexec/tvguard-agent-bridge-pair').read_text()
 billing = (p / 'root/usr/libexec/tvguard-agent-billing-hint').read_text()
@@ -32,11 +32,13 @@ assert 'agent_process_restart_suspected' in soak
 assert 'agent_stale' in soak
 assert 'is_new_report' in report
 
-assert 'luci-app-tvguard' not in ipk
+assert 'cp -R "$ROOT/bridge/root/." "$WORK/data/"' in ipk
+assert 'Conflicts: tvguard-agent-bridge' in ipk
+assert 'Replaces: tvguard-agent-bridge' in ipk
 assert 'od -An' not in postinst
 assert 'sha256sum' in postinst
 assert 'bs=32 count=1' in postinst
-assert 'control/conffiles' in ipk
+assert 'cp "$ROOT/ipkg/preinst"' in ipk
 assert "printf '/etc/tvguard/agent-bridge.key" not in ipk
 assert 'pair-window' in pair and 'now + 120' in pair
 assert 'TOKEN1|' in cgi and 'PAIR1' in cgi

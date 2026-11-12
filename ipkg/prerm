@@ -1,6 +1,25 @@
 #!/bin/sh
 [ -n "$IPKG_INSTROOT" ] && exit 0
 
+# Stop integrated Bridge before removing/replacing its executable.
+# Keep one-time pairing key and persistent viewing data intact.
+/etc/init.d/tvguard-agent-bridge stop 2>/dev/null || :
+/etc/init.d/tvguard-agent-bridge disable 2>/dev/null || :
+if [ "${1:-remove}" != upgrade ]; then
+    rm -f /var/run/tvguard-agent-bridge/pair-window \
+        /var/run/tvguard-agent-bridge/latest \
+        /var/run/tvguard-agent-bridge/soak.csv \
+        /var/run/tvguard-agent-bridge/soak.tmp \
+        /var/run/tvguard-agent-bridge/soak-v2.csv \
+        /var/run/tvguard-agent-bridge/soak-v2.tmp \
+        /var/run/tvguard-agent-bridge/soak-v3.csv \
+        /var/run/tvguard-agent-bridge/soak-v3.tmp \
+        /var/run/tvguard-agent-bridge/fusion.state
+    rmdir /var/run/tvguard-agent-bridge/pair-claim 2>/dev/null || :
+    rmdir /var/run/tvguard-agent-bridge/fusion.lock 2>/dev/null || :
+    rmdir /var/run/tvguard-agent-bridge 2>/dev/null || :
+fi
+
 # Best effort: leave the TV in observer/permissive policy before detaching the
 # hook. This changes only TV Guard's own config/gate and never proxy rules.
 /usr/libexec/tvguardctl enforce off 2>/dev/null || :

@@ -44,7 +44,9 @@ for field in (
     "Package: luci-app-tvguard",
     f"Version: {version}-{release}",
     "Architecture: all",
-    "Depends: luci-base, rpcd, curl",
+    "Depends: luci-base, rpcd, curl, uhttpd",
+    "Conflicts: tvguard-agent-bridge",
+    "Replaces: tvguard-agent-bridge",
 ):
     if field not in metadata.splitlines():
         raise SystemExit(f"FAIL: missing opkg metadata {field}")
@@ -66,11 +68,21 @@ for name in (
     "usr/libexec/tvguard-soak",
     "usr/libexec/tvguard-soak-report",
     "usr/libexec/tvguard-daily-report",
+    "etc/init.d/tvguard-agent-bridge",
+    "usr/libexec/tvguard-agent-bridge-setup",
+    "usr/libexec/tvguard-agent-billing-hint",
+    "usr/libexec/tvguard-agent-bridge-pair",
+    "usr/libexec/tvguard-agent-bridge-report",
+    "usr/libexec/tvguard-agent-bridge-soak",
+    "usr/libexec/tvguard-agent-fusion",
+    "www/cgi-bin/tvguard-agent",
     "usr/share/tvguard/default-config",
     "www/luci-static/resources/view/tvguard/overview.js",
 ):
     if name not in data:
         raise SystemExit(f"FAIL: missing installed file {name}")
-    if name.startswith("usr/libexec/") or name == "etc/init.d/tvguard":
+    if name.startswith("usr/libexec/") or name.startswith("etc/init.d/") or name.startswith("www/cgi-bin/"):
         assert data[name][0].mode & 0o111, f"{name} is not executable"
+assert "etc/tvguard/agent-bridge.key" not in data, "key must never be packaged"
+assert "conffiles" in control and b"agent-bridge.key" not in control["conffiles"][1]
 print(f"PASS: OpenWrt gzip-tar IPK, root ownership, package metadata, control and payload ({len(raw)} bytes)")

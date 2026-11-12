@@ -1,4 +1,11 @@
 # TV Guard · 家庭电视时间管理
+## v0.1.14-r1 · Agent Bridge 并入 N1 主包（开发候选）
+
+- N1 只安装 `luci-app-tvguard_0.1.14-1_all.ipk`，已包含 CGI、Fusion、Home-only billing hint、配对、观察报告和 bridge 服务；电视仍需单独安装原签名的 0.2.8 Agent APK。
+- 主包声明 `Conflicts / Replaces: tvguard-agent-bridge`，由 opkg 正规替换旧独立包，不使用 `--force-overwrite`。配对密钥由 N1 生成、保持 0600 且从不打进 IPK；UCI 与持久统计保留。首次迁移时旧 Bridge 的卸载脚本会清理其 RAM 暂存信息，之后电视重新上报即可恢复。
+- 本版不修改 v0.1.13 的 Home-only 正式计时和默认非强制断网策略；回退 v0.1.13 时需一并安装旧的独立 Bridge IPK 才能恢复电视联动。
+- 本分支必须通过 CI 及 N1 真机验证后才能正式发布。
+
 
 ## v0.1.13-r21 · Home-only 计时、儿童累计时长与双 Bark 日报（真机候选）
 
