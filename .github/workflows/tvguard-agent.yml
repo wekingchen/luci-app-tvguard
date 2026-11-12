@@ -53,6 +53,9 @@ jobs:
           test -s "$APK"
           test "$(stat -c%s "$APK")" -lt 1048576
           unzip -l "$APK" | grep -q classes.dex
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$APK" | tee "$RUNNER_TEMP/debug-badging.txt"
+          grep -q "versionCode='12'" "$RUNNER_TEMP/debug-badging.txt"
+          grep -q "versionName='0.2.9'" "$RUNNER_TEMP/debug-badging.txt"
           echo "Debug APK bytes: $(stat -c%s "$APK")"
       - name: Enable KVM on hosted runner
         run: |
@@ -102,6 +105,9 @@ jobs:
           test -s "$APK"
           test "$(stat -c%s "$APK")" -lt 1048576
           unzip -l "$APK" | grep -q classes.dex
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$APK" | tee "$RUNNER_TEMP/release-badging.txt"
+          grep -q "versionCode='12'" "$RUNNER_TEMP/release-badging.txt"
+          grep -q "versionName='0.2.9'" "$RUNNER_TEMP/release-badging.txt"
           "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose --print-certs "$APK" | tee "$RUNNER_TEMP/apksigner.txt"
           EXPECTED_CERT_SHA256="f4c300999b1bb3f04f4f80a630ebd5273dd268810a35b25b6c4c60a63cf376fa"
           ACTUAL_CERT_SHA256="$(sed -n 's/^Signer #1 certificate SHA-256 digest: //p' "$RUNNER_TEMP/apksigner.txt" | head -n1 | tr '[:upper:]' '[:lower:]' | tr -d ':[:space:]')"
