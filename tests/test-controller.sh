@@ -87,7 +87,7 @@ cat > "$TMP/agent-billing" <<'EOAGENTBILL'
 case "${TVGUARD_TEST_AGENT_BILLING:-charge}" in
     system_home) echo 'free system_home' ;;
     app_home) echo 'free app_home' ;;
-    paused) echo 'charge paused' ;;
+    paused) echo 'free paused' ;;
     playing) echo 'charge playing' ;;
     *) echo 'charge unknown' ;;
 esac
@@ -522,8 +522,8 @@ delta_p0_shadow=$((after_p0_shadow-before_p0_shadow))
 check 'assert s["shadow_label"]=="system_home" and s["adaptive_state"]=="unready", s'
 check 'assert s["billing_state"]=="charge" and s["idle_reason"]=="none", s'
 
-# Conservative Agent-assisted formal billing: ONLY explicit homes are free.
-# All other bridge states, including paused, remain chargeable.
+# Conservative Agent-assisted formal billing: explicit homes and only a
+# bridge-confirmed paused state are free. Generic TX idle remains chargeable.
 export TVGUARD_TEST_TX_IDLE_AUTHORITY=0
 export TVGUARD_TEST_ADAPTIVE=ambiguous
 export TVGUARD_TEST_SHADOW=unknown
@@ -571,7 +571,7 @@ after_app_home="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])
 [ "$after_app_home" = "$after_home" ]
 check 'assert s["billing_state"]=="idle_verified" and s["idle_reason"]=="app_home", s'
 
-# Even a bridge-confirmed paused state MUST charge under the simplified policy.
+# Explicit confirmed pause is now a narrow exemption.
 export TVGUARD_TEST_AGENT_BILLING=paused
 python3 - "$TMP/run/runtime" <<'PY'
 from pathlib import Path
@@ -589,9 +589,8 @@ echo "$(($1 + 200)) $(($2 + 40000)) $(($3 + 20)) $(($4 + 4000)) $(($5 + 180)) $(
 sh "$CTL" tick
 status
 after_paused="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["used_seconds"])' "$TMP/status.json")"
-delta_paused=$((after_paused-after_app_home))
-[ "$delta_paused" -ge 9 ] && [ "$delta_paused" -le 11 ]
-check 'assert s["billing_state"]=="charge" and s["idle_reason"]=="none", s'
+[ "$after_paused" = "$after_app_home" ]
+check 'assert s["billing_state"]=="idle_verified" and s["idle_reason"]=="paused", s'
 export TVGUARD_TEST_AGENT_BILLING=charge
 
 # Keep the previous smart-idle state machine covered as dormant code. Tests may
