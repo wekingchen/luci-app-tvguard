@@ -42,6 +42,9 @@ done
     exit 0
 }
 IFS='|' read -r seen pkg activity audio screen client_ms seq usage_access foreground_source foreground_status activity_trail ui_package ui_age_ms ui_nodes ui_clickable ui_focused ui_ids ui_fingerprint < "$LATEST" || :
+ui_package="${ui_package:-none}"
+ui_age_ms="${ui_age_ms:-0}"
+ui_fingerprint="${ui_fingerprint:-none}"
 for n in "${seen:-}" "${seq:-}" "${audio:-}" "${screen:-}"; do
     case "$n" in ''|*[!0-9]*) echo "charge unknown"; exit 0 ;; esac
 done
@@ -66,7 +69,8 @@ fi
 
 fusion="$("$FUSION" "$now" "$seen" "$seq" "$pkg" "$activity" "$audio" "$screen" \
     "$pps" "$shadow" "$adaptive_state" "$adaptive_score" "$adaptive_reason" \
-    "$pause_hint" "$pause_score" "$active_floor" 2>/dev/null || echo 'unknown fusion_error 0')"
+    "$pause_hint" "$pause_score" "$active_floor" "$ui_package" "$ui_age_ms" "$ui_fingerprint" \
+    2>/dev/null || echo 'unknown fusion_error 0')"
 set -- $fusion
 [ "$#" -eq 3 ] || {
     echo "charge unknown"
@@ -78,7 +82,17 @@ case "$1" in
         echo "free system_home"
         ;;
     app_home)
-        echo "free app_home"
+        case "$2" in
+            app_home_confirmed_learned_ui_context|app_nonplaying_confirmed|system_home_confirmed)
+                echo "free app_home"
+                ;;
+            *)
+                # Existing generic app_home confirmation is already narrow; this
+                # fallback preserves its billing contract while UI-specific
+                # paths still require explicit confirmation.
+                echo "free app_home"
+                ;;
+        esac
         ;;
     nonplaying)
         case "$2" in
@@ -96,7 +110,7 @@ case "$1" in
         # temporal hold is deliberately still chargeable so an uncertain
         # transition back to playback cannot inherit free time.
         case "$2" in
-            paused_confirmed_learned_context|paused_confirmed_learned_audio_context)
+            paused_confirmed_learned_context|paused_confirmed_learned_audio_context|paused_confirmed_learned_ui_context)
                 echo "free paused"
                 ;;
             *)
