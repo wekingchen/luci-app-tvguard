@@ -186,6 +186,7 @@ public final class MonitorService extends Service {
         public void run() {
             if (!isEnabled(MonitorService.this)) return;
             try {
+                AccessibilityRecovery.reconcile(MonitorService.this);
                 Snapshot sample = latest;
                 long now = System.currentTimeMillis();
                 boolean fresh = HeartbeatState.isFresh(now, sample.sampledMs);
