@@ -2,6 +2,7 @@ package com.tvguard.agent;
 
 import android.accessibilityservice.AccessibilityService;
 import android.view.accessibility.AccessibilityEvent;
+import android.os.Handler;
 import android.view.accessibility.AccessibilityNodeInfo;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
@@ -13,8 +14,17 @@ import java.security.NoSuchAlgorithmException;
 public final class UiStructureAccessibilityService extends AccessibilityService {
     private static final int MAX_NODES = 96;
     private static final int MAX_DEPTH = 10;
+    private static final long REFRESH_INTERVAL_MS = 5000L;
     private static volatile Snapshot latest = Snapshot.empty();
     private static volatile boolean connected;
+    private final Handler refreshHandler = new Handler();
+    private final Runnable refreshTask = new Runnable() {
+        @Override public void run() {
+            if (!connected) return;
+            captureCurrent();
+            refreshHandler.postDelayed(this, REFRESH_INTERVAL_MS);
+        }
+    };
 
     public static final class Snapshot {
         public final long sampledMs;
@@ -65,7 +75,9 @@ public final class UiStructureAccessibilityService extends AccessibilityService 
     @Override
     protected void onServiceConnected() {
         connected = true;
+        refreshHandler.removeCallbacks(refreshTask);
         captureCurrent();
+        refreshHandler.postDelayed(refreshTask, REFRESH_INTERVAL_MS);
     }
 
     @Override
@@ -81,6 +93,7 @@ public final class UiStructureAccessibilityService extends AccessibilityService 
     @Override
     public void onDestroy() {
         connected = false;
+        refreshHandler.removeCallbacks(refreshTask);
         latest = Snapshot.empty();
         super.onDestroy();
     }
