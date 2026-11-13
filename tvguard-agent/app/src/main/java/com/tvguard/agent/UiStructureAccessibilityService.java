@@ -75,6 +75,7 @@ public final class UiStructureAccessibilityService extends AccessibilityService 
     @Override
     protected void onServiceConnected() {
         connected = true;
+        AccessibilityRecovery.onConnected(this);
         refreshHandler.removeCallbacks(refreshTask);
         captureCurrent();
         refreshHandler.postDelayed(refreshTask, REFRESH_INTERVAL_MS);
@@ -93,6 +94,7 @@ public final class UiStructureAccessibilityService extends AccessibilityService 
     @Override
     public void onDestroy() {
         connected = false;
+        AccessibilityRecovery.onDisconnected();
         refreshHandler.removeCallbacks(refreshTask);
         latest = Snapshot.empty();
         super.onDestroy();
