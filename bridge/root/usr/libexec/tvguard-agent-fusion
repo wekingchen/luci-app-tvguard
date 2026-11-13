@@ -369,67 +369,6 @@ elif [ "$is_launcher" -eq 1 ] && [ "$full_context" -eq 1 ]; then
     home_streak=0
     latched=none
 
-elif [ "$learned_ui_profile" -eq 1 ]; then
-    # Generic learned UI profile: this is the narrow path for apps where
-    # playing and paused share package+Activity and audio cannot separate them.
-    # UI is authoritative only after manual high-confidence learning and only
-    # while the structure snapshot is fresh and belongs to this foreground app.
-    media_pkg="$pkg"
-    media_activity="$activity"
-    known_media_package=1
-    known_media_context=1
-    home_streak=0
-    switch_activity=''
-    switch_strong_hits=0
-    switch_last_strong_seen=0
-
-    if [ "$ui_fresh" -ne 1 ]; then
-        combined=unknown
-        candidate=learned_ui_profile_unavailable
-        pause_streak=0
-        pause_miss=0
-        latched=none
-    elif [ "$learned_ui_match" = playing ]; then
-        combined=playing
-        candidate=playing_confirmed_learned_ui_context
-        pause_streak=0
-        pause_miss=0
-        latched=none
-        last_strong_seen="$now"
-    elif [ "$learned_ui_match" = paused ]; then
-        if [ "$fresh" -eq 1 ]; then
-            pause_streak=$((pause_streak + 1))
-            pause_miss=0
-        fi
-        if [ "$latched" = paused ] || [ "$pause_streak" -ge 2 ]; then
-            latched=paused
-            combined=paused
-            candidate=paused_confirmed_learned_ui_context
-        else
-            combined=unknown
-            candidate=paused_ui_profile_warming
-        fi
-    elif [ "$learned_ui_match" = app_home ]; then
-        pause_streak=0
-        pause_miss=0
-        latched=none
-        if [ "$fresh" -eq 1 ]; then home_streak=$((home_streak + 1)); fi
-        if [ "$home_streak" -ge 2 ]; then
-            combined=app_home
-            candidate=app_home_confirmed_learned_ui_context
-        else
-            combined=unknown
-            candidate=app_home_ui_profile_warming
-        fi
-    else
-        combined=unknown
-        candidate=learned_ui_context_unresolved
-        pause_streak=0
-        pause_miss=0
-        home_streak=0
-        latched=none
-    fi
-
 elif [ "$learned_nonplaying_profile" -eq 1 ]; then
     # Type-D shared-context profile: human-labelled playing, paused and app_home
     # sessions all use this exact package+Activity. Audio may therefore prove
@@ -510,6 +449,67 @@ elif [ "$learned_audio_profile" -eq 1 ]; then
             combined=unknown
             candidate=paused_audio_profile_warming
         fi
+    fi
+
+elif [ "$learned_ui_profile" -eq 1 ]; then
+    # Generic learned UI profile: this is the narrow path for apps where
+    # playing and paused share package+Activity and audio cannot separate them.
+    # UI is authoritative only after manual high-confidence learning and only
+    # while the structure snapshot is fresh and belongs to this foreground app.
+    media_pkg="$pkg"
+    media_activity="$activity"
+    known_media_package=1
+    known_media_context=1
+    home_streak=0
+    switch_activity=''
+    switch_strong_hits=0
+    switch_last_strong_seen=0
+
+    if [ "$ui_fresh" -ne 1 ]; then
+        combined=unknown
+        candidate=learned_ui_profile_unavailable
+        pause_streak=0
+        pause_miss=0
+        latched=none
+    elif [ "$learned_ui_match" = playing ]; then
+        combined=playing
+        candidate=playing_confirmed_learned_ui_context
+        pause_streak=0
+        pause_miss=0
+        latched=none
+        last_strong_seen="$now"
+    elif [ "$learned_ui_match" = paused ]; then
+        if [ "$fresh" -eq 1 ]; then
+            pause_streak=$((pause_streak + 1))
+            pause_miss=0
+        fi
+        if [ "$latched" = paused ] || [ "$pause_streak" -ge 2 ]; then
+            latched=paused
+            combined=paused
+            candidate=paused_confirmed_learned_ui_context
+        else
+            combined=unknown
+            candidate=paused_ui_profile_warming
+        fi
+    elif [ "$learned_ui_match" = app_home ]; then
+        pause_streak=0
+        pause_miss=0
+        latched=none
+        if [ "$fresh" -eq 1 ]; then home_streak=$((home_streak + 1)); fi
+        if [ "$home_streak" -ge 2 ]; then
+            combined=app_home
+            candidate=app_home_confirmed_learned_ui_context
+        else
+            combined=unknown
+            candidate=app_home_ui_profile_warming
+        fi
+    else
+        combined=unknown
+        candidate=learned_ui_context_unresolved
+        pause_streak=0
+        pause_miss=0
+        home_streak=0
+        latched=none
     fi
 
 elif [ "$pkg_known" -eq 0 ]; then
