@@ -2,6 +2,7 @@ package com.tvguard.agent;
 
 import android.app.Activity;
 import android.content.Intent;
+import android.content.ActivityNotFoundException;
 import android.content.pm.ApplicationInfo;
 import android.content.pm.PackageManager;
 import android.graphics.Color;
@@ -133,7 +134,16 @@ public final class MainActivity extends Activity {
         accessibility.setId(View.generateViewId());
         accessibility.setOnClickListener(new View.OnClickListener() {
             @Override public void onClick(View v) {
-                startActivity(new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS));
+                Intent intent = new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS);
+                try {
+                    if (getPackageManager().resolveActivity(intent, PackageManager.MATCH_DEFAULT_ONLY) != null) {
+                        startActivity(intent);
+                    } else {
+                        bridgeStatus.setText("系统未提供无障碍设置入口；请使用 ADB/系统级方式启用 UI 结构观察");
+                    }
+                } catch (ActivityNotFoundException ignored) {
+                    bridgeStatus.setText("系统未提供无障碍设置入口；请使用 ADB/系统级方式启用 UI 结构观察");
+                }
             }
         });
         panel.addView(accessibility);
