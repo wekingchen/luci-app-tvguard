@@ -965,16 +965,19 @@ tick() {
             fi
             printf '%s,%s,%s,%s,%s,%s,%s,%s\n' "$NOW" "$CAL_SESSION" "$CAL_LABEL" "$sample_app" \
                 "$PPS" "$TCP_PPS" "$UDP_PPS" "$BYTES_PER_S" >> "$DIR/calibration-v3.csv"
-            # v5 accepts an optional 19th diagnostic column in r2:
-            # recent bounded Activity trail from TVG3. It is observation-only;
-            # learning/billing authorization still uses the established fields.
-            printf '%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s\n' \
+            # v5 is append-compatible: cols 1..18 are the original Agent/network
+            # joint sample, col 19 is the bounded TVG3 Activity trail, and TVG4
+            # appends cols 20..26 with structure-only UI evidence. Old 18/19-col
+            # rows stay valid; only new rows can qualify for learned UI profiles.
+            printf '%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s\n' \
                 "$NOW" "$CAL_SESSION" "$CAL_LABEL" "$AGENT_SAMPLE_STATE" "$AGENT_SAMPLE_AGE" \
                 "$AGENT_SAMPLE_PKG" "$AGENT_SAMPLE_ACTIVITY" "$AGENT_SAMPLE_AUDIO" \
                 "$AGENT_SAMPLE_SCREEN" "$AGENT_SAMPLE_SEQ" "$PPS" "$TCP_PPS" "$UDP_PPS" \
                 "$BYTES_PER_S" "$AGENT_SAMPLE_USAGE_ACCESS" "$AGENT_SAMPLE_FOREGROUND_SOURCE" \
                 "$AGENT_SAMPLE_FOREGROUND_STATUS" "$AGENT_CONTEXT_QUALITY" \
-                "$AGENT_SAMPLE_ACTIVITY_TRAIL" >> "$DIR/calibration-v5.csv"
+                "$AGENT_SAMPLE_ACTIVITY_TRAIL" "$AGENT_SAMPLE_UI_PACKAGE" "$AGENT_SAMPLE_UI_AGE_MS" \
+                "$AGENT_SAMPLE_UI_NODES" "$AGENT_SAMPLE_UI_CLICKABLE" "$AGENT_SAMPLE_UI_FOCUSED" \
+                "$AGENT_SAMPLE_UI_IDS" "$AGENT_SAMPLE_UI_FINGERPRINT" >> "$DIR/calibration-v5.csv"
             CAL_SAMPLES=$((CAL_SAMPLES + 1))
             if [ "$(wc -c < "$DIR/calibration-v3.csv")" -gt 262144 ]; then
                 tail -n 1500 "$DIR/calibration-v3.csv" > "$DIR/calibration-v3.tmp"
