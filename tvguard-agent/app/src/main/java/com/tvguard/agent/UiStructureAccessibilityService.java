@@ -1,6 +1,7 @@
 package com.tvguard.agent;
 
 import android.accessibilityservice.AccessibilityService;
+import android.content.Intent;
 import android.view.accessibility.AccessibilityEvent;
 import android.os.Handler;
 import android.view.accessibility.AccessibilityNodeInfo;
@@ -89,6 +90,15 @@ public final class UiStructureAccessibilityService extends AccessibilityService 
     @Override
     public void onInterrupt() {
         // No action. This observer has no queue and no local persistence.
+    }
+
+    @Override
+    public boolean onUnbind(Intent intent) {
+        connected = false;
+        AccessibilityRecovery.onDisconnected();
+        refreshHandler.removeCallbacks(refreshTask);
+        latest = Snapshot.empty();
+        return super.onUnbind(intent);
     }
 
     @Override
