@@ -59,8 +59,8 @@ public final class MainActivity extends Activity {
         panel.setOrientation(LinearLayout.VERTICAL);
         panel.setPadding(32, 18, 32, 18);
         scroller.addView(panel);
-        addText(panel, "TVGuard 助手 · 0.3.3", 24, 0xFFFFFFFF);
-        addText(panel, "Android 6 前台上下文 + UI 结构诊断版", 14, 0xFFB8C9D5);
+        addText(panel, "TVGuard 助手 · 0.3.4", 24, 0xFFFFFFFF);
+        addText(panel, "Android 6 前台上下文 + UI 结构学习 / 自动恢复版", 14, 0xFFB8C9D5);
         toggle = new Button(this);
         toggle.setAllCaps(false);
         styleActionButton(toggle);
@@ -160,8 +160,8 @@ public final class MainActivity extends Activity {
         details = addText(panel, "", 15, 0xFFEAF4F9);
         guidance = addText(panel, "", 14, 0xFFB8C9D5);
         addText(panel, "开启后由系统恢复任务维持监测；仅向 N1 发送当前状态，无文件日志、数据库或离线队列。", 12, 0xFFB8C9D5);
-        addText(panel, "UI 结构观察为可选诊断：不读取/上传文字内容，只统计结构并生成摘要；当前不参与计时、奖励、暂停或防火墙判断。", 12, 0xFFB8C9D5);
-        addText(panel, "本版连接 N1 仅用于观察，不参与计时、奖励、暂停或防火墙判断。", 12, 0xFFB8C9D5);
+        addText(panel, "UI 结构观察不读取/上传文字内容，只统计结构并生成摘要；只有经过人工标注学习、稳定且无冲突的画像，才可辅助确认暂停免计时。", 12, 0xFFB8C9D5);
+        addText(panel, "无障碍已授权但掉线时会由 JobScheduler 自动尝试重新绑定；若额外授予 WRITE_SECURE_SETTINGS，仅补回 TVGuard 自身条目并保留其他系统无障碍服务。", 12, 0xFFB8C9D5);
         setContentView(scroller);
         // First-launch focus always lands on the only button needed for pairing.
         // The user does not need TV text input or DPAD_DOWN to begin.
@@ -219,14 +219,19 @@ public final class MainActivity extends Activity {
                 "  · 最近接收：" + (ack == 0 ? "尚无" : time(ack)));
         ForegroundActivityHistory.Event meaningful = state.recentNonLauncher;
         StringBuilder info = new StringBuilder();
+        String uiHealth = AccessibilityRecovery.health(this);
         info.append("使用情况权限判断：").append(accessState)
                 .append("\n监测开关：").append(enabled ? "已开启" : "未开启")
                 .append("\n状态：").append(state.state)
                 .append("\n采样：").append(freshness)
                 .append("\n前台来源：").append(state.foregroundSource)
                 .append("\n前台诊断：").append(state.foregroundStatus)
-                .append("\nUI 结构观察：")
-                .append(UiStructureAccessibilityService.isConnected() ? "已启用" : "未启用");
+                .append("\nUI 结构观察：").append(uiHealthName(uiHealth))
+                .append("\nUI 自动恢复：")
+                .append(AccessibilityRecovery.isManaged(this) ? "已登记" : "等待首次成功连接")
+                .append(" · 增强恢复权限：")
+                .append(AccessibilityRecovery.hasWriteSecureSettings(this) ? "已授予" : "未授予")
+                .append(" · 最近动作：").append(AccessibilityRecovery.lastAction());
         info.append("\n\n【最近非桌面 App】")
                 .append("\n应用：").append(meaningful == null ? "暂无" :
                         applicationName(meaningful.packageName))
@@ -256,6 +261,15 @@ public final class MainActivity extends Activity {
         } else {
             guidance.setText("Agent 在线，但当前没有可靠前台上下文。诊断会随心跳上报 N1，不写电视本地日志。");
         }
+    }
+
+    private String uiHealthName(String value) {
+        if ("connected".equals(value)) return "已连接";
+        if ("configured_waiting_bind".equals(value)) return "已授权，等待系统绑定";
+        if ("authorization_missing".equals(value)) return "授权条目缺失";
+        if ("global_disabled".equals(value)) return "系统无障碍总开关关闭";
+        if ("monitor_off".equals(value)) return "监测未开启";
+        return value;
     }
 
     private String blank(String value) {
