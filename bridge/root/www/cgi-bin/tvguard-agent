@@ -1,5 +1,5 @@
 #!/bin/sh
-# TVGuard Agent bridge: TVG1/TVG2 legacy + TVG3 bounded activity-trail ingress, RAM-only.
+# TVGuard Agent bridge: TVG1/TVG2/TVG3 legacy + TVG4 UI-structure diagnostics, RAM-only.
 set -eu
 umask 077
 PATH=/usr/sbin:/usr/bin:/sbin:/bin
@@ -15,7 +15,7 @@ forbidden() { send '403 Forbidden' 'forbidden'; exit 0; }
 [ "${REQUEST_METHOD:-}" = POST ] || { send '405 Method Not Allowed' 'POST only'; exit 0; }
 len="${CONTENT_LENGTH:-}"
 case "$len" in ''|*[!0-9]*) bad ;; esac
-[ "$len" -gt 0 ] && [ "$len" -le 768 ] || bad
+[ "$len" -gt 0 ] && [ "$len" -le 1024 ] || bad
 TV_IP="$(uci -q get tvguard.main.ip 2>/dev/null || :)"
 [ -n "$TV_IP" ] && [ "${REMOTE_ADDR:-}" = "$TV_IP" ] || forbidden
 [ -r "$KEY_FILE" ] || forbidden
@@ -23,7 +23,7 @@ IFS= read -r expected < "$KEY_FILE" || :
 case "$expected" in ''|*[!0-9a-f]*) forbidden ;; esac
 [ "${#expected}" -eq 32 ] || forbidden
 IFS= read -r line || [ -n "${line:-}" ] || bad
-[ "${#line}" -le 768 ] || bad
+[ "${#line}" -le 1024 ] || bad
 if [ "$line" = PAIR1 ]; then
     WINDOW="$RAM_DIR/pair-window"
     CLAIM="$RAM_DIR/pair-claim"
@@ -46,25 +46,52 @@ fi
 
 oldIFS="$IFS"
 IFS='|'
-read -r version token seq pkg activity audio screen client_ms usage_access foreground_source foreground_status activity_trail extra <<EOF
+read -r version token seq pkg activity audio screen client_ms usage_access foreground_source foreground_status activity_trail ui_package ui_age_ms ui_nodes ui_clickable ui_focused ui_ids ui_fingerprint extra <<EOF
 $line
 EOF
 IFS="$oldIFS"
 case "$version" in
     TVG1)
-        [ -z "${usage_access:-}${foreground_source:-}${foreground_status:-}${activity_trail:-}${extra:-}" ] || bad
+        [ -z "${usage_access:-}${foreground_source:-}${foreground_status:-}${activity_trail:-}${ui_package:-}${ui_age_ms:-}${ui_nodes:-}${ui_clickable:-}${ui_focused:-}${ui_ids:-}${ui_fingerprint:-}${extra:-}" ] || bad
         usage_access=legacy
         foreground_source=legacy
         foreground_status=legacy
         activity_trail=none
+        ui_package=none
+        ui_age_ms=0
+        ui_nodes=0
+        ui_clickable=0
+        ui_focused=0
+        ui_ids=0
+        ui_fingerprint=none
         ;;
     TVG2)
-        [ -z "${activity_trail:-}${extra:-}" ] || bad
+        [ -z "${activity_trail:-}${ui_package:-}${ui_age_ms:-}${ui_nodes:-}${ui_clickable:-}${ui_focused:-}${ui_ids:-}${ui_fingerprint:-}${extra:-}" ] || bad
         activity_trail=none
+        ui_package=none
+        ui_age_ms=0
+        ui_nodes=0
+        ui_clickable=0
+        ui_focused=0
+        ui_ids=0
+        ui_fingerprint=none
         ;;
     TVG3)
+        [ -z "${ui_package:-}${ui_age_ms:-}${ui_nodes:-}${ui_clickable:-}${ui_focused:-}${ui_ids:-}${ui_fingerprint:-}${extra:-}" ] || bad
+        activity_trail="${activity_trail:-none}"
+        ui_package=none
+        ui_age_ms=0
+        ui_nodes=0
+        ui_clickable=0
+        ui_focused=0
+        ui_ids=0
+        ui_fingerprint=none
+        ;;
+    TVG4)
         [ -z "${extra:-}" ] || bad
         activity_trail="${activity_trail:-none}"
+        ui_package="${ui_package:-none}"
+        ui_fingerprint="${ui_fingerprint:-none}"
         ;;
     *) bad ;;
 esac
@@ -87,11 +114,22 @@ done
 [ "${#foreground_status}" -le 48 ] || bad
 case "$activity_trail" in ''|*[!A-Za-z0-9._~\$]*) bad ;; esac
 [ "${#activity_trail}" -le 240 ] || bad
+case "$ui_package" in ''|*[!A-Za-z0-9._]*) bad ;; esac
+[ "${#ui_package}" -le 128 ] || bad
+for number in "$ui_age_ms" "$ui_nodes" "$ui_clickable" "$ui_focused" "$ui_ids"; do
+    case "$number" in ''|*[!0-9]*) bad ;; esac
+    [ "${#number}" -le 16 ] || bad
+done
+case "$ui_fingerprint" in
+    none) : ;;
+    [0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]) : ;;
+    *) bad ;;
+esac
 
 mkdir -p "$RAM_DIR" || { send '503 Service Unavailable' 'unavailable'; exit 0; }
 now="$(date +%s)"
 tmp="$RAM_DIR/latest.$$"
-if printf '%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s\n'         "$now" "$pkg" "$activity" "$audio" "$screen" "$client_ms" "$seq"         "$usage_access" "$foreground_source" "$foreground_status" "$activity_trail" > "$tmp" &&
+if printf '%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s\n'         "$now" "$pkg" "$activity" "$audio" "$screen" "$client_ms" "$seq"         "$usage_access" "$foreground_source" "$foreground_status" "$activity_trail"         "$ui_package" "$ui_age_ms" "$ui_nodes" "$ui_clickable" "$ui_focused" "$ui_ids" "$ui_fingerprint" > "$tmp" &&
    mv -f "$tmp" "$OUT"; then
     send '200 OK' 'ok'
 else
