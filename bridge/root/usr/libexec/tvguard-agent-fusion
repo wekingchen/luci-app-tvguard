@@ -242,12 +242,12 @@ if [ "$full_context" -eq 1 ] && [ -x "$DATA" ]; then
             pm=(fp!="" && fp!="none" && play[fp]>0)
             qm=(fp!="" && fp!="none" && pause[fp]>0)
             hm=(fp!="" && fp!="none" && home[fp]>0)
-            match="unmatched"
-            if (pm && !qm && !hm) match="playing"
-            else if (qm && !pm && !hm) match="paused"
-            else if (hm && !pm && !qm) match="app_home"
-            else if (pm || qm || hm) match="conflict"
-            printf "%d %s\n", profile, match
+            kind="unmatched"
+            if (pm && !qm && !hm) kind="playing"
+            else if (qm && !pm && !hm) kind="paused"
+            else if (hm && !pm && !qm) kind="app_home"
+            else if (pm || qm || hm) kind="conflict"
+            printf "%d %s\n", profile, kind
         }' "$model" 2>/dev/null || echo '0 unmatched')"
         set -- $ui_profile
         if [ "$#" -eq 2 ]; then
