@@ -174,17 +174,13 @@ final class AccessibilityRecovery {
     private static boolean nudgeFramework(Context context) {
         ContentResolver resolver = context.getContentResolver();
         try {
-            // Re-publishing an unchanged value when the optional secure-settings
-            // grant exists gives vendor SettingsProvider implementations a real
-            // write notification without altering any other accessibility entry.
-            if (hasWriteSecureSettings(context)) {
-                String current = Settings.Secure.getString(resolver,
-                        Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES);
-                if (current != null) {
-                    Settings.Secure.putString(resolver,
-                            Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES, current);
-                }
-            }
+            // Configured-but-unbound recovery must remain write-free. Notify the
+            // vendor framework observers only; do not repeatedly rewrite the
+            // SettingsProvider database on this storage-constrained TV.
+            //
+            // Actual Settings.Secure writes are reserved for the much narrower
+            // repairSecureSettings() path where prior opt-in is proven and the
+            // authorization/global switch is genuinely missing.
             Uri services = Settings.Secure.getUriFor(
                     Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES);
             Uri enabled = Settings.Secure.getUriFor(
