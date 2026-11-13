@@ -189,10 +189,10 @@ with tempfile.TemporaryDirectory(prefix="tvguard-billing-hint-") as folder:
     write_ui_profile()
     put(20, 400, PKG, PLAYER, audio=1, ui_package=PKG, ui_age_ms=1000,
         ui_fp=UI_PLAY_FP, ui_nodes=4, ui_ids=1)
-    assert run(400, pps=0, shadow="idle", adaptive_state="idle",
-               adaptive_score=95, adaptive_reason="stable_low",
-               pause_hint="idle_overlap", pause_score=60) == (
-        "charge", "playing")
+    ui_play_result = run(400, pps=0, shadow="idle", adaptive_state="idle",
+                         adaptive_score=95, adaptive_reason="stable_low",
+                         pause_hint="idle_overlap", pause_score=60)
+    assert ui_play_result == ("charge", "playing"), ui_play_result
     put(21, 410, PKG, PLAYER, audio=1, ui_package=PKG, ui_age_ms=1000,
         ui_fp=UI_PAUSE_FP, ui_nodes=26, ui_clickable=12, ui_ids=8)
     assert run(410, pps=500, shadow="playing", adaptive_state="active",
