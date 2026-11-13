@@ -131,7 +131,10 @@ assert "android.permission.BIND_ACCESSIBILITY_SERVICE" in manifest
 assert "canRetrieveWindowContent" in ui_config
 assert "flagReportViewIds" in ui_config
 assert "MAX_NODES = 96" in ui_service
-assert "MAX_DEPTH = 10" in ui_service\nassert "REFRESH_INTERVAL_MS = 5000L" in ui_service\nassert "refreshHandler.postDelayed(refreshTask, REFRESH_INTERVAL_MS)" in ui_service\nassert "refreshHandler.removeCallbacks(refreshTask)" in ui_service
+assert "MAX_DEPTH = 10" in ui_service
+assert "REFRESH_INTERVAL_MS = 5000L" in ui_service
+assert "refreshHandler.postDelayed(refreshTask, REFRESH_INTERVAL_MS)" in ui_service
+assert "refreshHandler.removeCallbacks(refreshTask)" in ui_service
 assert "getViewIdResourceName" in ui_service
 assert "getText(" not in ui_service
 assert "getContentDescription(" not in ui_service
