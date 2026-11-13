@@ -320,6 +320,9 @@ check 'assert s["agent_state"] == "fresh" and s["agent_package"] == "com.example
 check 'assert s["agent_activity"] == "com.example.video.PlayerActivity" and s["agent_audio_active"] == 1 and s["agent_screen_on"] == 1, s'
 check 'assert s["agent_report_seq"] == 41 and 0 <= s["agent_age_seconds"] <= 20, s'
 check 'assert s["agent_activity_trail"] == "none", s'
+check 'assert s["agent_ui_package"] == "none" and s["agent_ui_age_ms"] == 0, s'
+check 'assert s["agent_ui_node_count"] == 0 and s["agent_ui_clickable_count"] == 0 and s["agent_ui_focused_count"] == 0 and s["agent_ui_view_id_count"] == 0, s'
+check 'assert s["agent_ui_structure_fingerprint"] == "none", s'
 if sh "$CTL" calibrate paused tencent > "$TMP/out" 2>&1; then
     echo "FAIL: a new session replaced an active calibration" >&2
     exit 1
