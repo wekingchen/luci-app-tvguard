@@ -34,8 +34,8 @@ assert "startForeground(" not in service
 assert "stopForeground(" not in service
 assert "static boolean isRunning()" in service
 gradle = (root / "app/build.gradle").read_text()
-assert "versionCode 14" in gradle
-assert "versionName '0.3.1'" in gradle
+assert "versionCode 15" in gradle
+assert "versionName '0.3.2'" in gradle
 
 main_activity = (src / "java/com/tvguard/agent/MainActivity.java").read_text()
 assert "不维护视频 App 白名单" in main_activity
@@ -75,7 +75,7 @@ assert "SharedPreferences.Editor" in service
 assert "editor.commit()" in service
 main_activity = (src / "java/com/tvguard/agent/MainActivity.java").read_text()
 editor = (src / "java/com/tvguard/agent/TvAddressEditor.java").read_text()
-assert "TVGuard 助手 · 0.3.1" in main_activity
+assert "TVGuard 助手 · 0.3.2" in main_activity
 gradle = (root / "app/build.gradle").read_text()
 assert "targetSdk 23" in gradle
 assert "disable 'ExpiredTargetSdkVersion'" in gradle
@@ -141,7 +141,7 @@ assert "java.io.File" not in ui_service
 assert "android.util.Log" not in ui_service
 assert "UiStructureAccessibilityService.snapshot()" in service
 assert "uiFingerprint" in bridge_client
-assert "Settings.ACTION_ACCESSIBILITY_SETTINGS" in main_activity
+assert "Settings.ACTION_ACCESSIBILITY_SETTINGS" in main_activity\nassert "resolveActivity(intent, PackageManager.MATCH_DEFAULT_ONLY)" in main_activity\nassert "ActivityNotFoundException" in main_activity\nassert "系统未提供无障碍设置入口" in main_activity
 assert "TvAddressEditor.show" in main_activity
 assert "autoPair(MainActivity.this" in main_activity
 assert "EditText" not in main_activity
