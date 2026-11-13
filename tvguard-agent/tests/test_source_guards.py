@@ -141,7 +141,10 @@ assert "java.io.File" not in ui_service
 assert "android.util.Log" not in ui_service
 assert "UiStructureAccessibilityService.snapshot()" in service
 assert "uiFingerprint" in bridge_client
-assert "Settings.ACTION_ACCESSIBILITY_SETTINGS" in main_activity\nassert "resolveActivity(intent, PackageManager.MATCH_DEFAULT_ONLY)" in main_activity\nassert "ActivityNotFoundException" in main_activity\nassert "系统未提供无障碍设置入口" in main_activity
+assert "Settings.ACTION_ACCESSIBILITY_SETTINGS" in main_activity
+assert "resolveActivity(intent, PackageManager.MATCH_DEFAULT_ONLY)" in main_activity
+assert "ActivityNotFoundException" in main_activity
+assert "系统未提供无障碍设置入口" in main_activity
 assert "TvAddressEditor.show" in main_activity
 assert "autoPair(MainActivity.this" in main_activity
 assert "EditText" not in main_activity
