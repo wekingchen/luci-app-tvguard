@@ -550,6 +550,12 @@ return view.extend({
         var agentFresh = state.agent_state === 'fresh';
         var contextQuality = String(state.agent_context_quality || 'unknown');
         var contextFull = agentFresh && contextQuality === 'full';
+        var uiFingerprint = String(state.agent_ui_structure_fingerprint || 'none');
+        var uiPackage = String(state.agent_ui_package || 'none');
+        var uiAgeMs = Math.max(0, Number(state.agent_ui_age_ms || 0)) +
+            Math.max(0, Number(state.agent_age_seconds || 0)) * 1000;
+        var uiReady = agentFresh && uiFingerprint !== 'none' &&
+            uiPackage === String(state.agent_package || 'unknown') && uiAgeMs <= 20000;
         this._lastCalibrationState = state;
 
         n.agentStatus.textContent = agentFresh ?
@@ -563,6 +569,12 @@ return view.extend({
                 ' · 页面：' + String(state.agent_activity || 'unknown') +
                 ' · 音频：' + (Number(state.agent_audio_active || 0) ? '活跃' : '无') +
                 ' · 屏幕：' + (Number(state.agent_screen_on || 0) ? '亮' : '灭') +
+                ' · UI结构：' + (uiReady ?
+                    ('可用（节点 ' + String(state.agent_ui_node_count || 0) +
+                        ' / 可点 ' + String(state.agent_ui_clickable_count || 0) +
+                        ' / View ID ' + String(state.agent_ui_view_id_count || 0) +
+                        ' / 指纹 ' + uiFingerprint.slice(0, 8) + '…）') :
+                    '暂不可用') +
                 ' · 权限判断：' + String(state.agent_usage_access || 'legacy') +
                 ' · 来源：' + String(state.agent_foreground_source || 'legacy') +
                 ' · 诊断：' + String(state.agent_foreground_status || 'legacy') :
@@ -583,7 +595,9 @@ return view.extend({
             n.detail.textContent = '已进行 ' + elapsed + ' / ' + configuredDuration +
                 ' 秒 · 剩余 ' + remaining + ' 秒 · 已保存 ' + count + ' 条有效窗口';
             n.hint.textContent = contextFull ?
-                '保持电视当前状态不变即可；网络窗口会和完整 App / Activity / 音频 / 屏幕上下文同步保存。' :
+                ('保持电视当前状态不变即可；网络窗口会和完整 App / Activity / 音频 / 屏幕' +
+                    (uiReady ? ' / UI 结构指纹' : '') + '同步保存。' +
+                    (uiReady ? ' 当前 UI 证据满足高可信学习条件。' : ' 当前 UI 结构暂不具备授权资格。')) :
                 '保持电视当前状态不变即可；当前 Agent 上下文不完整，网络样本照常保存，但不会标成联合高可信。';
         }
         else if (phase === 'finishing') {
@@ -603,7 +617,9 @@ return view.extend({
             n.title.textContent = '准备学习';
             n.detail.textContent = '先选择电视当前真实状态，再选择采集时长。推荐 3 分钟；App 和页面由电视 Agent 自动识别。';
             n.hint.textContent = contextFull ?
-                'Agent 前台上下文完整。本次会同步保存网络与电视端证据；人工选择的状态仍是唯一真值。' :
+                ('Agent 前台上下文完整。本次会同步保存网络与电视端证据' +
+                    (uiReady ? '，包括当前 UI 结构指纹' : '') +
+                    '；人工选择的状态仍是唯一真值。') :
                 (agentFresh ?
                     'Agent 传输在线，但前台上下文尚不完整。本次可以学习网络特征，不会冒充高可信联合样本。' :
                     'Agent 当前不可用也可以开始，但本次只会作为兼容网络学习样本。');
@@ -797,12 +813,19 @@ return view.extend({
                 var minutes = Math.round(Number(seconds) / 60);
                 var live = this._lastCalibrationState || s;
                 var liveQuality = String(live.agent_context_quality || 'unknown');
+                var liveUiFp = String(live.agent_ui_structure_fingerprint || 'none');
+                var liveUiAge = Math.max(0, Number(live.agent_ui_age_ms || 0)) +
+                    Math.max(0, Number(live.agent_age_seconds || 0)) * 1000;
+                var liveUiReady = live.agent_state === 'fresh' && liveUiFp !== 'none' &&
+                    String(live.agent_ui_package || 'none') === String(live.agent_package || 'unknown') &&
+                    liveUiAge <= 20000;
                 var agentNote = live.agent_state === 'fresh' ?
                     ('电视 Agent 当前识别：' + String(live.agent_package || 'unknown') +
                         ' / ' + String(live.agent_activity || 'unknown') +
                         '（' + (liveQuality === 'full' ? '完整前台上下文' :
                             (liveQuality === 'package_only' ? '仅应用包' : '上下文未确认')) + '）。' +
-                        (liveQuality === 'full' ? '' :
+                        (liveQuality === 'full' ?
+                            (liveUiReady ? ' UI 结构证据也已就绪。' : ' UI 结构证据暂未就绪。') :
                             ' 本次不会标成联合高可信。')) :
                     '电视 Agent 当前不可用，本次会保留网络学习样本，但不会标成联合高可信。';
                 return this.handleAction(
@@ -1094,7 +1117,7 @@ return view.extend({
                 rewardLimitNode
             ]),
 
-            panel('智能识别学习', 'Adaptive Engine 会继续学习连续行为画像。普通暂停线索不改变计时；只有已学习媒体上下文中连续新鲜证据明确确认的暂停才免计时。', [
+            panel('智能识别学习', 'Adaptive Engine 以人工选择状态为真值，联合网络、App / Activity、音频和可选 UI 结构学习。未知、冲突或过期证据继续计时；只有高可信画像连续确认的暂停才免计时。', [
                 grid([
                     metric('当前自动判断', shadowValueNode, shadowNoteNode, false),
                     metric('网络活动强度', trafficValueNode, trafficNoteNode, false)
