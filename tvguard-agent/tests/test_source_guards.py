@@ -35,8 +35,8 @@ assert "startForeground(" not in service
 assert "stopForeground(" not in service
 assert "static boolean isRunning()" in service
 gradle = (root / "app/build.gradle").read_text()
-assert "versionCode 17" in gradle
-assert "versionName '0.3.4'" in gradle
+assert "versionCode 18" in gradle
+assert "versionName '0.3.5'" in gradle
 
 main_activity = (src / "java/com/tvguard/agent/MainActivity.java").read_text()
 assert "不维护视频 App 白名单" in main_activity
@@ -76,7 +76,7 @@ assert "SharedPreferences.Editor" in service
 assert "editor.commit()" in service
 main_activity = (src / "java/com/tvguard/agent/MainActivity.java").read_text()
 editor = (src / "java/com/tvguard/agent/TvAddressEditor.java").read_text()
-assert "TVGuard 助手 · 0.3.4" in main_activity
+assert "TVGuard 助手 · 0.3.5" in main_activity
 gradle = (root / "app/build.gradle").read_text()
 assert "targetSdk 23" in gradle
 assert "disable 'ExpiredTargetSdkVersion'" in gradle
@@ -140,6 +140,8 @@ assert "refreshHandler.postDelayed(refreshTask, REFRESH_INTERVAL_MS)" in ui_serv
 assert "refreshHandler.removeCallbacks(refreshTask)" in ui_service
 assert "AccessibilityRecovery.onConnected(this)" in ui_service
 assert "AccessibilityRecovery.onDisconnected()" in ui_service
+assert "public boolean onUnbind(Intent intent)" in ui_service
+assert "refreshHandler.removeCallbacks(refreshTask)" in ui_service
 assert "getViewIdResourceName" in ui_service
 assert "getText(" not in ui_service
 assert "getContentDescription(" not in ui_service
@@ -165,6 +167,13 @@ assert "ENABLED_ACCESSIBILITY_SERVICES" in accessibility_recovery
 assert "ACCESSIBILITY_ENABLED" in accessibility_recovery
 assert "appendServicePreservingExisting" in accessibility_recovery
 assert "resolver.notifyChange" in accessibility_recovery
+nudge_start = accessibility_recovery.index("private static boolean nudgeFramework")
+nudge_end = accessibility_recovery.index("static String appendServicePreservingExisting", nudge_start)
+nudge_block = accessibility_recovery[nudge_start:nudge_end]
+assert "Settings.Secure.putString" not in nudge_block
+assert "Settings.Secure.putInt" not in nudge_block
+assert "Settings.Secure.putString" in accessibility_recovery[:nudge_start]
+assert "Settings.Secure.putInt" in accessibility_recovery[:nudge_start]
 assert "WRITE_SECURE_SETTINGS" in accessibility_recovery
 assert "REPAIR_SECURE_SETTINGS" in recovery_policy
 assert "UNBOUND_GRACE_MS = 15000L" in recovery_policy
