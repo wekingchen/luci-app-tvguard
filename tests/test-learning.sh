@@ -148,6 +148,19 @@ for label in playing paused; do
     sh "$DST" "$sid" "$label" 120 general completed 1794477120
     REPORT="$TMP/state/learning-last.txt"
     grep -q '^UI 结构: 样本 12 · 覆盖 100% · 包 com.example.ui / 100% · 指纹稳定 100% · 质量 high
+    grep -q "^UI 指纹: $fp$" "$REPORT"
+done
+
+awk -F, -v p="$PKG" -v a="$ACT" -v pf="$PLAY_FP" -v qf="$PAUSE_FP" '
+    NF==40 && $6=="completed" && $18=="high" && $19=="high" &&
+    $23==p && $25==a && $31==100 && $32==p && $33==100 && $35==100 && $40=="high" {
+        if ($3=="playing" && $34==pf && $36==4 && $37==0 && $39==1) play=1
+        if ($3=="paused" && $34==qf && $36==26 && $37==12 && $39==8) pause=1
+    }
+    END {exit !(play && pause)}
+' "$TMP/state/learning-sessions.csv"
+
+echo 'PASS: learning analysis + TVG3 trail + TVG4 UI profile + legacy v5 compatibility'
  "$REPORT"
     grep -q "^UI 指纹: $fp$" "$REPORT"
 done
