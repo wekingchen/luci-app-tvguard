@@ -124,5 +124,7 @@ assert 'USED_S' not in billing
 assert 'BILLING_STATE' not in billing
 assert 'iptables' not in billing
 assert '/etc/' not in billing
-assert 'ui_fingerprint' not in billing
+assert billing.count('ui_fingerprint') == 1  # parser-only compatibility field
 assert 'ui_structure' not in billing
+fusion_call = billing[billing.index('fusion="$("$FUSION"'):billing.index('set -- $fusion')]
+assert 'ui_fingerprint' not in fusion_call and 'ui_' not in fusion_call
