@@ -48,7 +48,8 @@ with tempfile.TemporaryDirectory() as folder:
     assert '400 Bad Request' in send(body=base.replace('|1|1|179431','|9|1|179431'))
     assert '400 Bad Request' in send(body=base.replace('|allowed|usage_events|full_context','|allowed|bad-source!|full_context'))
     assert '400 Bad Request' in send(body=v3.replace(trail, trail+';bad'))
-    assert '400 Bad Request' in send(body=v4.replace(ui_fp, 'not-a-hash'))
+    bad_fp=v4.rsplit('|',1)[0]+'|not-a-hash\n'
+    assert '400 Bad Request' in send(body=bad_fp)
     assert '400 Bad Request' in send(body=v4.replace('|27|12|1|6|', '|27|bad|1|6|'))
     assert '400 Bad Request' in send(body='X'*1025)
     assert len(list(state.glob('latest*')))==1
