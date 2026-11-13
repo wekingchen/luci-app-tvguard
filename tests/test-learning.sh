@@ -52,7 +52,7 @@ grep -q '^最近 Activity 轨迹: 覆盖 100% · com.mitv.tvhome.MainActivityUse
 grep -q '^电视上下文: 音频活跃 5% · 屏幕亮 100% · 前台切换 0 次$' "$REPORT"
 grep -q '^联合质量: high$' "$REPORT"
 grep -q '高可信 Agent 联合人工学习会话' "$REPORT"
-awk -F, 'NF==29 && $2=="1700000000-1" && $3=="system_home" && $9==100 && $18=="high" &&
+awk -F, 'NF==40 && $2=="1700000000-1" && $3=="system_home" && $9==100 && $18=="high" &&
           $19=="high" && $23=="com.mitv.tvhome" && $25=="com.mitv.tvhome.MainActivityUserMode" &&
           $27==5 && $28==100 {ok=1} END {exit !ok}' \
     "$TMP/state/learning-sessions.csv"
@@ -106,7 +106,7 @@ for label in playing paused; do
     sh "$DST" "$sid" "$label" 120 general completed 1794476120
 done
 awk -F, -v p="$PKG" -v a="$ACT" '
-    NF==29 && $6=="completed" && $18=="high" && $19=="high" &&
+    NF==40 && $6=="completed" && $18=="high" && $19=="high" &&
     $23==p && $24==100 && $25==a && $26==100 && $28==100 {
         if ($3=="playing" && $27==100) play=1
         if ($3=="paused" && $27==0) pause=1
@@ -114,4 +114,51 @@ awk -F, -v p="$PKG" -v a="$ACT" '
     END {exit !(play && pause)}
 ' "$TMP/state/learning-sessions.csv"
 
-echo 'PASS: learning analysis + TVG3 trail diagnostics + legacy v5 compatibility'
+# TVG4/26-column samples become high-confidence UI learning only when the
+# structure belongs to the same package, stays fresh, and one fingerprint is
+# stable across the manually labelled session.
+PKG=com.example.ui
+ACT=com.example.ui.PlayerActivity
+PLAY_FP=99c131952ab0cc27edde65954ed12645
+PAUSE_FP=40ed2fe6f6de308287179befd4eabc20
+for label in playing paused; do
+    suffix=31
+    fp="$PLAY_FP"
+    nodes=4
+    clickable=0
+    ids=1
+    [ "$label" = paused ] && {
+        suffix=32
+        fp="$PAUSE_FP"
+        nodes=26
+        clickable=12
+        ids=8
+    }
+    sid="1794477000-$suffix"
+    : > "$V5"
+    : > "$CSV"
+    i=0
+    while [ "$i" -lt 12 ]; do
+        ts=$((1794477000 + i * 10))
+        printf '%s,%s,%s,%s,80,1,79,20000\n' "$ts" "$sid" "$label" "$PKG" >> "$CSV"
+        printf '%s,%s,%s,fresh,1,%s,%s,1,1,%s,80,1,79,20000,allowed,usage_events,full_context,full,none,%s,1000,%s,%s,0,%s,%s\n' \
+            "$ts" "$sid" "$label" "$PKG" "$ACT" "$i" "$PKG" "$nodes" "$clickable" "$ids" "$fp" >> "$V5"
+        i=$((i + 1))
+    done
+    sh "$DST" "$sid" "$label" 120 general completed 1794477120
+    REPORT="$TMP/state/learning-last.txt"
+    grep -q '^UI 结构: 样本 12 · 覆盖 100% · 包 com.example.ui / 100% · 指纹稳定 100% · 质量 high
+ "$REPORT"
+    grep -q "^UI 指纹: $fp$" "$REPORT"
+done
+
+awk -F, -v p="$PKG" -v a="$ACT" -v pf="$PLAY_FP" -v qf="$PAUSE_FP" '
+    NF==40 && $6=="completed" && $18=="high" && $19=="high" &&
+    $23==p && $25==a && $31==100 && $32==p && $33==100 && $35==100 && $40=="high" {
+        if ($3=="playing" && $34==pf && $36==4 && $37==0 && $39==1) play=1
+        if ($3=="paused" && $34==qf && $36==26 && $37==12 && $39==8) pause=1
+    }
+    END {exit !(play && pause)}
+' "$TMP/state/learning-sessions.csv"
+
+echo 'PASS: learning analysis + TVG3 trail + TVG4 UI profile + legacy v5 compatibility'
