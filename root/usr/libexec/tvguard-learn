@@ -108,6 +108,17 @@ context_changes=0
 activity_trail_coverage=0
 dominant_activity_trail=none
 dominant_activity_trail_share=0
+ui_samples=0
+ui_coverage=0
+dominant_ui_package=none
+dominant_ui_package_share=0
+dominant_ui_fingerprint=none
+dominant_ui_fingerprint_share=0
+ui_node_avg=0
+ui_clickable_avg=0
+ui_focused_avg=0
+ui_ids_avg=0
+ui_quality=none
 
 if [ -s "$V5" ]; then
     context_stats="$(awk -F, -v sid="$sid" -v label="$label" '
@@ -175,6 +186,71 @@ if [ -s "$V5" ]; then
         dominant_activity_trail="${16}"
         dominant_activity_trail_share="${17}"
     fi
+
+    # TVG4 structure-only evidence is eligible for learning only when the Agent
+    # report is fresh, the UI belongs to the same foreground package, and the
+    # structure snapshot is no more than 20 seconds old. Text/content is never
+    # present in this dataset.
+    ui_stats="$(awk -F, -v sid="$sid" -v label="$label" '
+    $2==sid && $3==label && $4=="fresh" {
+        fresh++
+        if ($20!="" && $20!="none" && $20!="unknown" && $20==$6 &&
+            $21~/^[0-9]+$/ && $21+0<=20000 &&
+            $22~/^[0-9]+$/ && $23~/^[0-9]+$/ && $24~/^[0-9]+$/ && $25~/^[0-9]+$/ &&
+            length($26)==32 && $26 !~ /[^0-9a-f]/) {
+            n++
+            pkg[$20]++
+            fp[$26]++
+            nodes += $22+0
+            clickable += $23+0
+            focused += $24+0
+            ids += $25+0
+        }
+    }
+    END {
+        dp="none"; df="none"; dpn=0; dfn=0
+        for (k in pkg) if (pkg[k]>dpn) { dpn=pkg[k]; dp=k }
+        for (k in fp) if (fp[k]>dfn) { dfn=fp[k]; df=k }
+        cov=(fresh>0 ? int(n*100/fresh) : 0)
+        dps=(n>0 ? int(dpn*100/n) : 0)
+        dfs=(n>0 ? int(dfn*100/n) : 0)
+        navg=(n>0 ? int(nodes/n) : 0)
+        cavg=(n>0 ? int(clickable/n) : 0)
+        favg=(n>0 ? int(focused/n) : 0)
+        iavg=(n>0 ? int(ids/n) : 0)
+        printf "%d|%d|%s|%d|%s|%d|%d|%d|%d|%d\n",
+            n+0,cov,dp,dps,df,dfs,navg,cavg,favg,iavg
+    }' "$V5")"
+    old_ifs="$IFS"
+    IFS='|'
+    set -- $ui_stats
+    IFS="$old_ifs"
+    if [ "$#" -eq 10 ]; then
+        ui_samples="$1"
+        ui_coverage="$2"
+        dominant_ui_package="$3"
+        dominant_ui_package_share="$4"
+        dominant_ui_fingerprint="$5"
+        dominant_ui_fingerprint_share="$6"
+        ui_node_avg="$7"
+        ui_clickable_avg="$8"
+        ui_focused_avg="$9"
+        ui_ids_avg="${10}"
+    fi
+fi
+
+if [ "$ui_coverage" -ge 75 ] &&
+   [ "$dominant_ui_package_share" -ge 90 ] &&
+   [ "$dominant_ui_fingerprint_share" -ge 75 ] &&
+   [ "$dominant_ui_package" != none ] &&
+   [ "$dominant_ui_fingerprint" != none ]; then
+    ui_quality=high
+elif [ "$ui_coverage" -ge 50 ] &&
+     [ "$dominant_ui_package_share" -ge 75 ] &&
+     [ "$dominant_ui_fingerprint_share" -ge 60 ]; then
+    ui_quality=medium
+else
+    ui_quality=none
 fi
 
 joint_quality=network_only
@@ -236,21 +312,27 @@ Agent 传输: ${agent_fresh}/${agent_total} fresh · 覆盖 ${agent_coverage}%
 完整前台上下文: ${agent_full_context}/${agent_total} · 覆盖 ${agent_full_coverage}% · $dominant_activity · 稳定 ${dominant_activity_share}%
 最近 Activity 轨迹: 覆盖 ${activity_trail_coverage}% · $dominant_activity_trail · 稳定 ${dominant_activity_trail_share}%
 电视上下文: 音频活跃 ${audio_ratio}% · 屏幕亮 ${screen_ratio}% · 前台切换 ${context_changes} 次
+UI 结构: 样本 ${ui_samples} · 覆盖 ${ui_coverage}% · 包 ${dominant_ui_package} / ${dominant_ui_package_share}% · 指纹稳定 ${dominant_ui_fingerprint_share}% · 质量 $ui_quality
+UI 结构均值: 节点 ${ui_node_avg} · 可点击 ${ui_clickable_avg} · 焦点 ${ui_focused_avg} · View ID ${ui_ids_avg}
+UI 指纹: $dominant_ui_fingerprint
 联合质量: $joint_quality
 处理: $verdict
-说明: 人工选择的电视状态仍是真值；package/Activity/audio/screen 只增强学习证据，不会单独获得免计时权限。
+说明: 人工选择的电视状态仍是真值；package/Activity/audio/screen/UI 结构只增强学习证据，只有互不冲突的高可信人工画像才能获得后续免计时资格。
 EOF
 chmod 600 "$tmp"
 mv -f "$tmp" "$LAST"
 
-# learning-sessions schema v2 keeps the original 18 network columns intact
-# and appends reusable Agent joint-learning features. Older 18-column rows stay
-# valid but cannot authorize learned Agent pause behavior.
-printf '%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s\n' \
+# learning-sessions schema v3 keeps the original 29 columns intact and
+# appends reusable TVG4 UI structure-learning features. Older 18/29-column rows
+# remain valid for their original paths but cannot authorize learned UI pause.
+printf '%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s\n' \
     "$finished" "$sid" "$label" "$app" "$duration" "$result" "$samples" "$elapsed" \
     "$coverage" "$p10" "$p50" "$p90" "$t50" "$u50" "$b50" "$b90" "$stability" "$quality" \
     "$joint_quality" "$agent_coverage" "$agent_package_coverage" "$agent_full_coverage" \
     "$dominant_pkg" "$dominant_pkg_share" "$dominant_activity" "$dominant_activity_share" \
-    "$audio_ratio" "$screen_ratio" "$context_changes" >> "$SESSIONS"
+    "$audio_ratio" "$screen_ratio" "$context_changes" "$ui_samples" "$ui_coverage" \
+    "$dominant_ui_package" "$dominant_ui_package_share" "$dominant_ui_fingerprint" \
+    "$dominant_ui_fingerprint_share" "$ui_node_avg" "$ui_clickable_avg" "$ui_focused_avg" \
+    "$ui_ids_avg" "$ui_quality" >> "$SESSIONS"
 chmod 600 "$SESSIONS"
 "$RETENTION" trim >/dev/null 2>&1 || :
