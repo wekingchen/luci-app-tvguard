@@ -34,8 +34,8 @@ assert "startForeground(" not in service
 assert "stopForeground(" not in service
 assert "static boolean isRunning()" in service
 gradle = (root / "app/build.gradle").read_text()
-assert "versionCode 13" in gradle
-assert "versionName '0.3.0'" in gradle
+assert "versionCode 14" in gradle
+assert "versionName '0.3.1'" in gradle
 
 main_activity = (src / "java/com/tvguard/agent/MainActivity.java").read_text()
 assert "不维护视频 App 白名单" in main_activity
@@ -75,7 +75,7 @@ assert "SharedPreferences.Editor" in service
 assert "editor.commit()" in service
 main_activity = (src / "java/com/tvguard/agent/MainActivity.java").read_text()
 editor = (src / "java/com/tvguard/agent/TvAddressEditor.java").read_text()
-assert "TVGuard 助手 · 0.3.0" in main_activity
+assert "TVGuard 助手 · 0.3.1" in main_activity
 gradle = (root / "app/build.gradle").read_text()
 assert "targetSdk 23" in gradle
 assert "disable 'ExpiredTargetSdkVersion'" in gradle
@@ -118,10 +118,30 @@ assert "TOKEN1|" in bridge_client
 protocol = (src / "java/com/tvguard/agent/BridgeProtocol.java").read_text()
 assert '"TVG2|"' in protocol
 assert '"TVG3|"' in protocol
+assert '"TVG4|"' in protocol
 assert "activityTrail" in protocol
 assert "bodyV3" in protocol
+assert "bodyV4" in protocol
 assert "usageAccess" in protocol and "foregroundSource" in protocol
 assert "foregroundStatus" in protocol
+ui_service = (src / "java/com/tvguard/agent/UiStructureAccessibilityService.java").read_text()
+ui_config = (src / "res/xml/tvguard_accessibility_service.xml").read_text()
+assert "UiStructureAccessibilityService" in manifest
+assert "android.permission.BIND_ACCESSIBILITY_SERVICE" in manifest
+assert "canRetrieveWindowContent" in ui_config
+assert "flagReportViewIds" in ui_config
+assert "MAX_NODES = 96" in ui_service
+assert "MAX_DEPTH = 10" in ui_service
+assert "getViewIdResourceName" in ui_service
+assert "getText(" not in ui_service
+assert "getContentDescription(" not in ui_service
+assert "SharedPreferences" not in ui_service
+assert "SQLite" not in ui_service
+assert "java.io.File" not in ui_service
+assert "android.util.Log" not in ui_service
+assert "UiStructureAccessibilityService.snapshot()" in service
+assert "uiFingerprint" in bridge_client
+assert "Settings.ACTION_ACCESSIBILITY_SETTINGS" in main_activity
 assert "TvAddressEditor.show" in main_activity
 assert "autoPair(MainActivity.this" in main_activity
 assert "EditText" not in main_activity
