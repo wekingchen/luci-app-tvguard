@@ -7,6 +7,7 @@ import android.content.pm.PackageManager;
 import android.graphics.Color;
 import android.os.Bundle;
 import android.os.Handler;
+import android.provider.Settings;
 import android.view.View;
 import android.view.KeyEvent;
 import android.widget.Button;
@@ -25,6 +26,7 @@ public final class MainActivity extends Activity {
     private Button toggle;
     private Button changeAddressButton;
     private Button autoPairButton;
+    private Button accessibilityButton;
     private int remoteSelectedIndex = 2;
     private TextView bridgeStatus;
     private TextView endpointDisplay;
@@ -123,16 +125,32 @@ public final class MainActivity extends Activity {
         });
         panel.addView(autoPair);
         autoPairButton = autoPair;
+
+        final Button accessibility = new Button(this);
+        styleActionButton(accessibility);
+        accessibility.setText("打开无障碍设置（可选 UI 结构观察）");
+        accessibility.setFocusable(true);
+        accessibility.setId(View.generateViewId());
+        accessibility.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View v) {
+                startActivity(new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS));
+            }
+        });
+        panel.addView(accessibility);
+        accessibilityButton = accessibility;
         toggle.setId(View.generateViewId());
         toggle.setNextFocusDownId(changeAddress.getId());
         changeAddress.setNextFocusUpId(toggle.getId());
         changeAddress.setNextFocusDownId(autoPair.getId());
         autoPair.setNextFocusUpId(changeAddress.getId());
+        autoPair.setNextFocusDownId(accessibility.getId());
+        accessibility.setNextFocusUpId(autoPair.getId());
         bridgeStatus = addText(panel, "", 14, 0xFFB8C9D5);
         remoteDebug = addText(panel, "遥控器：首次打开直接按确定进行自动配对", 13, 0xFFB8C9D5);
         details = addText(panel, "", 15, 0xFFEAF4F9);
         guidance = addText(panel, "", 14, 0xFFB8C9D5);
         addText(panel, "开启后由系统恢复任务维持监测；仅向 N1 发送当前状态，无文件日志、数据库或离线队列。", 12, 0xFFB8C9D5);
+        addText(panel, "UI 结构观察为可选诊断：不读取/上传文字内容，只统计结构并生成摘要；当前不参与计时、奖励、暂停或防火墙判断。", 12, 0xFFB8C9D5);
         addText(panel, "本版连接 N1 仅用于观察，不参与计时、奖励、暂停或防火墙判断。", 12, 0xFFB8C9D5);
         setContentView(scroller);
         // First-launch focus always lands on the only button needed for pairing.
@@ -196,7 +214,9 @@ public final class MainActivity extends Activity {
                 .append("\n状态：").append(state.state)
                 .append("\n采样：").append(freshness)
                 .append("\n前台来源：").append(state.foregroundSource)
-                .append("\n前台诊断：").append(state.foregroundStatus);
+                .append("\n前台诊断：").append(state.foregroundStatus)
+                .append("\nUI 结构观察：")
+                .append(UiStructureAccessibilityService.isConnected() ? "已启用" : "未启用");
         info.append("\n\n【最近非桌面 App】")
                 .append("\n应用：").append(meaningful == null ? "暂无" :
                         applicationName(meaningful.packageName))
@@ -245,7 +265,7 @@ public final class MainActivity extends Activity {
         if (event.getAction() == KeyEvent.ACTION_UP) return true;
         if (event.getAction() != KeyEvent.ACTION_DOWN || event.getRepeatCount() > 0)
             return true;
-        Button[] choices = { toggle, changeAddressButton, autoPairButton };
+        Button[] choices = { toggle, changeAddressButton, autoPairButton, accessibilityButton };
         if (navigation) {
             // At the edges, let ScrollView consume the key so diagnostics below
             // the action buttons remain reachable with an ordinary TV remote.
