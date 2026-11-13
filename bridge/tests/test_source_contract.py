@@ -17,6 +17,7 @@ assert 'CONTENT_LENGTH' in cgi
 assert 'REQUEST_METHOD' in cgi and 'REMOTE_ADDR' in cgi
 assert 'agent-bridge.key' in cgi
 assert 'TVG3' in cgi and 'activity_trail' in cgi
+assert 'TVG4' in cgi and 'ui_fingerprint' in cgi
 assert '>>' not in cgi
 assert 'USED_S' not in cgi and 'iptables' not in cgi
 
@@ -29,7 +30,8 @@ assert 'adaptive_pause_score' in report
 assert 'combined_state=' in report
 assert 'fusion_pause_streak=' in report
 assert 'recent_activity_trail=' in report
-assert 'TVG1_TVG2_TVG3' in report
+assert 'TVG1_TVG2_TVG3_TVG4' in report
+assert 'ui_structure_fingerprint=' in report
 assert 'soak-v3.csv' in report and 'soak-v3.csv' in soak
 assert 'repeated_report_not_new_evidence' in soak
 assert 'agent_process_restart_suspected' in soak
@@ -94,6 +96,8 @@ assert 'pause_streak" -ge 2' in fusion
 assert 'pause_streak" -ge 3' in fusion  # legacy network-pause path stays conservative
 assert '$19=="high"' in fusion and '$27+0' in fusion
 assert 'activity_trail' not in fusion
+assert 'ui_fingerprint' not in fusion
+assert 'ui_structure' not in fusion
 
 # Hard isolation from real billing/firewall remains mandatory.
 assert 'USED_S' not in fusion
@@ -102,7 +106,7 @@ assert 'iptables' not in fusion
 assert '/etc/' not in fusion
 assert '>>' not in fusion
 
-print('bridge generic-context / learned-audio / TVG3 diagnostic isolation / freshness / pairing checks PASS')
+print('bridge generic-context / learned-audio / TVG4 diagnostic isolation / freshness / pairing checks PASS')
 
 
 # Formal billing bridge is deliberately narrow: it may only grant free time
@@ -120,3 +124,5 @@ assert 'USED_S' not in billing
 assert 'BILLING_STATE' not in billing
 assert 'iptables' not in billing
 assert '/etc/' not in billing
+assert 'ui_fingerprint' not in billing
+assert 'ui_structure' not in billing
