@@ -149,6 +149,18 @@ final class BridgeClient {
                           boolean audio, boolean screen, long wallTimeMs,
                           String usageAccess, String foregroundSource,
                           String foregroundStatus, String activityTrail) {
+        maybeSend(ctx, pkg, cls, audio, screen, wallTimeMs,
+                usageAccess, foregroundSource, foregroundStatus, activityTrail,
+                "none", 0L, 0, 0, 0, 0, "none");
+    }
+
+    static void maybeSend(Context ctx, String pkg, String cls,
+                          boolean audio, boolean screen, long wallTimeMs,
+                          String usageAccess, String foregroundSource,
+                          String foregroundStatus, String activityTrail,
+                          String uiPackage, long uiAgeMs, int uiNodes,
+                          int uiClickable, int uiFocused, int uiIds,
+                          String uiFingerprint) {
         long now = SystemClock.elapsedRealtime();
         if (sentElapsed != 0 && now >= sentElapsed && now - sentElapsed < 10000L) return;
         sentElapsed = now;
@@ -156,8 +168,9 @@ final class BridgeClient {
         if (!BridgeProtocol.validEndpoint(endpoint) || !BridgeProtocol.validKey(token)) {
             state = "未配对"; return;
         }
-        String body = BridgeProtocol.bodyV3(token, ++sequence, pkg, cls, audio, screen,
-                wallTimeMs, usageAccess, foregroundSource, foregroundStatus, activityTrail);
+        String body = BridgeProtocol.bodyV4(token, ++sequence, pkg, cls, audio, screen,
+                wallTimeMs, usageAccess, foregroundSource, foregroundStatus, activityTrail,
+                uiPackage, uiAgeMs, uiNodes, uiClickable, uiFocused, uiIds, uiFingerprint);
         HttpURLConnection conn = null;
         try {
             conn = (HttpURLConnection) new URL(endpoint).openConnection(Proxy.NO_PROXY);
