@@ -203,9 +203,15 @@ public final class MonitorService extends Service {
                 boolean screenOn = power != null && power.isInteractive();
                 String activityTrail = fresh
                         ? BridgeProtocol.activityTrail(sample.timeline, pkg) : "none";
+                UiStructureAccessibilityService.Snapshot ui =
+                        UiStructureAccessibilityService.snapshot();
+                long uiAgeMs = ui.sampledMs == 0L ? 0L :
+                        Math.max(0L, now - ui.sampledMs);
                 BridgeClient.maybeSend(MonitorService.this, pkg, cls,
                         activeAudio, screenOn, now, sample.usageAccess, source, status,
-                        activityTrail);
+                        activityTrail, ui.packageName, uiAgeMs, ui.nodeCount,
+                        ui.clickableCount, ui.focusedCount, ui.viewIdCount,
+                        ui.fingerprint);
             } catch (RuntimeException e) {
                 BridgeClient.markUplinkError("本地上报异常：" +
                         e.getClass().getSimpleName());
