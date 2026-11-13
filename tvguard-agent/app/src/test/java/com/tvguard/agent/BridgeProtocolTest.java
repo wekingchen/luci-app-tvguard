@@ -55,6 +55,19 @@ public final class BridgeProtocolTest {
         assertTrue(payload.length() < 768);
     }
 
+    @Test public void tvg4AddsUiStructureDiagnosticsWithoutText() {
+        String payload = BridgeProtocol.bodyV4(KEY, 7, "com.example.video",
+                "com.example.video.PlayerActivity", true, true, 123456791L,
+                "allowed", "usage_events", "full_context", "none",
+                "com.example.video", 250L, 27, 12, 1, 6,
+                "0123456789abcdef0123456789abcdef");
+        assertTrue(payload.startsWith("TVG4|" + KEY + "|7|"));
+        assertTrue(payload.contains("|com.example.video|250|27|12|1|6|"
+                + "0123456789abcdef0123456789abcdef\n"));
+        assertFalse(payload.contains("subtitle"));
+        assertTrue(payload.length() < 1024);
+    }
+
     @Test public void maliciousCharactersAndLongNamesSanitized() {
         StringBuilder sb = new StringBuilder();
         for(int i=0;i<999;i++) sb.append('A');
