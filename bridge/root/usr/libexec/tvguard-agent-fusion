@@ -1,5 +1,5 @@
 #!/bin/sh
-# TVGuard v0.2.9 generic Agent/N1 temporal fusion.
+# TVGuard v0.3.0 generic Agent/N1 temporal + learned UI fusion.
 # No video-app package names or per-app decision branches are allowed here.
 # RAM-only observer: never edits quota, billing state, firewall or persistent data.
 set -eu
@@ -11,10 +11,11 @@ DATA=/usr/libexec/tvguard-data
 STATE="$RAM/fusion.state"
 LOCK="$RAM/fusion.lock"
 
-[ "$#" -eq 15 ] || {
-    echo "unknown invalid_arguments 0"
-    exit 0
-}
+argc="$#"
+case "$argc" in
+    15|18) : ;;
+    *) echo "unknown invalid_arguments 0"; exit 0 ;;
+esac
 
 now="$1"
 seen="$2"
@@ -32,8 +33,16 @@ adaptive_reason="$3"
 pause_hint="$4"
 pause_score="$5"
 active_floor="$6"
+ui_package=none
+ui_age_ms=0
+ui_fingerprint=none
+if [ "$argc" -eq 18 ]; then
+    ui_package="$7"
+    ui_age_ms="$8"
+    ui_fingerprint="$9"
+fi
 
-for n in "$now" "$seen" "$seq" "$audio" "$screen" "$pps" "$adaptive_score" "$pause_score" "$active_floor"; do
+for n in "$now" "$seen" "$seq" "$audio" "$screen" "$pps" "$adaptive_score" "$pause_score" "$active_floor" "$ui_age_ms"; do
     case "$n" in ''|*[!0-9]*) echo "unknown invalid_numeric 0"; exit 0 ;; esac
 done
 case "$audio:$screen" in 0:0|0:1|1:0|1:1) : ;; *) echo "unknown invalid_bits 0"; exit 0 ;; esac
@@ -44,6 +53,20 @@ case "$adaptive_reason" in
     *) adaptive_reason=unknown ;;
 esac
 case "$pause_hint" in none|idle_overlap|bursty_pause|high_ratio_pause|unknown) : ;; *) pause_hint=unknown ;; esac
+case "$ui_package" in ''|*[!A-Za-z0-9._]*) ui_package=none ;; esac
+case "$ui_fingerprint" in
+    none) : ;;
+    *[!0-9a-f]*) ui_fingerprint=none ;;
+    *) [ "${#ui_fingerprint}" -eq 32 ] || ui_fingerprint=none ;;
+esac
+
+ui_fresh=0
+ui_total_age_ms=0
+if [ "$ui_package" = "$pkg" ] && [ "$ui_fingerprint" != none ] &&
+   [ "$now" -ge "$seen" ]; then
+    ui_total_age_ms=$((ui_age_ms + (now - seen) * 1000))
+    if [ "$ui_total_age_ms" -le 20000 ]; then ui_fresh=1; fi
+fi
 
 mkdir -p "$RAM"
 locked=0
@@ -195,6 +218,45 @@ fi
 case "$learned_audio_profile" in 0|1) : ;; *) learned_audio_profile=0 ;; esac
 case "$learned_nonplaying_profile" in 0|1) : ;; *) learned_nonplaying_profile=0 ;; esac
 
+# UI profile authority is learned only from completed high-quality manual
+# sessions that have stable exact package+Activity and stable TVG4 structure
+# fingerprints. The runtime fingerprint must be unique to one learned label;
+# any conflict or unknown structure fails closed.
+learned_ui_profile=0
+learned_ui_match=unmatched
+if [ "$full_context" -eq 1 ] && [ -x "$DATA" ]; then
+    data_root="$("$DATA" root 2>/dev/null || :)"
+    model="$data_root/learning-sessions.csv"
+    if [ -n "$data_root" ] && [ -s "$model" ]; then
+        ui_profile="$(awk -F, -v pkg="$pkg" -v activity="$activity" -v fp="$ui_fingerprint" '
+        NF>=40 && $6=="completed" && $18=="high" && $19=="high" &&
+        $23==pkg && $25==activity && $24+0>=75 && $26+0>=75 &&
+        $31+0>=75 && $32==pkg && $33+0>=90 &&
+        length($34)==32 && $34 !~ /[^0-9a-f]/ && $35+0>=75 && $40=="high" {
+            if ($3=="playing") { pn++; play[$34]++ }
+            else if ($3=="paused") { qn++; pause[$34]++ }
+            else if ($3=="app_home") { hn++; home[$34]++ }
+        }
+        END {
+            profile=(pn>=1 && qn>=1)
+            pm=(fp!="" && fp!="none" && play[fp]>0)
+            qm=(fp!="" && fp!="none" && pause[fp]>0)
+            hm=(fp!="" && fp!="none" && home[fp]>0)
+            match="unmatched"
+            if (pm && !qm && !hm) match="playing"
+            else if (qm && !pm && !hm) match="paused"
+            else if (hm && !pm && !qm) match="app_home"
+            else if (pm || qm || hm) match="conflict"
+            printf "%d %s\n", profile, match
+        }' "$model" 2>/dev/null || echo '0 unmatched')"
+        set -- $ui_profile
+        if [ "$#" -eq 2 ]; then
+            case "$1" in 0|1) learned_ui_profile="$1" ;; *) learned_ui_profile=0 ;; esac
+            case "$2" in playing|paused|app_home|conflict|unmatched) learned_ui_match="$2" ;; *) learned_ui_match=unmatched ;; esac
+        fi
+    fi
+fi
+
 context_changed=0
 if [ "$full_context" -eq 1 ] &&
    { [ "$pkg" != "$last_pkg" ] || [ "$activity" != "$last_activity" ]; }; then
@@ -306,6 +368,67 @@ elif [ "$is_launcher" -eq 1 ] && [ "$full_context" -eq 1 ]; then
     pause_miss=0
     home_streak=0
     latched=none
+
+elif [ "$learned_ui_profile" -eq 1 ]; then
+    # Generic learned UI profile: this is the narrow path for apps where
+    # playing and paused share package+Activity and audio cannot separate them.
+    # UI is authoritative only after manual high-confidence learning and only
+    # while the structure snapshot is fresh and belongs to this foreground app.
+    media_pkg="$pkg"
+    media_activity="$activity"
+    known_media_package=1
+    known_media_context=1
+    home_streak=0
+    switch_activity=''
+    switch_strong_hits=0
+    switch_last_strong_seen=0
+
+    if [ "$ui_fresh" -ne 1 ]; then
+        combined=unknown
+        candidate=learned_ui_profile_unavailable
+        pause_streak=0
+        pause_miss=0
+        latched=none
+    elif [ "$learned_ui_match" = playing ]; then
+        combined=playing
+        candidate=playing_confirmed_learned_ui_context
+        pause_streak=0
+        pause_miss=0
+        latched=none
+        last_strong_seen="$now"
+    elif [ "$learned_ui_match" = paused ]; then
+        if [ "$fresh" -eq 1 ]; then
+            pause_streak=$((pause_streak + 1))
+            pause_miss=0
+        fi
+        if [ "$latched" = paused ] || [ "$pause_streak" -ge 2 ]; then
+            latched=paused
+            combined=paused
+            candidate=paused_confirmed_learned_ui_context
+        else
+            combined=unknown
+            candidate=paused_ui_profile_warming
+        fi
+    elif [ "$learned_ui_match" = app_home ]; then
+        pause_streak=0
+        pause_miss=0
+        latched=none
+        if [ "$fresh" -eq 1 ]; then home_streak=$((home_streak + 1)); fi
+        if [ "$home_streak" -ge 2 ]; then
+            combined=app_home
+            candidate=app_home_confirmed_learned_ui_context
+        else
+            combined=unknown
+            candidate=app_home_ui_profile_warming
+        fi
+    else
+        combined=unknown
+        candidate=learned_ui_context_unresolved
+        pause_streak=0
+        pause_miss=0
+        home_streak=0
+        latched=none
+    fi
 
 elif [ "$learned_nonplaying_profile" -eq 1 ]; then
     # Type-D shared-context profile: human-labelled playing, paused and app_home
