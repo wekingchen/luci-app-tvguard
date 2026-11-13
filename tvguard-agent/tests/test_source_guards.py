@@ -34,8 +34,8 @@ assert "startForeground(" not in service
 assert "stopForeground(" not in service
 assert "static boolean isRunning()" in service
 gradle = (root / "app/build.gradle").read_text()
-assert "versionCode 15" in gradle
-assert "versionName '0.3.2'" in gradle
+assert "versionCode 16" in gradle
+assert "versionName '0.3.3'" in gradle
 
 main_activity = (src / "java/com/tvguard/agent/MainActivity.java").read_text()
 assert "不维护视频 App 白名单" in main_activity
@@ -75,7 +75,7 @@ assert "SharedPreferences.Editor" in service
 assert "editor.commit()" in service
 main_activity = (src / "java/com/tvguard/agent/MainActivity.java").read_text()
 editor = (src / "java/com/tvguard/agent/TvAddressEditor.java").read_text()
-assert "TVGuard 助手 · 0.3.2" in main_activity
+assert "TVGuard 助手 · 0.3.3" in main_activity
 gradle = (root / "app/build.gradle").read_text()
 assert "targetSdk 23" in gradle
 assert "disable 'ExpiredTargetSdkVersion'" in gradle
@@ -131,7 +131,7 @@ assert "android.permission.BIND_ACCESSIBILITY_SERVICE" in manifest
 assert "canRetrieveWindowContent" in ui_config
 assert "flagReportViewIds" in ui_config
 assert "MAX_NODES = 96" in ui_service
-assert "MAX_DEPTH = 10" in ui_service
+assert "MAX_DEPTH = 10" in ui_service\nassert "REFRESH_INTERVAL_MS = 5000L" in ui_service\nassert "refreshHandler.postDelayed(refreshTask, REFRESH_INTERVAL_MS)" in ui_service\nassert "refreshHandler.removeCallbacks(refreshTask)" in ui_service
 assert "getViewIdResourceName" in ui_service
 assert "getText(" not in ui_service
 assert "getContentDescription(" not in ui_service
