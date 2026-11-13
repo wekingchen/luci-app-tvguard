@@ -109,4 +109,28 @@ final class BridgeProtocol {
                 + sanitize(foregroundStatus, 48) + "|"
                 + sanitizeTrail(activityTrail) + "\n";
     }
+    static String bodyV4(String key, long seq, String pkg, String cls,
+                         boolean audio, boolean screen, long wallTimeMs,
+                         String usageAccess, String foregroundSource,
+                         String foregroundStatus, String activityTrail,
+                         String uiPackage, long uiAgeMs, int uiNodes,
+                         int uiClickable, int uiFocused, int uiIds,
+                         String uiFingerprint) {
+        if (!validKey(key)) throw new IllegalArgumentException("Invalid key");
+        String fingerprint = uiFingerprint != null &&
+                (uiFingerprint.matches("[0-9a-f]{32}") || "none".equals(uiFingerprint))
+                ? uiFingerprint : "none";
+        return "TVG4|" + key + "|" + seq + "|" + sanitize(pkg, 128) + "|"
+                + sanitize(cls, 160) + "|" + (audio ? 1 : 0) + "|"
+                + (screen ? 1 : 0) + "|" + wallTimeMs + "|"
+                + sanitize(usageAccess, 24) + "|"
+                + sanitize(foregroundSource, 32) + "|"
+                + sanitize(foregroundStatus, 48) + "|"
+                + sanitizeTrail(activityTrail) + "|"
+                + sanitize(uiPackage, 128) + "|" + Math.max(0L, uiAgeMs) + "|"
+                + Math.max(0, uiNodes) + "|" + Math.max(0, uiClickable) + "|"
+                + Math.max(0, uiFocused) + "|" + Math.max(0, uiIds) + "|"
+                + fingerprint + "\n";
+    }
+
 }
