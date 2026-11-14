@@ -70,6 +70,16 @@ final class BridgeProtocol {
         return out.length() == 0 ? "none" : out.toString();
     }
 
+    static boolean usableUi(String foregroundPackage, String uiPackage,
+                            long uiAgeMs, String uiFingerprint) {
+        return foregroundPackage != null && uiPackage != null
+                && foregroundPackage.length() != 0
+                && foregroundPackage.equals(uiPackage)
+                && uiAgeMs >= 0L && uiAgeMs <= 20000L
+                && uiFingerprint != null
+                && uiFingerprint.matches("[0-9a-f]{32}");
+    }
+
     static String sanitizeTrail(String value) {
         if (value == null || value.length() == 0) return "none";
         StringBuilder sb = new StringBuilder();
