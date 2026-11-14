@@ -53,7 +53,7 @@ final class AccessibilityRecovery {
         boolean canWrite = hasWriteSecureSettings(context);
         long now = SystemClock.elapsedRealtime();
 
-        if (connected) {
+        if (connected && globalEnabled && configured) {
             onConnected(context);
             return "connected";
         }
@@ -95,9 +95,12 @@ final class AccessibilityRecovery {
 
     static synchronized String health(Context context) {
         if (!MonitorService.isEnabled(context)) return "monitor_off";
-        if (UiStructureAccessibilityService.isConnected()) return "connected";
+        // Settings truth must be checked before the binder flag. Xiaomi Android
+        // 6 may keep a stale service binding alive after the global switch or
+        // authorization entry has already been removed.
         if (!isGlobalEnabled(context)) return "global_disabled";
         if (!isConfigured(context)) return "authorization_missing";
+        if (UiStructureAccessibilityService.isConnected()) return "connected";
         return "configured_waiting_bind";
     }
 
