@@ -35,8 +35,8 @@ assert "startForeground(" not in service
 assert "stopForeground(" not in service
 assert "static boolean isRunning()" in service
 gradle = (root / "app/build.gradle").read_text()
-assert "versionCode 18" in gradle
-assert "versionName '0.3.5'" in gradle
+assert "versionCode 19" in gradle
+assert "versionName '0.3.6'" in gradle
 
 main_activity = (src / "java/com/tvguard/agent/MainActivity.java").read_text()
 assert "不维护视频 App 白名单" in main_activity
@@ -76,7 +76,7 @@ assert "SharedPreferences.Editor" in service
 assert "editor.commit()" in service
 main_activity = (src / "java/com/tvguard/agent/MainActivity.java").read_text()
 editor = (src / "java/com/tvguard/agent/TvAddressEditor.java").read_text()
-assert "TVGuard 助手 · 0.3.5" in main_activity
+assert "TVGuard 助手 · 0.3.6" in main_activity
 gradle = (root / "app/build.gradle").read_text()
 assert "targetSdk 23" in gradle
 assert "disable 'ExpiredTargetSdkVersion'" in gradle
@@ -176,6 +176,13 @@ assert "Settings.Secure.putString" in accessibility_recovery[:nudge_start]
 assert "Settings.Secure.putInt" in accessibility_recovery[:nudge_start]
 assert "WRITE_SECURE_SETTINGS" in accessibility_recovery
 assert "REPAIR_SECURE_SETTINGS" in recovery_policy
+assert "if (!monitorEnabled) return NONE;" in recovery_policy
+assert "if (connected) return NONE;" in recovery_policy
+assert recovery_policy.index("if (!globalEnabled || !configured)") < recovery_policy.index("if (connected) return NONE;")
+assert "connected && globalEnabled && configured" in accessibility_recovery
+assert accessibility_recovery.index('if (!isGlobalEnabled(context)) return "global_disabled";') < accessibility_recovery.index('if (UiStructureAccessibilityService.isConnected()) return "connected";')
+assert "BridgeProtocol.usableUi(" in service
+assert 'reportUiPackage = usableUi ? ui.packageName : "none"' in service
 assert "UNBOUND_GRACE_MS = 15000L" in recovery_policy
 assert "NUDGE_COOLDOWN_MS = 30000L" in recovery_policy
 assert "java.io." not in accessibility_recovery
