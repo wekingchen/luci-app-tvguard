@@ -25,6 +25,15 @@ public final class AccessibilityRecoveryPolicyTest {
                         true, false, 60000L, 10000L));
     }
 
+    @Test public void staleBoundFlagCannotMaskDisabledGlobalOrMissingAuthorization() {
+        assertEquals(AccessibilityRecoveryPolicy.REPAIR_SECURE_SETTINGS,
+                AccessibilityRecoveryPolicy.decide(true, false, true, true,
+                        true, true, 1000L, Long.MAX_VALUE));
+        assertEquals(AccessibilityRecoveryPolicy.REPAIR_SECURE_SETTINGS,
+                AccessibilityRecoveryPolicy.decide(true, true, false, true,
+                        true, true, 1000L, Long.MAX_VALUE));
+    }
+
     @Test public void missingAuthorizationRepairsOnlyAfterPriorOptInAndSecureGrant() {
         assertEquals(AccessibilityRecoveryPolicy.NONE,
                 AccessibilityRecoveryPolicy.decide(true, true, false, false,
