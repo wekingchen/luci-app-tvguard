@@ -32,6 +32,7 @@ public final class MainActivity extends Activity {
     private TextView bridgeStatus;
     private TextView endpointDisplay;
     private TextView remoteDebug;
+    private boolean initialFocusApplied;
 
     private final Runnable refresh = new Runnable() {
         @Override
@@ -163,10 +164,25 @@ public final class MainActivity extends Activity {
         addText(panel, "UI 结构观察不读取/上传文字内容，只统计结构并生成摘要；只有经过人工标注学习、稳定且无冲突的画像，才可辅助确认暂停免计时。", 12, 0xFFB8C9D5);
         addText(panel, "无障碍已授权但掉线时会由 JobScheduler 自动尝试重新绑定；若额外授予 WRITE_SECURE_SETTINGS，仅补回 TVGuard 自身条目并保留其他系统无障碍服务。", 12, 0xFFB8C9D5);
         setContentView(scroller);
-        // First-launch focus always lands on the only button needed for pairing.
-        // The user does not need TV text input or DPAD_DOWN to begin.
+        // Ask immediately, then reinforce once the Activity window actually
+        // receives input focus. Android 6 can drop an onCreate-time focus request
+        // while the window is still attaching.
         autoPairButton.requestFocusFromTouch();
         autoPairButton.requestFocus();
+    }
+
+    @Override
+    public void onWindowFocusChanged(boolean hasFocus) {
+        super.onWindowFocusChanged(hasFocus);
+        if (hasFocus && !initialFocusApplied && autoPairButton != null) {
+            initialFocusApplied = true;
+            autoPairButton.post(new Runnable() {
+                @Override public void run() {
+                    autoPairButton.requestFocusFromTouch();
+                    autoPairButton.requestFocus();
+                }
+            });
+        }
     }
 
     private void styleActionButton(Button button) {
