@@ -169,6 +169,20 @@ public final class MainActivity extends Activity {
         // while the window is still attaching.
         autoPairButton.requestFocusFromTouch();
         autoPairButton.requestFocus();
+        // Some Android 6 builds attach the decor window after onCreate and can
+        // discard an early focus request. Re-assert the default pairing action
+        // once the view is attached; never steal focus if another action
+        // already owns it.
+        autoPairButton.postDelayed(new Runnable() {
+            @Override public void run() {
+                if (toggle.hasFocus() || changeAddressButton.hasFocus()
+                        || autoPairButton.hasFocus() || accessibilityButton.hasFocus()) {
+                    return;
+                }
+                remoteSelectedIndex = 2;
+                autoPairButton.requestFocus();
+            }
+        }, 300L);
     }
 
     @Override
