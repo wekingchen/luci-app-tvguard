@@ -68,6 +68,18 @@ public final class BridgeProtocolTest {
         assertTrue(payload.length() < 1024);
     }
 
+    @Test public void uiEvidenceMustMatchForegroundAndStayFresh() {
+        String fp = "0123456789abcdef0123456789abcdef";
+        assertTrue(BridgeProtocol.usableUi("com.example.video",
+                "com.example.video", 19999L, fp));
+        assertFalse(BridgeProtocol.usableUi("com.example.video",
+                "com.example.other", 100L, fp));
+        assertFalse(BridgeProtocol.usableUi("com.example.video",
+                "com.example.video", 20001L, fp));
+        assertFalse(BridgeProtocol.usableUi("com.example.video",
+                "com.example.video", 100L, "none"));
+    }
+
     @Test public void maliciousCharactersAndLongNamesSanitized() {
         StringBuilder sb = new StringBuilder();
         for(int i=0;i<999;i++) sb.append('A');
