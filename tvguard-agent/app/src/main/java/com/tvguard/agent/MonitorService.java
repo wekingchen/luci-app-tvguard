@@ -208,11 +208,20 @@ public final class MonitorService extends Service {
                         UiStructureAccessibilityService.snapshot();
                 long uiAgeMs = ui.sampledMs == 0L ? 0L :
                         Math.max(0L, now - ui.sampledMs);
+                boolean usableUi = BridgeProtocol.usableUi(
+                        pkg, ui.packageName, uiAgeMs, ui.fingerprint);
+                String reportUiPackage = usableUi ? ui.packageName : "none";
+                long reportUiAgeMs = usableUi ? uiAgeMs : 0L;
+                int reportUiNodes = usableUi ? ui.nodeCount : 0;
+                int reportUiClickable = usableUi ? ui.clickableCount : 0;
+                int reportUiFocused = usableUi ? ui.focusedCount : 0;
+                int reportUiIds = usableUi ? ui.viewIdCount : 0;
+                String reportUiFingerprint = usableUi ? ui.fingerprint : "none";
                 BridgeClient.maybeSend(MonitorService.this, pkg, cls,
                         activeAudio, screenOn, now, sample.usageAccess, source, status,
-                        activityTrail, ui.packageName, uiAgeMs, ui.nodeCount,
-                        ui.clickableCount, ui.focusedCount, ui.viewIdCount,
-                        ui.fingerprint);
+                        activityTrail, reportUiPackage, reportUiAgeMs, reportUiNodes,
+                        reportUiClickable, reportUiFocused, reportUiIds,
+                        reportUiFingerprint);
             } catch (RuntimeException e) {
                 BridgeClient.markUplinkError("本地上报异常：" +
                         e.getClass().getSimpleName());
