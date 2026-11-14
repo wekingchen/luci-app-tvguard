@@ -158,6 +158,9 @@ assert "ActivityNotFoundException" in main_activity
 assert "系统未提供无障碍设置入口" in main_activity
 assert "TvAddressEditor.show" in main_activity
 assert "autoPair(MainActivity.this" in main_activity
+assert "public void onWindowFocusChanged(boolean hasFocus)" in main_activity
+assert "initialFocusApplied" in main_activity
+assert "autoPairButton.post(new Runnable()" in main_activity
 assert "EditText" not in main_activity
 assert "GridLayout" in editor and "清空" in editor
 accessibility_recovery = (src / "java/com/tvguard/agent/AccessibilityRecovery.java").read_text()
