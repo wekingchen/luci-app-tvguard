@@ -7,6 +7,7 @@ src = root / "app/src/main"
 manifest = (src / "AndroidManifest.xml").read_text()
 assert "android.permission.PACKAGE_USAGE_STATS" in manifest
 assert "android.permission.RECEIVE_BOOT_COMPLETED" in manifest
+assert "android.permission.WRITE_SECURE_SETTINGS" in manifest
 assert "android.permission.INTERNET" in manifest
 assert 'android:usesCleartextTraffic="true"' in manifest
 assert 'android:allowBackup="false"' in manifest
@@ -34,8 +35,8 @@ assert "startForeground(" not in service
 assert "stopForeground(" not in service
 assert "static boolean isRunning()" in service
 gradle = (root / "app/build.gradle").read_text()
-assert "versionCode 12" in gradle
-assert "versionName '0.2.9'" in gradle
+assert "versionCode 19" in gradle
+assert "versionName '0.3.6'" in gradle
 
 main_activity = (src / "java/com/tvguard/agent/MainActivity.java").read_text()
 assert "不维护视频 App 白名单" in main_activity
@@ -75,7 +76,7 @@ assert "SharedPreferences.Editor" in service
 assert "editor.commit()" in service
 main_activity = (src / "java/com/tvguard/agent/MainActivity.java").read_text()
 editor = (src / "java/com/tvguard/agent/TvAddressEditor.java").read_text()
-assert "TVGuard 助手 · 0.2.9" in main_activity
+assert "TVGuard 助手 · 0.3.6" in main_activity
 gradle = (root / "app/build.gradle").read_text()
 assert "targetSdk 23" in gradle
 assert "disable 'ExpiredTargetSdkVersion'" in gradle
@@ -106,10 +107,12 @@ assert "RecoveryScheduler.ensureScheduled(context)" in service
 assert "RecoveryScheduler.cancel(context)" in service
 assert "RecoveryScheduler.ensureScheduled(this)" in service
 assert "RecoveryScheduler.ensureScheduled(context)" in boot_receiver
+assert "AccessibilityRecovery.reconcile(context)" in boot_receiver
 assert "Intent.ACTION_MY_PACKAGE_REPLACED" in boot_receiver
 assert "WatchdogReceiver" not in boot_receiver
 assert "RecoveryScheduler.scheduleNextFast(this, params.getJobId())" in recovery_job
 assert "RecoveryScheduler.ensureFastScheduled(this)" in recovery_job
+assert "AccessibilityRecovery.reconcile(this)" in recovery_job
 assert "if (!MonitorService.isRunning())" in recovery_job
 assert "startService(new Intent(this, MonitorService.class))" in recovery_job
 assert "192.168.101.99" in bridge_client
@@ -117,10 +120,76 @@ assert "PAIR1" in bridge_client
 assert "TOKEN1|" in bridge_client
 protocol = (src / "java/com/tvguard/agent/BridgeProtocol.java").read_text()
 assert '"TVG2|"' in protocol
+assert '"TVG3|"' in protocol
+assert '"TVG4|"' in protocol
+assert "activityTrail" in protocol
+assert "bodyV3" in protocol
+assert "bodyV4" in protocol
 assert "usageAccess" in protocol and "foregroundSource" in protocol
 assert "foregroundStatus" in protocol
+ui_service = (src / "java/com/tvguard/agent/UiStructureAccessibilityService.java").read_text()
+ui_config = (src / "res/xml/tvguard_accessibility_service.xml").read_text()
+assert "UiStructureAccessibilityService" in manifest
+assert "android.permission.BIND_ACCESSIBILITY_SERVICE" in manifest
+assert "canRetrieveWindowContent" in ui_config
+assert "flagReportViewIds" in ui_config
+assert "MAX_NODES = 96" in ui_service
+assert "MAX_DEPTH = 10" in ui_service
+assert "REFRESH_INTERVAL_MS = 5000L" in ui_service
+assert "refreshHandler.postDelayed(refreshTask, REFRESH_INTERVAL_MS)" in ui_service
+assert "refreshHandler.removeCallbacks(refreshTask)" in ui_service
+assert "AccessibilityRecovery.onConnected(this)" in ui_service
+assert "AccessibilityRecovery.onDisconnected()" in ui_service
+assert "public boolean onUnbind(Intent intent)" in ui_service
+assert "refreshHandler.removeCallbacks(refreshTask)" in ui_service
+assert "getViewIdResourceName" in ui_service
+assert "getText(" not in ui_service
+assert "getContentDescription(" not in ui_service
+assert "SharedPreferences" not in ui_service
+assert "SQLite" not in ui_service
+assert "java.io.File" not in ui_service
+assert "android.util.Log" not in ui_service
+assert "AccessibilityRecovery.reconcile(MonitorService.this)" in service
+assert "UiStructureAccessibilityService.snapshot()" in service
+assert "uiFingerprint" in bridge_client
+assert "Settings.ACTION_ACCESSIBILITY_SETTINGS" in main_activity
+assert "resolveActivity(intent, PackageManager.MATCH_DEFAULT_ONLY)" in main_activity
+assert "ActivityNotFoundException" in main_activity
+assert "系统未提供无障碍设置入口" in main_activity
 assert "TvAddressEditor.show" in main_activity
 assert "autoPair(MainActivity.this" in main_activity
+assert "public void onWindowFocusChanged(boolean hasFocus)" in main_activity
+assert "initialFocusApplied" in main_activity
+assert "autoPairButton.post(new Runnable()" in main_activity
 assert "EditText" not in main_activity
 assert "GridLayout" in editor and "清空" in editor
+accessibility_recovery = (src / "java/com/tvguard/agent/AccessibilityRecovery.java").read_text()
+recovery_policy = (src / "java/com/tvguard/agent/AccessibilityRecoveryPolicy.java").read_text()
+assert "KEY_MANAGED = \"ui_recovery_managed\"" in accessibility_recovery
+assert "ENABLED_ACCESSIBILITY_SERVICES" in accessibility_recovery
+assert "ACCESSIBILITY_ENABLED" in accessibility_recovery
+assert "appendServicePreservingExisting" in accessibility_recovery
+assert "resolver.notifyChange" in accessibility_recovery
+nudge_start = accessibility_recovery.index("private static boolean nudgeFramework")
+nudge_end = accessibility_recovery.index("static String appendServicePreservingExisting", nudge_start)
+nudge_block = accessibility_recovery[nudge_start:nudge_end]
+assert "Settings.Secure.putString" not in nudge_block
+assert "Settings.Secure.putInt" not in nudge_block
+assert "Settings.Secure.putString" in accessibility_recovery[:nudge_start]
+assert "Settings.Secure.putInt" in accessibility_recovery[:nudge_start]
+assert "WRITE_SECURE_SETTINGS" in accessibility_recovery
+assert "REPAIR_SECURE_SETTINGS" in recovery_policy
+assert "if (!monitorEnabled) return NONE;" in recovery_policy
+assert "if (connected) return NONE;" in recovery_policy
+assert recovery_policy.index("if (!globalEnabled || !configured)") < recovery_policy.index("if (connected) return NONE;")
+assert "connected && globalEnabled && configured" in accessibility_recovery
+assert accessibility_recovery.index('if (!isGlobalEnabled(context)) return "global_disabled";') < accessibility_recovery.index('if (UiStructureAccessibilityService.isConnected()) return "connected";')
+assert "BridgeProtocol.usableUi(" in service
+assert 'reportUiPackage = usableUi ? ui.packageName : "none"' in service
+assert "UNBOUND_GRACE_MS = 15000L" in recovery_policy
+assert "NUDGE_COOLDOWN_MS = 30000L" in recovery_policy
+assert "java.io." not in accessibility_recovery
+assert "SQLite" not in accessibility_recovery
+assert "android.util.Log" not in accessibility_recovery
+assert "UI 自动恢复" in main_activity
 print("Agent source guardrails: PASS")

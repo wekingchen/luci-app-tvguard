@@ -27,7 +27,7 @@ case "${1:-status}" in
         esac
         [ -d "$RAM" ] &&
             printf 'ram_path=present\n' || printf 'ram_path=not_yet_created\n'
-        printf 'wire_protocol=TVG1_TVG2\n'
+        printf 'wire_protocol=TVG1_TVG2_TVG3_TVG4\n'
         printf 'core_billing_modified=no\n'
         exit 0 ;;
     pairing)
@@ -35,7 +35,7 @@ case "${1:-status}" in
         exit 0 ;;
     summary)
         if [ ! -s "$RAM/soak-v3.csv" ]; then
-            printf 'schema=v3\nrows=0\nfresh_reports=0\nrepeated_rows=0\nstale_rows=0\ncombined_playing=0\ncombined_paused=0\ncombined_app_home=0\ncombined_system_home=0\ncombined_unknown=0\npause_warming=0\npause_confirmed=0\npause_hold=0\nrecent_play_burst_guard=0\nmedia_idle_overlap_unresolved=0\napp_nonplaying_warming=0\napp_nonplaying_confirmed=0\nunlearned_pause_ignored=0\nagent_restart_reset=0\nbilling_effect=none\n'
+            printf 'schema=v3\nrows=0\nfresh_reports=0\nrepeated_rows=0\nstale_rows=0\ncombined_playing=0\ncombined_paused=0\ncombined_app_home=0\ncombined_system_home=0\ncombined_nonplaying=0\ncombined_unknown=0\npause_warming=0\npause_confirmed=0\npause_hold=0\nrecent_play_burst_guard=0\nmedia_idle_overlap_unresolved=0\napp_nonplaying_warming=0\napp_nonplaying_confirmed=0\ngeneric_nonplaying_warming=0\ngeneric_nonplaying_confirmed=0\nunlearned_pause_ignored=0\nagent_restart_reset=0\nbilling_effect=none\n'
             exit 0
         fi
         awk -F, '
@@ -52,6 +52,7 @@ case "${1:-status}" in
                     else if (state=="paused") paused++
                     else if (state=="app_home") apphome++
                     else if (state=="system_home") syshome++
+                    else if (state=="nonplaying") nonplaying++
                     else unknown++
 
                     if (candidate=="pause_candidate_learned_context") warming++
@@ -61,6 +62,8 @@ case "${1:-status}" in
                     else if (candidate=="learned_media_idle_overlap_unresolved") idleoverlap++
                     else if (candidate=="app_nonplaying_warming") appwarm++
                     else if (candidate=="app_nonplaying_confirmed") appconfirmed++
+                    else if (candidate=="nonplaying_audio_profile_warming") genericwarm++
+                    else if (candidate=="nonplaying_confirmed_learned_audio_context") genericconfirmed++
                     else if (candidate=="unlearned_context_pause_hint_ignored" ||
                              candidate=="unlearned_package_pause_hint_ignored") ignored++
                     else if (candidate=="agent_process_restart_context_reset") restart++
@@ -77,6 +80,7 @@ case "${1:-status}" in
                 print "combined_paused=" paused+0
                 print "combined_app_home=" apphome+0
                 print "combined_system_home=" syshome+0
+                print "combined_nonplaying=" nonplaying+0
                 print "combined_unknown=" unknown+0
                 print "pause_warming=" warming+0
                 print "pause_confirmed=" confirmed+0
@@ -85,6 +89,8 @@ case "${1:-status}" in
                 print "media_idle_overlap_unresolved=" idleoverlap+0
                 print "app_nonplaying_warming=" appwarm+0
                 print "app_nonplaying_confirmed=" appconfirmed+0
+                print "generic_nonplaying_warming=" genericwarm+0
+                print "generic_nonplaying_confirmed=" genericconfirmed+0
                 print "unlearned_pause_ignored=" ignored+0
                 print "agent_restart_reset=" restart+0
                 print "last_sample_epoch=" last_epoch+0
@@ -116,10 +122,26 @@ esac
 usage_access=legacy
 foreground_source=legacy
 foreground_status=legacy
-IFS='|' read -r seen pkg activity audio screen client_ms seq usage_access foreground_source foreground_status < "$LATEST" || :
+activity_trail=none
+ui_package=none
+ui_age_ms=0
+ui_nodes=0
+ui_clickable=0
+ui_focused=0
+ui_ids=0
+ui_fingerprint=none
+IFS='|' read -r seen pkg activity audio screen client_ms seq usage_access foreground_source foreground_status activity_trail ui_package ui_age_ms ui_nodes ui_clickable ui_focused ui_ids ui_fingerprint < "$LATEST" || :
 usage_access="${usage_access:-legacy}"
 foreground_source="${foreground_source:-legacy}"
 foreground_status="${foreground_status:-legacy}"
+activity_trail="${activity_trail:-none}"
+ui_package="${ui_package:-none}"
+ui_age_ms="${ui_age_ms:-0}"
+ui_nodes="${ui_nodes:-0}"
+ui_clickable="${ui_clickable:-0}"
+ui_focused="${ui_focused:-0}"
+ui_ids="${ui_ids:-0}"
+ui_fingerprint="${ui_fingerprint:-none}"
 case "${seen:-}" in ''|*[!0-9]*) echo 'agent=invalid'; exit 0 ;; esac
 now="$(date +%s)"
 age=$((now - seen))
@@ -185,7 +207,7 @@ elif [ -x "$FUSION" ]; then
         "$pause_hint" "$pause_score" "$active_floor" 2>/dev/null || echo 'unknown fusion_error 0')"
     set -- $fusion
     if [ "$#" -eq 3 ]; then
-        case "$1" in playing|paused|app_home|system_home|unknown) combined="$1" ;; esac
+        case "$1" in playing|paused|app_home|system_home|nonplaying|unknown) combined="$1" ;; esac
         case "$2" in ''|*[!A-Za-z0-9_]*) candidate=fusion_invalid ;; *) candidate="$2" ;; esac
         case "$3" in ''|*[!0-9]*) fusion_streak=0 ;; *) fusion_streak="$3" ;; esac
     else
@@ -195,9 +217,10 @@ else
     candidate=fusion_missing
 fi
 
-printf 'agent=online\nage_seconds=%s\nreceived_epoch=%s\nreport_seq=%s\nclient_epoch_ms=%s\npackage=%s\nactivity=%s\naudio_active=%s\nscreen_on=%s\nusage_access=%s\nforeground_source=%s\nforeground_status=%s\nnetwork_pps=%s\nnetwork_shadow=%s\nadaptive_state=%s\nadaptive_score=%s\nadaptive_reason=%s\npause_hint=%s\npause_score=%s\nadaptive_p50=%s\nadaptive_p90=%s\nadaptive_active_floor=%s\ncombined_state=%s\ncombined_candidate=%s\nfusion_pause_streak=%s\nbilling_effect=none\n' \
+printf 'agent=online\nage_seconds=%s\nreceived_epoch=%s\nreport_seq=%s\nclient_epoch_ms=%s\npackage=%s\nactivity=%s\naudio_active=%s\nscreen_on=%s\nusage_access=%s\nforeground_source=%s\nforeground_status=%s\nrecent_activity_trail=%s\nui_package=%s\nui_age_ms=%s\nui_node_count=%s\nui_clickable_count=%s\nui_focused_count=%s\nui_view_id_count=%s\nui_structure_fingerprint=%s\nnetwork_pps=%s\nnetwork_shadow=%s\nadaptive_state=%s\nadaptive_score=%s\nadaptive_reason=%s\npause_hint=%s\npause_score=%s\nadaptive_p50=%s\nadaptive_p90=%s\nadaptive_active_floor=%s\ncombined_state=%s\ncombined_candidate=%s\nfusion_pause_streak=%s\nbilling_effect=none\n' \
    "$age" "$seen" "$seq" "$client_ms" "$pkg" "$activity" "$audio" "$screen" \
-   "$usage_access" "$foreground_source" "$foreground_status" \
+   "$usage_access" "$foreground_source" "$foreground_status" "$activity_trail" \
+   "$ui_package" "$ui_age_ms" "$ui_nodes" "$ui_clickable" "$ui_focused" "$ui_ids" "$ui_fingerprint" \
    "$network_pps" "$shadow" "$adaptive_state" "$adaptive_score" "$adaptive_reason" \
    "$pause_hint" "$pause_score" "$adaptive_p50" "$adaptive_p90" "$active_floor" \
    "$combined" "$candidate" "$fusion_streak"

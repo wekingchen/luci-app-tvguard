@@ -14,6 +14,7 @@ public final class BootReceiver extends BroadcastReceiver {
         if (recoveryEvent && MonitorService.isEnabled(context)) {
             context.startService(new Intent(context, MonitorService.class));
             RecoveryScheduler.ensureScheduled(context);
+            AccessibilityRecovery.reconcile(context);
         }
     }
 }

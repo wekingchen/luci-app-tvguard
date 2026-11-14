@@ -25,6 +25,7 @@ public final class RecoveryJobService extends JobService {
             RecoveryScheduler.scheduleNextFast(this, params.getJobId());
         }
 
+        AccessibilityRecovery.reconcile(this);
         if (!MonitorService.isRunning()) {
             startService(new Intent(this, MonitorService.class));
         }

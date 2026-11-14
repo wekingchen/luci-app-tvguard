@@ -32,6 +32,54 @@ public final class BridgeProtocolTest {
                         "com.gala.video.app.player.PlayerActivity",true,true,123456789L,
                         "allowed","usage_events","full_context"));
     }
+    @Test public void tvg3AddsBoundedSamePackageActivityTrail() {
+        ForegroundActivityHistory.Event[] timeline = new ForegroundActivityHistory.Event[] {
+                new ForegroundActivityHistory.Event("com.gitvdemo.video",
+                        "com.gala.video.plugincenter.component.InstrActivityProxy0", 40),
+                new ForegroundActivityHistory.Event("com.gitvdemo.video",
+                        "com.gala.video.app.player.PlayerActivity", 30),
+                new ForegroundActivityHistory.Event("com.gitvdemo.video",
+                        "com.gala.video.plugincenter.component.InstrActivityProxy0", 20),
+                new ForegroundActivityHistory.Event("other.pkg",
+                        "other.pkg.NoiseActivity", 10)
+        };
+        String trail = BridgeProtocol.activityTrail(timeline, "com.gitvdemo.video");
+        assertEquals("com.gala.video.plugincenter.component.InstrActivityProxy0~"
+                + "com.gala.video.app.player.PlayerActivity~"
+                + "com.gala.video.plugincenter.component.InstrActivityProxy0", trail);
+        String payload = BridgeProtocol.bodyV3(KEY, 6, "com.gitvdemo.video",
+                "com.gala.video.plugincenter.component.InstrActivityProxy0",
+                true, true, 123456790L, "allowed", "usage_events", "full_context", trail);
+        assertTrue(payload.startsWith("TVG3|" + KEY + "|6|"));
+        assertTrue(payload.contains("|allowed|usage_events|full_context|" + trail + "\n"));
+        assertTrue(payload.length() < 768);
+    }
+
+    @Test public void tvg4AddsUiStructureDiagnosticsWithoutText() {
+        String payload = BridgeProtocol.bodyV4(KEY, 7, "com.example.video",
+                "com.example.video.PlayerActivity", true, true, 123456791L,
+                "allowed", "usage_events", "full_context", "none",
+                "com.example.video", 250L, 27, 12, 1, 6,
+                "0123456789abcdef0123456789abcdef");
+        assertTrue(payload.startsWith("TVG4|" + KEY + "|7|"));
+        assertTrue(payload.contains("|com.example.video|250|27|12|1|6|"
+                + "0123456789abcdef0123456789abcdef\n"));
+        assertFalse(payload.contains("subtitle"));
+        assertTrue(payload.length() < 1024);
+    }
+
+    @Test public void uiEvidenceMustMatchForegroundAndStayFresh() {
+        String fp = "0123456789abcdef0123456789abcdef";
+        assertTrue(BridgeProtocol.usableUi("com.example.video",
+                "com.example.video", 19999L, fp));
+        assertFalse(BridgeProtocol.usableUi("com.example.video",
+                "com.example.other", 100L, fp));
+        assertFalse(BridgeProtocol.usableUi("com.example.video",
+                "com.example.video", 20001L, fp));
+        assertFalse(BridgeProtocol.usableUi("com.example.video",
+                "com.example.video", 100L, "none"));
+    }
+
     @Test public void maliciousCharactersAndLongNamesSanitized() {
         StringBuilder sb = new StringBuilder();
         for(int i=0;i<999;i++) sb.append('A');

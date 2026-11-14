@@ -1,9 +1,17 @@
 # TV Guard · 家庭电视时间管理
-## v0.1.14-r7 · Agent 联合学习 + 更快暂停确认（开发候选）
+## v0.1.15-r1 · 多 App 泛化：共享上下文 generic nonplaying（开发候选）
+
+- 新增 Type-D shared-context profile：只有同一 exact package+Activity 下同时存在 high/joint-high 的 playing + paused + app_home 三类人工会话，且 playing audio 高、paused/app_home audio 低并强分离时，才启用 generic nonplaying。
+- Type D 下 audio=1 直接确认 playing；audio=0 第 1 个 fresh report 继续 charge，第 2 个 fresh report 才确认 `nonplaying` 并正式免计。网络即使表现 active/high PPS 也不能单独覆盖这份三态人工真值。
+- `nonplaying` 是诚实的计费语义：系统知道“当前不是播放”，但不伪造 paused 或 app_home。UI 显示“已确认非播放 · 已暂停计时”。
+- 腾讯极光真机已完成三态 180 秒学习：三态均为 `com.ktcp.video / HomeSingleTaskActivity`、上下文稳定 100%、joint=high；playing audio=100%，paused=5%，app_home=0%。静音继续播放连续 5 个 fresh report 仍 audio=1。
+- r7 的芒果 Type-A playing/paused profile 保持不变；Type-D 只在同 exact context 存在高可信 app_home 冲突时启用，不用品牌/App 白名单。
+
+## v0.1.14-r7 · Agent 联合学习 + 更快暂停确认（稳定基线）
 
 - N1 只安装 `luci-app-tvguard_0.1.14-7_all.ipk`，已包含 CGI、Fusion、billing hint、配对、观察报告和 bridge 服务；电视继续使用同一签名的 0.2.9 Agent APK（versionCode 12）。
 - r6 把 r4 已采集的 Agent 联合特征真正写入可复用学习模型：在原 18 列 `learning-sessions.csv` 后追加 joint quality、Agent 覆盖率、dominant package/Activity、audio/screen 比例和前台切换次数；旧 18 列历史行继续兼容，但不会获得新的 Agent 暂停授权。
-- 只有人工标注的 playing 与 paused 会话在**同一 exact package+Activity** 下均为高可信联合样本，且音频活跃率存在强分离（playing 高、paused 低）时，Fusion 才启用 learned-audio profile。此时 audio=0 需连续 3 个新 Agent 心跳才确认 paused；网络即使突然升到高 PPS 也不能覆盖该人工学习出的暂停证据。audio=1 则立即恢复 playing，并保护 576p/720p 低码率播放不因低 PPS 漏计。
+- 只有人工标注的 playing 与 paused 会话在**同一 exact package+Activity** 下均为高可信联合样本，且音频活跃率存在强分离（playing 高、paused 低）时，Fusion 才启用 learned-audio profile。此时 audio=0 需连续 2 个新 Agent 心跳才确认 paused；网络即使突然升到高 PPS 也不能覆盖该人工学习出的暂停证据。audio=1 则立即恢复 playing，并保护 576p/720p 低码率播放不因低 PPS 漏计。
 - app_home / system_home 仍要求 fresh + full_context；package-only / unknown Activity 永远不能授予首页或暂停免计时。没有成对高可信 Agent 样本时，继续走原有保守网络/Fusion 路径，不把 audio=0 写死成暂停。
 - 2026-11-12 小米电视 + 芒果 TV 真机已确认四态上下文：播放/暂停同为 `com.hunantv.license / com.mgtv.tv.vod.activity.VodDynamicActivity`，区别为 audio 1/0；App 首页为 `com.mgtv.tv.launcher.ChannelHomeActivity`；系统首页为 `com.mitv.tvhome / com.mitv.tvhome.NewMyAppActivity`。r6 用这些现象验证“学习特征设计”，代码本身不包含芒果包名或 Activity 白名单。
 - r5 的 Bridge clean-stop 修复与 r4 的 TVG2 前台诊断全部保留。
@@ -50,7 +58,7 @@
 **v0.1.14-r7 正式计时规则（继续沿用严格免计时门槛）：**
 - fresh Agent + Fusion 明确 `system_home` → `idle_verified/system_home`，不扣儿童时间；
 - fresh Agent + Fusion 明确 `app_home` → `idle_verified/app_home`，不扣儿童时间；
-- Fusion 当前明确 `paused_confirmed_learned_context`，或 exact context 的成对高可信人工 playing/paused 会话学出 audio profile 后连续 3 个新心跳得到 `paused_confirmed_learned_audio_context` → `idle_verified/paused`，不扣儿童时间；
+- Fusion 当前明确 `paused_confirmed_learned_context`，或 exact context 的成对高可信人工 playing/paused 会话学出 audio profile 后连续 2 个新心跳得到 `paused_confirmed_learned_audio_context` → `idle_verified/paused`，不扣儿童时间；
 - `paused_temporal_hold`、普通 pause hint、`stable_low/idle_overlap`、`playing / unknown / ambiguous` → 有网络活动时继续 `charge`；
 - Agent missing/stale/invalid 或 bridge 异常 → fail-closed，继续计时；
 - Bridge/Fusion 继续防止 App 首页加载突发覆盖已学习的播放器 Activity；新 Activity 必须连续 3 次 strong-play 才能晋升为播放上下文；package-only/unknown Activity 永远不能产生首页或暂停免计时；

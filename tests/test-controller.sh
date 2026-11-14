@@ -88,6 +88,7 @@ case "${TVGUARD_TEST_AGENT_BILLING:-charge}" in
     system_home) echo 'free system_home' ;;
     app_home) echo 'free app_home' ;;
     paused) echo 'free paused' ;;
+    nonplaying) echo 'free nonplaying' ;;
     playing) echo 'charge playing' ;;
     *) echo 'charge unknown' ;;
 esac
@@ -318,6 +319,10 @@ check 'assert s["server_epoch"] > 0'
 check 'assert s["agent_state"] == "fresh" and s["agent_package"] == "com.example.video", s'
 check 'assert s["agent_activity"] == "com.example.video.PlayerActivity" and s["agent_audio_active"] == 1 and s["agent_screen_on"] == 1, s'
 check 'assert s["agent_report_seq"] == 41 and 0 <= s["agent_age_seconds"] <= 20, s'
+check 'assert s["agent_activity_trail"] == "none", s'
+check 'assert s["agent_ui_package"] == "none" and s["agent_ui_age_ms"] == 0, s'
+check 'assert s["agent_ui_node_count"] == 0 and s["agent_ui_clickable_count"] == 0 and s["agent_ui_focused_count"] == 0 and s["agent_ui_view_id_count"] == 0, s'
+check 'assert s["agent_ui_structure_fingerprint"] == "none", s'
 if sh "$CTL" calibrate paused tencent > "$TMP/out" 2>&1; then
     echo "FAIL: a new session replaced an active calibration" >&2
     exit 1
@@ -325,7 +330,7 @@ fi
 test -s "$TMP/state/calibration-v3.csv"
 grep -q ',playing,tencent,' "$TMP/state/calibration-v3.csv"
 test -s "$TMP/state/calibration-v5.csv"
-awk -F, 'NF!=18 {exit 1} $3=="playing" && $4=="fresh" && $6=="com.example.video" && $7=="com.example.video.PlayerActivity" && $8==1 && $9==1 && $10==41 && $15=="legacy" && $16=="legacy" && $17=="legacy" && $18=="full" {found=1} END {exit !found}' "$TMP/state/calibration-v5.csv"
+awk -F, 'NF!=26 {exit 1} $3=="playing" && $4=="fresh" && $6=="com.example.video" && $7=="com.example.video.PlayerActivity" && $8==1 && $9==1 && $10==41 && $15=="legacy" && $16=="legacy" && $17=="legacy" && $18=="full" && $19=="none" && $20=="none" && $21==0 && $22==0 && $23==0 && $24==0 && $25==0 && $26=="none" {found=1} END {exit !found}' "$TMP/state/calibration-v5.csv"
 sh "$CTL" calibration-v5 | grep -q ',playing,fresh,'
 # Reply observer is disabled here: never manufacture directional zeros.
 [ ! -e "$TMP/state/calibration-v4.csv" ]
@@ -602,6 +607,27 @@ status
 after_paused="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["used_seconds"])' "$TMP/status.json")"
 [ "$after_paused" = "$after_app_home" ]
 check 'assert s["billing_state"]=="idle_verified" and s["idle_reason"]=="paused", s'
+
+# Three-state learned shared-context nonplaying is also a narrow exemption.
+export TVGUARD_TEST_AGENT_BILLING=nonplaying
+python3 - "$TMP/run/runtime" <<'PY'
+from pathlib import Path
+import sys,time
+p=Path(sys.argv[1])
+lines=p.read_text().splitlines()
+now=int(time.time())
+p.write_text('\n'.join(
+    'LAST_EPOCH='+str(now-10) if line.startswith('LAST_EPOCH=') else line
+    for line in lines
+)+'\n')
+PY
+set -- $(cat "$TMP/sample")
+echo "$(($1 + 220)) $(($2 + 44000)) $(($3 + 20)) $(($4 + 4000)) $(($5 + 200)) $(($6 + 40000))" > "$TMP/sample"
+sh "$CTL" tick
+status
+after_nonplaying="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["used_seconds"])' "$TMP/status.json")"
+[ "$after_nonplaying" = "$after_paused" ]
+check 'assert s["billing_state"]=="idle_verified" and s["idle_reason"]=="nonplaying", s'
 export TVGUARD_TEST_AGENT_BILLING=charge
 
 # Keep the previous smart-idle state machine covered as dormant code. Tests may

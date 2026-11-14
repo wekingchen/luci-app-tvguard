@@ -40,7 +40,7 @@ jobs:
         run: python3 bridge/tests/test_http_bridge.py
       - name: Verify conservative home-only billing hint
         run: python3 bridge/tests/test_billing_hint.py
-      - name: Verify v0.2.8 generic learned-context fusion
+      - name: Verify generic learned-context fusion
         run: python3 bridge/tests/test_fusion.py
       - name: Lock low-bitrate and shared-Activity regression matrix
         run: python3 bridge/tests/test_fusion_matrix.py
@@ -53,9 +53,9 @@ jobs:
       - name: Package integrated TVGuard + Bridge (no companion IPK)
         run: |
           set -euo pipefail
-          sh scripts/build-ipk.sh 0.1.14 1
-          PKG=dist/luci-app-tvguard_0.1.14-1_all.ipk
-          python3 scripts/verify-ipk.py "$PKG" 0.1.14 1
+          sh scripts/build-ipk.sh 0.1.15 4
+          PKG=dist/luci-app-tvguard_0.1.15-4_all.ipk
+          python3 scripts/verify-ipk.py "$PKG" 0.1.15 4
           tar -xOzf "$PKG" ./data.tar.gz | tar -tzf - > /tmp/tvguard-integrated-filelist
           grep -Fxq './www/cgi-bin/tvguard-agent' /tmp/tvguard-integrated-filelist
           grep -Fxq './usr/libexec/tvguard-agent-bridge-setup' /tmp/tvguard-integrated-filelist

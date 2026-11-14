@@ -170,7 +170,7 @@ load_state() {
     case "$PREV_DATE" in none|[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]) :;; *) PREV_DATE=none;; esac
     case "$MODE" in child|parent|locked) :;; *) MODE=locked;; esac
     case "$BILLING_STATE" in charge|idle_verified|idle_grace|idle_silent) :;; *) BILLING_STATE=charge;; esac
-    case "$IDLE_REASON" in none|system_home|idle|paused|app_home|adaptive|silent) :;; *) IDLE_REASON=none;; esac
+    case "$IDLE_REASON" in none|system_home|idle|paused|app_home|nonplaying|adaptive|silent) :;; *) IDLE_REASON=none;; esac
     case "$ADAPTIVE_STATE" in unready|warming|idle|active|ambiguous) :;; *) ADAPTIVE_STATE=unready;; esac
     case "$ADAPTIVE_SCORE" in ''|*[!0-9]*) ADAPTIVE_SCORE=0;; esac
     case "$ADAPTIVE_WINDOWS" in ''|*[!0-9]*) ADAPTIVE_WINDOWS=0;; esac
@@ -344,6 +344,14 @@ read_agent_context() {
     AGENT_SAMPLE_USAGE_ACCESS=legacy
     AGENT_SAMPLE_FOREGROUND_SOURCE=legacy
     AGENT_SAMPLE_FOREGROUND_STATUS=legacy
+    AGENT_SAMPLE_ACTIVITY_TRAIL=none
+    AGENT_SAMPLE_UI_PACKAGE=none
+    AGENT_SAMPLE_UI_AGE_MS=0
+    AGENT_SAMPLE_UI_NODES=0
+    AGENT_SAMPLE_UI_CLICKABLE=0
+    AGENT_SAMPLE_UI_FOCUSED=0
+    AGENT_SAMPLE_UI_IDS=0
+    AGENT_SAMPLE_UI_FINGERPRINT=none
     AGENT_CONTEXT_QUALITY=unknown
 
     [ -r "$AGENT_LATEST" ] || return 0
@@ -357,14 +365,30 @@ read_agent_context() {
     usage_access=legacy
     foreground_source=legacy
     foreground_status=legacy
-    IFS='|' read -r seen pkg activity audio screen client_ms seq usage_access foreground_source foreground_status < "$AGENT_LATEST" || {
+    activity_trail=none
+    ui_package=none
+    ui_age_ms=0
+    ui_nodes=0
+    ui_clickable=0
+    ui_focused=0
+    ui_ids=0
+    ui_fingerprint=none
+    IFS='|' read -r seen pkg activity audio screen client_ms seq usage_access foreground_source foreground_status activity_trail ui_package ui_age_ms ui_nodes ui_clickable ui_focused ui_ids ui_fingerprint < "$AGENT_LATEST" || {
         AGENT_SAMPLE_STATE=invalid
         return 0
     }
     usage_access="${usage_access:-legacy}"
     foreground_source="${foreground_source:-legacy}"
     foreground_status="${foreground_status:-legacy}"
-    for n in "$seen" "$seq" "$audio" "$screen"; do
+    activity_trail="${activity_trail:-none}"
+    ui_package="${ui_package:-none}"
+    ui_age_ms="${ui_age_ms:-0}"
+    ui_nodes="${ui_nodes:-0}"
+    ui_clickable="${ui_clickable:-0}"
+    ui_focused="${ui_focused:-0}"
+    ui_ids="${ui_ids:-0}"
+    ui_fingerprint="${ui_fingerprint:-none}"
+    for n in "$seen" "$seq" "$audio" "$screen" "$ui_age_ms" "$ui_nodes" "$ui_clickable" "$ui_focused" "$ui_ids"; do
         case "$n" in ''|*[!0-9]*) AGENT_SAMPLE_STATE=invalid; return 0;; esac
     done
     case "$audio:$screen" in 0:0|0:1|1:0|1:1) :;; *) AGENT_SAMPLE_STATE=invalid; return 0;; esac
@@ -378,6 +402,15 @@ read_agent_context() {
     for diag in "$usage_access" "$foreground_source" "$foreground_status"; do
         case "$diag" in ''|*[!A-Za-z0-9._]*) AGENT_SAMPLE_STATE=invalid; return 0;; esac
     done
+    case "$activity_trail" in ''|*[!A-Za-z0-9._~\$]*) AGENT_SAMPLE_STATE=invalid; return 0;; esac
+    [ "${#activity_trail}" -le 240 ] || { AGENT_SAMPLE_STATE=invalid; return 0; }
+    case "$ui_package" in ''|*[!A-Za-z0-9._]*) AGENT_SAMPLE_STATE=invalid; return 0;; esac
+    [ "${#ui_package}" -le 128 ] || { AGENT_SAMPLE_STATE=invalid; return 0; }
+    case "$ui_fingerprint" in
+        none) : ;;
+        *[!0-9a-f]*|'') AGENT_SAMPLE_STATE=invalid; return 0 ;;
+        *) [ "${#ui_fingerprint}" -eq 32 ] || { AGENT_SAMPLE_STATE=invalid; return 0; } ;;
+    esac
 
     age=$((NOW - seen))
     if [ "$age" -lt 0 ]; then
@@ -399,6 +432,14 @@ read_agent_context() {
     AGENT_SAMPLE_USAGE_ACCESS="$usage_access"
     AGENT_SAMPLE_FOREGROUND_SOURCE="$foreground_source"
     AGENT_SAMPLE_FOREGROUND_STATUS="$foreground_status"
+    AGENT_SAMPLE_ACTIVITY_TRAIL="$activity_trail"
+    AGENT_SAMPLE_UI_PACKAGE="$ui_package"
+    AGENT_SAMPLE_UI_AGE_MS="$ui_age_ms"
+    AGENT_SAMPLE_UI_NODES="$ui_nodes"
+    AGENT_SAMPLE_UI_CLICKABLE="$ui_clickable"
+    AGENT_SAMPLE_UI_FOCUSED="$ui_focused"
+    AGENT_SAMPLE_UI_IDS="$ui_ids"
+    AGENT_SAMPLE_UI_FINGERPRINT="$ui_fingerprint"
     if [ "$pkg" != unknown ] && [ "$activity" != unknown ]; then
         AGENT_CONTEXT_QUALITY=full
     elif [ "$pkg" != unknown ]; then
@@ -749,7 +790,8 @@ tick() {
     # Conservative formal billing:
     # - true network silence remains free as before;
     # - a fresh Agent bridge may grant free time for explicit system_home /
-    #   app_home, plus only the Fusion state paused_confirmed_learned_context;
+    #   app_home, strictly-confirmed paused, or a three-state learned generic
+    #   nonplaying state when paused/app_home share one exact context;
     # - playing, unknown, ambiguous, stale/missing Agent, malformed hints and
     #   non-confirmed pause holds remain chargeable.
     #
@@ -763,7 +805,7 @@ tick() {
         set -- $home_hint
         if [ "$#" -eq 2 ] && [ "$1" = free ]; then
             case "$2" in
-                system_home|app_home|paused) HOME_FREE_REASON="$2" ;;
+                system_home|app_home|paused|nonplaying) HOME_FREE_REASON="$2" ;;
             esac
         fi
     fi
@@ -923,12 +965,19 @@ tick() {
             fi
             printf '%s,%s,%s,%s,%s,%s,%s,%s\n' "$NOW" "$CAL_SESSION" "$CAL_LABEL" "$sample_app" \
                 "$PPS" "$TCP_PPS" "$UDP_PPS" "$BYTES_PER_S" >> "$DIR/calibration-v3.csv"
-            printf '%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s\n' \
+            # v5 is append-compatible: cols 1..18 are the original Agent/network
+            # joint sample, col 19 is the bounded TVG3 Activity trail, and TVG4
+            # appends cols 20..26 with structure-only UI evidence. Old 18/19-col
+            # rows stay valid; only new rows can qualify for learned UI profiles.
+            printf '%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s\n' \
                 "$NOW" "$CAL_SESSION" "$CAL_LABEL" "$AGENT_SAMPLE_STATE" "$AGENT_SAMPLE_AGE" \
                 "$AGENT_SAMPLE_PKG" "$AGENT_SAMPLE_ACTIVITY" "$AGENT_SAMPLE_AUDIO" \
                 "$AGENT_SAMPLE_SCREEN" "$AGENT_SAMPLE_SEQ" "$PPS" "$TCP_PPS" "$UDP_PPS" \
                 "$BYTES_PER_S" "$AGENT_SAMPLE_USAGE_ACCESS" "$AGENT_SAMPLE_FOREGROUND_SOURCE" \
-                "$AGENT_SAMPLE_FOREGROUND_STATUS" "$AGENT_CONTEXT_QUALITY" >> "$DIR/calibration-v5.csv"
+                "$AGENT_SAMPLE_FOREGROUND_STATUS" "$AGENT_CONTEXT_QUALITY" \
+                "$AGENT_SAMPLE_ACTIVITY_TRAIL" "$AGENT_SAMPLE_UI_PACKAGE" "$AGENT_SAMPLE_UI_AGE_MS" \
+                "$AGENT_SAMPLE_UI_NODES" "$AGENT_SAMPLE_UI_CLICKABLE" "$AGENT_SAMPLE_UI_FOCUSED" \
+                "$AGENT_SAMPLE_UI_IDS" "$AGENT_SAMPLE_UI_FINGERPRINT" >> "$DIR/calibration-v5.csv"
             CAL_SAMPLES=$((CAL_SAMPLES + 1))
             if [ "$(wc -c < "$DIR/calibration-v3.csv")" -gt 262144 ]; then
                 tail -n 1500 "$DIR/calibration-v3.csv" > "$DIR/calibration-v3.tmp"
@@ -1015,6 +1064,7 @@ brief() {
                         idle) billing_name="已暂停（App 首页/暂停已确认）" ;;
                         paused) billing_name="已暂停（暂停已确认）" ;;
                         app_home) billing_name="已暂停（App 首页已确认）" ;;
+                        nonplaying) billing_name="已暂停（非播放已确认）" ;;
                         adaptive) billing_name="已暂停（Adaptive 闲置已确认）" ;;
                         *) billing_name="已暂停（闲置已确认）" ;;
                     esac ;;
@@ -1144,7 +1194,7 @@ status() {
     fi
 
     read_agent_context
-    printf '{"watch_seconds":%s,"previous_day_date":"%s","previous_day_seconds":%s,"date":"%s","mode":"%s","activity":"%s","enforce":%s,"armed":%s,"would_block":%s,"blocked":%s,"firewall_state":"%s","used_seconds":%s,"quota_seconds":%s,"bonus_seconds":%s,"bonus_undo_available":%s,"bonus_limit_seconds":%s,"policy_reason":"%s","remaining_seconds":%s,"parent_until":%s,"last_packet_epoch":%s,"packet_counter":%s,"pps":%s,"tcp_pps":%s,"udp_pps":%s,"bytes_per_second":%s,"reply_observer":"%s","reply_sample_status":"%s","reply_prerouting_pps":%s,"reply_prerouting_bps":%s,"reply_local_pps":%s,"reply_local_bps":%s,"reply_coverage":"unverified","traffic_class":"%s","shadow_label":"%s","shadow_app":"%s","shadow_score":%s,"adaptive_state":"%s","adaptive_score":%s,"adaptive_windows":%s,"adaptive_reason":"%s","adaptive_idle_ceiling":%s,"adaptive_active_floor":%s,"adaptive_window_p50":%s,"adaptive_window_p90":%s,"adaptive_pause_hint":"%s","adaptive_pause_score":%s,"adaptive_bp_p50":%s,"adaptive_bp_p90":%s,"adaptive_active_hits":%s,"adaptive_trend_percent":%s,"billing_state":"%s","idle_reason":"%s","idle_streak_seconds":%s,"idle_grace_seconds":%s,"server_epoch":%s,"agent_state":"%s","agent_age_seconds":%s,"agent_package":"%s","agent_activity":"%s","agent_audio_active":%s,"agent_screen_on":%s,"agent_report_seq":%s,"agent_usage_access":"%s","agent_foreground_source":"%s","agent_foreground_status":"%s","agent_context_quality":"%s","calibration_label":"%s","calibration_app":"%s","calibration_session":"%s","calibration_until":%s,"calibration_started":%s,"calibration_samples":%s,"calibration_duration_seconds":%s,"calibration_phase":"%s","calibration_active":%s,"calibration_elapsed_seconds":%s,"calibration_remaining_seconds":%s,"calibration_percent":%s,"calibration_last_label":"%s","calibration_last_app":"%s","calibration_last_session":"%s","calibration_last_samples":%s,"calibration_last_duration_seconds":%s,"calibration_last_finished":%s,"calibration_last_result":"%s"}\n' \
+    printf '{"watch_seconds":%s,"previous_day_date":"%s","previous_day_seconds":%s,"date":"%s","mode":"%s","activity":"%s","enforce":%s,"armed":%s,"would_block":%s,"blocked":%s,"firewall_state":"%s","used_seconds":%s,"quota_seconds":%s,"bonus_seconds":%s,"bonus_undo_available":%s,"bonus_limit_seconds":%s,"policy_reason":"%s","remaining_seconds":%s,"parent_until":%s,"last_packet_epoch":%s,"packet_counter":%s,"pps":%s,"tcp_pps":%s,"udp_pps":%s,"bytes_per_second":%s,"reply_observer":"%s","reply_sample_status":"%s","reply_prerouting_pps":%s,"reply_prerouting_bps":%s,"reply_local_pps":%s,"reply_local_bps":%s,"reply_coverage":"unverified","traffic_class":"%s","shadow_label":"%s","shadow_app":"%s","shadow_score":%s,"adaptive_state":"%s","adaptive_score":%s,"adaptive_windows":%s,"adaptive_reason":"%s","adaptive_idle_ceiling":%s,"adaptive_active_floor":%s,"adaptive_window_p50":%s,"adaptive_window_p90":%s,"adaptive_pause_hint":"%s","adaptive_pause_score":%s,"adaptive_bp_p50":%s,"adaptive_bp_p90":%s,"adaptive_active_hits":%s,"adaptive_trend_percent":%s,"billing_state":"%s","idle_reason":"%s","idle_streak_seconds":%s,"idle_grace_seconds":%s,"server_epoch":%s,"agent_state":"%s","agent_age_seconds":%s,"agent_package":"%s","agent_activity":"%s","agent_audio_active":%s,"agent_screen_on":%s,"agent_report_seq":%s,"agent_usage_access":"%s","agent_foreground_source":"%s","agent_foreground_status":"%s","agent_activity_trail":"%s","agent_ui_package":"%s","agent_ui_age_ms":%s,"agent_ui_node_count":%s,"agent_ui_clickable_count":%s,"agent_ui_focused_count":%s,"agent_ui_view_id_count":%s,"agent_ui_structure_fingerprint":"%s","agent_context_quality":"%s","calibration_label":"%s","calibration_app":"%s","calibration_session":"%s","calibration_until":%s,"calibration_started":%s,"calibration_samples":%s,"calibration_duration_seconds":%s,"calibration_phase":"%s","calibration_active":%s,"calibration_elapsed_seconds":%s,"calibration_remaining_seconds":%s,"calibration_percent":%s,"calibration_last_label":"%s","calibration_last_app":"%s","calibration_last_session":"%s","calibration_last_samples":%s,"calibration_last_duration_seconds":%s,"calibration_last_finished":%s,"calibration_last_result":"%s"}\n' \
         "$WATCH_S" "$PREV_DATE" "$PREV_WATCH_S" "$TODAY" "$MODE" "$ACTIVITY" "$ENFORCE" "$ARMED" "$BLOCKED" "$actual" "$firewall_state" \
         "$USED_S" "$LIMIT_S" "$BONUS_S" "$bonus_undo_available" "$bonus_limit_seconds" "$policy_reason" "$left" "$PARENT_UNTIL" \
         "$LAST_PACKET_EPOCH" "$LAST_COUNT" "$PPS" "$TCP_PPS" "$UDP_PPS" \
@@ -1154,7 +1204,8 @@ status() {
         "$ADAPTIVE_PAUSE_HINT" "$ADAPTIVE_PAUSE_SCORE" "$ADAPTIVE_BP50" "$ADAPTIVE_BP90" "$ADAPTIVE_ACTIVE_HITS" "$ADAPTIVE_TREND_PCT" \
         "$BILLING_STATE" "$IDLE_REASON" "$IDLE_STREAK_S" "$IDLE_GRACE_S" "$NOW" \
         "$AGENT_SAMPLE_STATE" "$AGENT_SAMPLE_AGE" "$AGENT_SAMPLE_PKG" "$AGENT_SAMPLE_ACTIVITY" "$AGENT_SAMPLE_AUDIO" "$AGENT_SAMPLE_SCREEN" "$AGENT_SAMPLE_SEQ" \
-        "$AGENT_SAMPLE_USAGE_ACCESS" "$AGENT_SAMPLE_FOREGROUND_SOURCE" "$AGENT_SAMPLE_FOREGROUND_STATUS" "$AGENT_CONTEXT_QUALITY" \
+        "$AGENT_SAMPLE_USAGE_ACCESS" "$AGENT_SAMPLE_FOREGROUND_SOURCE" "$AGENT_SAMPLE_FOREGROUND_STATUS" "$AGENT_SAMPLE_ACTIVITY_TRAIL" \
+        "$AGENT_SAMPLE_UI_PACKAGE" "$AGENT_SAMPLE_UI_AGE_MS" "$AGENT_SAMPLE_UI_NODES" "$AGENT_SAMPLE_UI_CLICKABLE" "$AGENT_SAMPLE_UI_FOCUSED" "$AGENT_SAMPLE_UI_IDS" "$AGENT_SAMPLE_UI_FINGERPRINT" "$AGENT_CONTEXT_QUALITY" \
         "$CAL_LABEL" "$cal_app" "$cal_session" "$CAL_UNTIL" "$CAL_STARTED" \
         "$CAL_SAMPLES" "$cal_duration" "$cal_phase" "$cal_active" "$cal_elapsed" "$cal_remaining" "$cal_percent" \
         "$CAL_LAST_LABEL" "$CAL_LAST_APP" "$CAL_LAST_SESSION" "$CAL_LAST_SAMPLES" "$CAL_LAST_DURATION" "$CAL_LAST_FINISHED" "$CAL_LAST_RESULT"

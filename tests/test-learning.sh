@@ -22,19 +22,21 @@ CSV="$TMP/state/calibration-v3.csv"
 V5="$TMP/state/calibration-v5.csv"
 : > "$CSV"
 : > "$V5"
+
+# TVG3/19-column sample: trail is diagnostic-only but must be summarized.
 i=0
 while [ "$i" -lt 18 ]; do
     ts=$((1700000000 + i*10))
-    p=$((8 + i%5))
+    pps=$((8 + i%5))
     tcp=$((i%3))
-    udp=$((p-tcp))
-    b=$((3000 + i*100))
+    udp=$((pps-tcp))
+    bps=$((3000 + i*100))
     printf '%s,1700000000-1,system_home,system,%s,%s,%s,%s\n' \
-        "$ts" "$p" "$tcp" "$udp" "$b" >> "$CSV"
+        "$ts" "$pps" "$tcp" "$udp" "$bps" >> "$CSV"
     audio=0
     [ "$i" -eq 17 ] && audio=1
-    printf '%s,1700000000-1,system_home,fresh,2,com.mitv.tvhome,com.mitv.tvhome.MainActivityUserMode,%s,1,%s,%s,%s,%s,%s\n' \
-        "$ts" "$audio" "$((100+i))" "$p" "$tcp" "$udp" "$b" >> "$V5"
+    printf '%s,1700000000-1,system_home,fresh,2,com.mitv.tvhome,com.mitv.tvhome.MainActivityUserMode,%s,1,%s,%s,%s,%s,%s,allowed,usage_events,full_context,full,com.mitv.tvhome.MainActivityUserMode\n' \
+        "$ts" "$audio" "$((100+i))" "$pps" "$tcp" "$udp" "$bps" >> "$V5"
     i=$((i + 1))
 done
 
@@ -46,16 +48,17 @@ grep -q '^PPS: P10 ' "$REPORT"
 grep -q '^Agent 传输: 18/18 fresh · 覆盖 100%$' "$REPORT"
 grep -q '^应用包上下文: 18/18 · 覆盖 100% · com.mitv.tvhome · 稳定 100%$' "$REPORT"
 grep -q '^完整前台上下文: 18/18 · 覆盖 100% · com.mitv.tvhome.MainActivityUserMode · 稳定 100%$' "$REPORT"
+grep -q '^最近 Activity 轨迹: 覆盖 100% · com.mitv.tvhome.MainActivityUserMode · 稳定 100%$' "$REPORT"
 grep -q '^电视上下文: 音频活跃 5% · 屏幕亮 100% · 前台切换 0 次$' "$REPORT"
 grep -q '^联合质量: high$' "$REPORT"
 grep -q '高可信 Agent 联合人工学习会话' "$REPORT"
-awk -F, 'NF==29 && $2=="1700000000-1" && $3=="system_home" && $9==100 && $18=="high" &&
+awk -F, 'NF==40 && $2=="1700000000-1" && $3=="system_home" && $9==100 && $18=="high" &&
           $19=="high" && $23=="com.mitv.tvhome" && $25=="com.mitv.tvhome.MainActivityUserMode" &&
           $27==5 && $28==100 {ok=1} END {exit !ok}' \
     "$TMP/state/learning-sessions.csv"
 
-# Fresh transport with unknown/unknown foreground must never be called
-# a high-confidence Agent joint session.
+# Legacy 18-column v5 remains valid. Unknown foreground must stay network-only,
+# and absence of the optional trail must be reported as zero coverage.
 sid=1794475000-999
 : > "$V5"
 : > "$CSV"
@@ -72,6 +75,7 @@ REPORT="$TMP/state/learning-last.txt"
 grep -q '^Agent 传输: 12/12 fresh · 覆盖 100%$' "$REPORT"
 grep -q '^应用包上下文: 0/12 · 覆盖 0% · unknown · 稳定 0%$' "$REPORT"
 grep -q '^完整前台上下文: 0/12 · 覆盖 0% · unknown · 稳定 0%$' "$REPORT"
+grep -q '^最近 Activity 轨迹: 覆盖 0% · none · 稳定 0%$' "$REPORT"
 grep -q '^联合质量: network_only$' "$REPORT"
 grep -q '不伪装成联合高可信样本' "$REPORT"
 if grep -q '高可信 Agent 联合人工学习会话' "$REPORT"; then
@@ -79,8 +83,8 @@ if grep -q '高可信 Agent 联合人工学习会话' "$REPORT"; then
     exit 1
 fi
 
-# Paired playing/paused sessions on the same exact context must persist their
-# Agent features so Fusion can learn audio semantics without app hard-coding.
+# Legacy 18-column paired playing/paused sessions on the same exact context
+# still persist the 29-column authorization model used by Fusion.
 PKG=com.example.video
 ACT=com.example.video.PlayerActivity
 for label in playing paused; do
@@ -102,7 +106,7 @@ for label in playing paused; do
     sh "$DST" "$sid" "$label" 120 general completed 1794476120
 done
 awk -F, -v p="$PKG" -v a="$ACT" '
-    NF==29 && $6=="completed" && $18=="high" && $19=="high" &&
+    NF==40 && $6=="completed" && $18=="high" && $19=="high" &&
     $23==p && $24==100 && $25==a && $26==100 && $28==100 {
         if ($3=="playing" && $27==100) play=1
         if ($3=="paused" && $27==0) pause=1
@@ -110,4 +114,50 @@ awk -F, -v p="$PKG" -v a="$ACT" '
     END {exit !(play && pause)}
 ' "$TMP/state/learning-sessions.csv"
 
-echo 'PASS: learning session analysis + Agent joint-feature persistence + unknown-context quality gate'
+# TVG4/26-column samples become high-confidence UI learning only when the
+# structure belongs to the same package, stays fresh, and one fingerprint is
+# stable across the manually labelled session.
+PKG=com.example.ui
+ACT=com.example.ui.PlayerActivity
+PLAY_FP=99c131952ab0cc27edde65954ed12645
+PAUSE_FP=40ed2fe6f6de308287179befd4eabc20
+for label in playing paused; do
+    suffix=31
+    fp="$PLAY_FP"
+    nodes=4
+    clickable=0
+    ids=1
+    if [ "$label" = paused ]; then
+        suffix=32
+        fp="$PAUSE_FP"
+        nodes=26
+        clickable=12
+        ids=8
+    fi
+    sid="1794477000-$suffix"
+    : > "$V5"
+    : > "$CSV"
+    i=0
+    while [ "$i" -lt 12 ]; do
+        ts=$((1794477000 + i * 10))
+        printf '%s,%s,%s,%s,80,1,79,20000\n' "$ts" "$sid" "$label" "$PKG" >> "$CSV"
+        printf '%s,%s,%s,fresh,1,%s,%s,1,1,%s,80,1,79,20000,allowed,usage_events,full_context,full,none,%s,1000,%s,%s,0,%s,%s\n' \
+            "$ts" "$sid" "$label" "$PKG" "$ACT" "$i" "$PKG" "$nodes" "$clickable" "$ids" "$fp" >> "$V5"
+        i=$((i + 1))
+    done
+    sh "$DST" "$sid" "$label" 120 general completed 1794477120
+    REPORT="$TMP/state/learning-last.txt"
+    grep -q '^UI 结构: 样本 12 · 覆盖 100% · 包 com.example.ui / 100% · 指纹稳定 100% · 质量 high$' "$REPORT"
+    grep -q "^UI 指纹: $fp$" "$REPORT"
+done
+
+awk -F, -v p="$PKG" -v a="$ACT" -v pf="$PLAY_FP" -v qf="$PAUSE_FP" '
+    NF==40 && $6=="completed" && $18=="high" && $19=="high" &&
+    $23==p && $25==a && $31==100 && $32==p && $33==100 && $35==100 && $40=="high" {
+        if ($3=="playing" && $34==pf && $36==4 && $37==0 && $39==1) play=1
+        if ($3=="paused" && $34==qf && $36==26 && $37==12 && $39==8) pause=1
+    }
+    END {exit !(play && pause)}
+' "$TMP/state/learning-sessions.csv"
+
+echo 'PASS: learning analysis + TVG3 trail + TVG4 UI profile + legacy v5 compatibility'
