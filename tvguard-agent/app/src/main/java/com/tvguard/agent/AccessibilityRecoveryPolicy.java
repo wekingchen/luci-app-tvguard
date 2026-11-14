@@ -15,11 +15,17 @@ final class AccessibilityRecoveryPolicy {
                       boolean configured, boolean connected,
                       boolean managedOptIn, boolean canWriteSecure,
                       long unboundDurationMs, long sinceLastNudgeMs) {
-        if (!monitorEnabled || connected) return NONE;
+        if (!monitorEnabled) return NONE;
+        // Secure-setting truth outranks the current binder state. Some vendor
+        // Android 6 builds can leave an AccessibilityService bound briefly
+        // after ACCESSIBILITY_ENABLED or its authorization entry is removed.
+        // Treat that as degraded and repair the settings when prior opt-in and
+        // WRITE_SECURE_SETTINGS authority are both proven.
         if (!globalEnabled || !configured) {
             return managedOptIn && canWriteSecure
                     ? REPAIR_SECURE_SETTINGS : NONE;
         }
+        if (connected) return NONE;
         if (unboundDurationMs >= UNBOUND_GRACE_MS
                 && sinceLastNudgeMs >= NUDGE_COOLDOWN_MS) {
             return NUDGE;
