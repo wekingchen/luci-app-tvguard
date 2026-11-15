@@ -328,7 +328,15 @@ with tempfile.TemporaryDirectory(prefix="tvguard-fusion-") as folder:
                adaptive_state="ambiguous", adaptive_score=50,
                adaptive_reason="overlap", pause_hint="none", pause_score=0,
                active_floor=100, activity_trail=legacy_home_runtime) == (
-        "app_home", "app_home_classified_learned_activity_trail", 2)
+        "paused", "paused_classified_recent_play_transition", 2)
+    # Legacy learned home evidence may take over once a real navigation changes
+    # the trail away from the last confirmed playing trail.
+    assert run(6, 481, audio=0, pps=12, shadow="idle",
+               adaptive_state="idle", adaptive_score=95,
+               adaptive_reason="stable_low", pause_hint="idle_overlap",
+               pause_score=60, active_floor=100,
+               activity_trail=legacy_home) == (
+        "app_home", "app_home_classified_learned_activity_trail", 3)
     (d / "calibration-v5.csv").unlink()
 
     # Type-D authority requires BOTH free-state labels. A same-context home
