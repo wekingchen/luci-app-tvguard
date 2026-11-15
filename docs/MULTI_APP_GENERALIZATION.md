@@ -203,3 +203,21 @@ r6 保留 r5 的计费安全边界，只改分类层：
 - app_home 实时：`HomeSingleTaskActivity~TVCommonExitActivity~HomeSingleTaskActivity~MainActivity`
 
 实时首页对 app_home 得分 75%，对 paused 得分 50%，领先 25 个百分点，因此 r6 可细分为 `app_home`。如果实时只剩共同的 `HomeSingleTaskActivity`，则两类都达不到 60%，继续保持 `nonplaying`。
+
+
+## r7：Type-D 播放→暂停时序状态机
+
+r6 真机验证进一步暴露了 Activity trail 的边界：腾讯视频从 App 首页进入播放，再按暂停时，package、Activity、UI Structure 以及 Activity trail 都可能保持完全不变；唯一可靠变化是已经确认的 playing 随后出现 audio 1→0。此时继续单独依赖 trail 会把暂停错误地“黏”在 app_home。
+
+r7 不扩大任何免计时权限，只增加 RAM-only Type-D 时序分类状态：
+
+- 每个 fresh、已确认的 Type-D playing report 记录最近播放时间与当时 Activity trail；
+- audio=0 仍必须先通过原有两个 fresh report 的 nonplaying/free 门槛；
+- 在门槛通过后，如果距最近 playing ≤45 秒、当前 trail 非 none 且与最后播放 trail 完全不变，则优先细分为 paused；
+- 一旦通过该播放→暂停转移确认 paused，只要 audio 继续为 0 且 trail 仍与最后播放 trail 相同，即使超过 45 秒也保持 paused；
+- 如果后续真实页面导航让 trail 发生变化，则释放 paused 语义锁，再由人工 learned trail 画像判断 app_home / paused；
+- 若没有最近 playing、trail 缺失或证据冲突，仍回退到 learned trail 或 generic nonplaying；
+- 这些状态只保存在 /var/run 的 fusion.state schema v5 中，不写电视、不写持久存储；
+- PPS/BPS 仍不参与 Type-D paused/app_home 分类，也不产生 free authority。
+
+这条规则专门解决真实顺序：app_home → playing → paused，且三者可能共享同一个 Activity、UI 不可用、trail 在播放/暂停之间不更新的场景。

@@ -111,7 +111,7 @@ case "$1" in
         # temporal hold is deliberately still chargeable so an uncertain
         # transition back to playback cannot inherit free time.
         case "$2" in
-            paused_confirmed_learned_context|paused_confirmed_learned_audio_context|paused_confirmed_learned_ui_context|paused_classified_learned_activity_trail)
+            paused_confirmed_learned_context|paused_confirmed_learned_audio_context|paused_confirmed_learned_ui_context|paused_classified_learned_activity_trail|paused_classified_recent_play_transition)
                 echo "free paused"
                 ;;
             *)

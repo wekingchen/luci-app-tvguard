@@ -88,11 +88,12 @@ fi
 cleanup() { rmdir "$LOCK" 2>/dev/null || :; }
 trap cleanup EXIT HUP INT TERM
 
-# schema v4:
+# schema v5:
 # schema|last_sig|last_seq|pause_streak|pause_miss|latched|
 # learned_media_pkg|learned_media_activity|home_streak|last_pkg|last_activity|
 # last_strong_seen|burst_gap_max|burst_hits|
-# switch_activity|switch_strong_hits|switch_last_strong_seen
+# switch_activity|switch_strong_hits|switch_last_strong_seen|
+# type_d_last_play_seen|type_d_last_play_trail|type_d_class
 #
 # burst_* is generic temporal evidence. It learns the cadence of repeated
 # strong-play confirmations in the SAME foreground context. Low-bitrate
@@ -116,6 +117,9 @@ burst_hits=0
 switch_activity=''
 switch_strong_hits=0
 switch_last_strong_seen=0
+type_d_last_play_seen=0
+type_d_last_play_trail=none
+type_d_class=none
 extra=''
 if [ -r "$STATE" ]; then
     oldIFS="$IFS"
@@ -123,14 +127,16 @@ if [ -r "$STATE" ]; then
     read -r schema last_sig last_seq pause_streak pause_miss latched \
         media_pkg media_activity home_streak last_pkg last_activity \
         last_strong_seen burst_gap_max burst_hits \
-        switch_activity switch_strong_hits switch_last_strong_seen extra < "$STATE" || :
+        switch_activity switch_strong_hits switch_last_strong_seen \
+        type_d_last_play_seen type_d_last_play_trail type_d_class extra < "$STATE" || :
     IFS="$oldIFS"
-    if [ "$schema" != 4 ]; then
+    if [ "$schema" != 5 ]; then
         last_sig=''; last_seq=0; pause_streak=0; pause_miss=0; latched=none
         media_pkg=''; media_activity=''; home_streak=0
         last_pkg=''; last_activity=''
         last_strong_seen=0; burst_gap_max=0; burst_hits=0
         switch_activity=''; switch_strong_hits=0; switch_last_strong_seen=0
+        type_d_last_play_seen=0; type_d_last_play_trail=none; type_d_class=none
     fi
     case "$last_seq" in ''|*[!0-9]*) last_seq=0 ;; esac
     case "$pause_streak" in ''|*[!0-9]*) pause_streak=0 ;; esac
@@ -141,6 +147,13 @@ if [ -r "$STATE" ]; then
     case "$burst_hits" in ''|*[!0-9]*) burst_hits=0 ;; esac
     case "$switch_strong_hits" in ''|*[!0-9]*) switch_strong_hits=0 ;; esac
     case "$switch_last_strong_seen" in ''|*[!0-9]*) switch_last_strong_seen=0 ;; esac
+    case "$type_d_last_play_seen" in ''|*[!0-9]*) type_d_last_play_seen=0 ;; esac
+    case "$type_d_last_play_trail" in
+        none) : ;;
+        ''|*[!A-Za-z0-9._~\$]*) type_d_last_play_trail=none ;;
+        *) [ "${#type_d_last_play_trail}" -le 240 ] || type_d_last_play_trail=none ;;
+    esac
+    case "$type_d_class" in none|paused|app_home) : ;; *) type_d_class=none ;; esac
     case "$latched" in none|paused) : ;; *) latched=none ;; esac
 fi
 
@@ -157,6 +170,9 @@ if [ "$fresh" -eq 1 ] && [ "$last_seq" -gt 0 ] && [ "$seq" -lt "$last_seq" ]; th
     switch_activity=''
     switch_strong_hits=0
     switch_last_strong_seen=0
+    type_d_last_play_seen=0
+    type_d_last_play_trail=none
+    type_d_class=none
 fi
 
 pkg_known=1
@@ -539,26 +555,53 @@ elif [ "$learned_nonplaying_profile" -eq 1 ]; then
         pause_streak=0
         pause_miss=0
         latched=none
+        type_d_class=none
         last_strong_seen="$now"
+        if [ "$fresh" -eq 1 ]; then
+            type_d_last_play_seen="$now"
+            type_d_last_play_trail="$activity_trail"
+        fi
     else
         if [ "$fresh" -eq 1 ]; then
             pause_streak=$((pause_streak + 1))
             pause_miss=0
         fi
         if [ "$latched" = paused ] || [ "$pause_streak" -ge 2 ]; then
-            # The existing Type-D gate is the billing authority. A uniquely
-            # learned Activity trail may refine the public state, but a missing
-            # or conflicting trail must remain generic nonplaying.
+            # The existing Type-D gate remains the only free-time authority.
+            # Classification is layered on top. A just-confirmed playing state
+            # whose Activity trail remains unchanged after audio drops 1->0 is
+            # stronger pause evidence than stale app-home trail history.
             latched=paused
-            if [ "$learned_trail_profile" -eq 1 ] &&
-               [ "$learned_trail_match" = paused ]; then
+            recent_play_same_trail=0
+            if [ "$type_d_last_play_seen" -gt 0 ] &&
+               [ "$now" -ge "$type_d_last_play_seen" ] &&
+               [ $((now - type_d_last_play_seen)) -le 45 ] &&
+               [ "$activity_trail" != none ] &&
+               [ "$activity_trail" = "$type_d_last_play_trail" ]; then
+                recent_play_same_trail=1
+            fi
+
+            if [ "$type_d_class" = paused ] &&
+               [ "$activity_trail" != none ] &&
+               [ "$activity_trail" = "$type_d_last_play_trail" ]; then
+                combined=paused
+                candidate=paused_classified_recent_play_transition
+            elif [ "$recent_play_same_trail" -eq 1 ]; then
+                type_d_class=paused
+                combined=paused
+                candidate=paused_classified_recent_play_transition
+            elif [ "$learned_trail_profile" -eq 1 ] &&
+                 [ "$learned_trail_match" = paused ]; then
+                type_d_class=paused
                 combined=paused
                 candidate=paused_classified_learned_activity_trail
             elif [ "$learned_trail_profile" -eq 1 ] &&
                  [ "$learned_trail_match" = app_home ]; then
+                type_d_class=app_home
                 combined=app_home
                 candidate=app_home_classified_learned_activity_trail
             else
+                type_d_class=none
                 combined=nonplaying
                 candidate=nonplaying_confirmed_learned_audio_context
             fi
@@ -885,11 +928,12 @@ if [ "$fresh" -eq 1 ]; then
         last_activity="$activity"
     fi
     tmp="$STATE.$"
-    printf '4|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s\n' \
+    printf '5|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s\n' \
         "$sig" "$seq" "$pause_streak" "$pause_miss" "$latched" \
         "$media_pkg" "$media_activity" "$home_streak" "$last_pkg" "$last_activity" \
         "$last_strong_seen" "$burst_gap_max" "$burst_hits" \
-        "$switch_activity" "$switch_strong_hits" "$switch_last_strong_seen" > "$tmp"
+        "$switch_activity" "$switch_strong_hits" "$switch_last_strong_seen" \
+        "$type_d_last_play_seen" "$type_d_last_play_trail" "$type_d_class" > "$tmp"
     chmod 600 "$tmp"
     mv -f "$tmp" "$STATE"
 fi

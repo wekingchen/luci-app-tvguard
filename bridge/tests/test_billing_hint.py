@@ -205,24 +205,30 @@ with tempfile.TemporaryDirectory(prefix="tvguard-billing-hint-") as folder:
         "charge", "playing")
     (d / "learning-sessions.csv").unlink()
 
-    # Type-D trail refinement keeps the same nonplaying billing authority
-    # while exposing paused/app_home when a unique learned trail matches.
+    # Type-D temporal refinement: the free-time gate is unchanged, while a
+    # recent confirmed playing -> audio-off transition may label paused even
+    # when the Activity trail is still the stale app-home trail.
     write_nonplaying_trail_profile()
-    pause_trail = "com.example.media.RootTask~com.example.media.Main"
     home_trail = "com.example.media.RootTask~com.example.media.Exit~com.example.media.RootTask~com.example.media.Exit"
     home_runtime = "com.example.media.RootTask~com.example.media.Exit~com.example.media.RootTask~com.example.media.Main"
-    put(20, 395, PKG, PLAYER, audio=0, activity_trail=pause_trail)
-    assert run(395, pps=300, shadow="playing", adaptive_state="active",
-               adaptive_score=100, adaptive_reason="clear_current") == (
-        "charge", "unknown")
-    put(21, 405, PKG, PLAYER, audio=0, activity_trail=pause_trail)
-    assert run(405, pps=300, shadow="playing", adaptive_state="active",
-               adaptive_score=100, adaptive_reason="clear_current") == (
-        "free", "paused")
-    put(22, 415, PKG, PLAYER, audio=1, activity_trail=home_runtime)
-    assert run(415, pps=5, shadow="idle", adaptive_state="ambiguous",
+
+    # Cold audio-off home path.
+    put(20, 395, PKG, PLAYER, audio=0, activity_trail=home_runtime)
+    assert run(395, pps=80, shadow="unknown", adaptive_state="ambiguous",
                adaptive_score=50, adaptive_reason="overlap") == (
+        "charge", "unknown")
+    put(21, 405, PKG, PLAYER, audio=0, activity_trail=home_runtime)
+    assert run(405, pps=80, shadow="unknown", adaptive_state="ambiguous",
+               adaptive_score=50, adaptive_reason="overlap") == (
+        "free", "app_home")
+
+    # Playing reuses the same trail.
+    put(22, 415, PKG, PLAYER, audio=1, activity_trail=home_runtime)
+    assert run(415, pps=180, shadow="playing", adaptive_state="active",
+               adaptive_score=100, adaptive_reason="clear_current") == (
         "charge", "playing")
+
+    # Pause retains same trail but becomes free paused after two fresh reports.
     put(23, 425, PKG, PLAYER, audio=0, activity_trail=home_runtime)
     assert run(425, pps=300, shadow="playing", adaptive_state="active",
                adaptive_score=100, adaptive_reason="clear_current") == (
@@ -230,6 +236,18 @@ with tempfile.TemporaryDirectory(prefix="tvguard-billing-hint-") as folder:
     put(24, 435, PKG, PLAYER, audio=0, activity_trail=home_runtime)
     assert run(435, pps=300, shadow="playing", adaptive_state="active",
                adaptive_score=100, adaptive_reason="clear_current") == (
+        "free", "paused")
+
+    # Long pause remains free paused even after transition recency expires.
+    put(25, 495, PKG, PLAYER, audio=0, activity_trail=home_runtime)
+    assert run(495, pps=20, shadow="unknown", adaptive_state="ambiguous",
+               adaptive_score=50, adaptive_reason="overlap") == (
+        "free", "paused")
+
+    # A changed learned home path releases the paused semantic latch.
+    put(26, 505, PKG, PLAYER, audio=0, activity_trail=home_trail)
+    assert run(505, pps=12, shadow="idle", adaptive_state="idle",
+               adaptive_score=95, adaptive_reason="stable_low") == (
         "free", "app_home")
     (d / "learning-sessions.csv").unlink()
 

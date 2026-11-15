@@ -206,29 +206,38 @@ with tempfile.TemporaryDirectory(prefix="tvguard-fusion-") as folder:
                active_floor=100) == (
         "playing", "playing_confirmed_learned_nonplaying_profile", 0)
 
-    # Type-D four-state refinement: Activity trail labels only an already
-    # confirmed nonplaying state and never bypasses the two-report gate.
+    # Type-D four-state refinement: app_home may be learned from trail, but
+    # a confirmed playing -> audio-off transition with the SAME unchanged trail
+    # must override stale app-home history and classify paused.
     reset()
     pause_trail, home_trail = write_nonplaying_trail_profile()
     home_runtime = "com.example.videoa.ui.RootTaskActivity~com.example.videoa.ui.ExitActivity~com.example.videoa.ui.RootTaskActivity~com.example.videoa.ui.MainActivity"
-    assert run(1, 381, audio=0, pps=300, shadow="playing",
-               adaptive_state="active", adaptive_score=100,
-               adaptive_reason="clear_current", pause_hint="none",
-               pause_score=0, active_floor=100,
-               activity_trail=pause_trail) == (
-        "unknown", "nonplaying_audio_profile_warming", 1)
-    assert run(2, 391, audio=0, pps=300, shadow="playing",
-               adaptive_state="active", adaptive_score=100,
-               adaptive_reason="clear_current", pause_hint="none",
-               pause_score=0, active_floor=100,
-               activity_trail=pause_trail) == (
-        "paused", "paused_classified_learned_activity_trail", 2)
-    assert run(3, 401, audio=1, pps=5, shadow="idle",
+
+    # Cold audio-off context: learned trail can identify app_home.
+    assert run(1, 381, audio=0, pps=80, shadow="unknown",
                adaptive_state="ambiguous", adaptive_score=50,
                adaptive_reason="overlap", pause_hint="none",
                pause_score=0, active_floor=100,
                activity_trail=home_runtime) == (
+        "unknown", "nonplaying_audio_profile_warming", 1)
+    assert run(2, 391, audio=0, pps=80, shadow="unknown",
+               adaptive_state="ambiguous", adaptive_score=50,
+               adaptive_reason="overlap", pause_hint="none",
+               pause_score=0, active_floor=100,
+               activity_trail=home_runtime) == (
+        "app_home", "app_home_classified_learned_activity_trail", 2)
+
+    # User starts playback, but Tencent-like Activity trail remains exactly the
+    # same stale app-home path. Audio=1 still confirms playing.
+    assert run(3, 401, audio=1, pps=180, shadow="playing",
+               adaptive_state="active", adaptive_score=100,
+               adaptive_reason="clear_current", pause_hint="none",
+               pause_score=0, active_floor=100,
+               activity_trail=home_runtime) == (
         "playing", "playing_confirmed_learned_nonplaying_profile", 0)
+
+    # Pausing does not change the trail. r6 misclassified this as app_home;
+    # r7 must use recent playing transition and the unchanged trail.
     assert run(4, 411, audio=0, pps=300, shadow="playing",
                adaptive_state="active", adaptive_score=100,
                adaptive_reason="clear_current", pause_hint="none",
@@ -240,7 +249,25 @@ with tempfile.TemporaryDirectory(prefix="tvguard-fusion-") as folder:
                adaptive_reason="clear_current", pause_hint="none",
                pause_score=0, active_floor=100,
                activity_trail=home_runtime) == (
-        "app_home", "app_home_classified_learned_activity_trail", 2)
+        "paused", "paused_classified_recent_play_transition", 2)
+
+    # A long pause must stay paused after the 45-second transition window; the
+    # semantic latch persists while the same play trail remains unchanged.
+    assert run(6, 481, audio=0, pps=20, shadow="unknown",
+               adaptive_state="ambiguous", adaptive_score=50,
+               adaptive_reason="overlap", pause_hint="none",
+               pause_score=0, active_floor=100,
+               activity_trail=home_runtime) == (
+        "paused", "paused_classified_recent_play_transition", 3)
+
+    # Once a real page navigation changes the trail to the learned home path,
+    # the paused latch is released by the changed trail and app_home can win.
+    assert run(7, 491, audio=0, pps=12, shadow="idle",
+               adaptive_state="idle", adaptive_score=95,
+               adaptive_reason="stable_low", pause_hint="idle_overlap",
+               pause_score=60, active_floor=100,
+               activity_trail=home_trail) == (
+        "app_home", "app_home_classified_learned_activity_trail", 4)
 
     # A single shared foreground Activity is insufficient for classification:
     # the engine must keep the already-free state generic nonplaying.

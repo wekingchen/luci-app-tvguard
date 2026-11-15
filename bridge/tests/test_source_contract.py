@@ -100,6 +100,9 @@ assert 'activity_trail' in fusion
 assert 'learned_trail_profile' in fusion
 assert 'paused_classified_learned_activity_trail' in fusion
 assert 'app_home_classified_learned_activity_trail' in fusion
+assert 'paused_classified_recent_play_transition' in fusion
+assert 'type_d_last_play_seen' in fusion and 'type_d_last_play_trail' in fusion
+assert "printf '5|" in fusion
 assert 'prefix_score' in fusion
 assert 'qs>=60 && qs-hs>=20' in fusion
 assert 'hs>=60 && hs-qs>=20' in fusion
@@ -140,6 +143,7 @@ assert '/etc/' not in billing
 assert billing.count('ui_fingerprint') >= 3
 assert 'paused_confirmed_learned_ui_context' in billing
 assert 'paused_classified_learned_activity_trail' in billing
+assert 'paused_classified_recent_play_transition' in billing
 fusion_call = billing[billing.index('fusion="$("$FUSION"'):billing.index('set -- $fusion')]
 assert 'ui_fingerprint' in fusion_call and 'ui_age_ms' in fusion_call and 'ui_package' in fusion_call
 assert 'activity_trail' in fusion_call
