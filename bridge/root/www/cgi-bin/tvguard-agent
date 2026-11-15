@@ -1,5 +1,5 @@
 #!/bin/sh
-# TVGuard Agent bridge: TVG1/TVG2/TVG3 legacy + TVG4 UI-structure diagnostics, RAM-only.
+# TVGuard Agent bridge: TVG1..TVG5 latest-only diagnostics, RAM-only.
 set -eu
 umask 077
 PATH=/usr/sbin:/usr/bin:/sbin:/bin
@@ -52,7 +52,7 @@ EOF
 IFS="$oldIFS"
 case "$version" in
     TVG1)
-        [ -z "${usage_access:-}${foreground_source:-}${foreground_status:-}${activity_trail:-}${ui_package:-}${ui_age_ms:-}${ui_nodes:-}${ui_clickable:-}${ui_focused:-}${ui_ids:-}${ui_fingerprint:-}${extra:-}" ] || bad
+        [ -z "${usage_access:-}${foreground_source:-}${foreground_status:-}${activity_trail:-}${ui_package:-}${ui_age_ms:-}${ui_nodes:-}${ui_clickable:-}${ui_focused:-}${ui_ids:-}${ui_fingerprint:-}${event_package:-}${event_class:-}${event_seq:-}${event_type:-}${event_window_id:-}${event_content_changes:-}${event_age_ms:-}${extra:-}" ] || bad
         usage_access=legacy
         foreground_source=legacy
         foreground_status=legacy
@@ -73,7 +73,7 @@ case "$version" in
         event_age_ms=0
         ;;
     TVG2)
-        [ -z "${activity_trail:-}${ui_package:-}${ui_age_ms:-}${ui_nodes:-}${ui_clickable:-}${ui_focused:-}${ui_ids:-}${ui_fingerprint:-}${extra:-}" ] || bad
+        [ -z "${activity_trail:-}${ui_package:-}${ui_age_ms:-}${ui_nodes:-}${ui_clickable:-}${ui_focused:-}${ui_ids:-}${ui_fingerprint:-}${event_package:-}${event_class:-}${event_seq:-}${event_type:-}${event_window_id:-}${event_content_changes:-}${event_age_ms:-}${extra:-}" ] || bad
         activity_trail=none
         ui_package=none
         ui_age_ms=0
@@ -91,7 +91,7 @@ case "$version" in
         event_age_ms=0
         ;;
     TVG3)
-        [ -z "${ui_package:-}${ui_age_ms:-}${ui_nodes:-}${ui_clickable:-}${ui_focused:-}${ui_ids:-}${ui_fingerprint:-}${extra:-}" ] || bad
+        [ -z "${ui_package:-}${ui_age_ms:-}${ui_nodes:-}${ui_clickable:-}${ui_focused:-}${ui_ids:-}${ui_fingerprint:-}${event_package:-}${event_class:-}${event_seq:-}${event_type:-}${event_window_id:-}${event_content_changes:-}${event_age_ms:-}${extra:-}" ] || bad
         activity_trail="${activity_trail:-none}"
         ui_package=none
         ui_age_ms=0
