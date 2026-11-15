@@ -242,7 +242,9 @@ fi
 case "$learned_audio_profile" in 0|1) : ;; *) learned_audio_profile=0 ;; esac
 case "$learned_nonplaying_profile" in 0|1) : ;; *) learned_nonplaying_profile=0 ;; esac
 
-# Activity trail is a classification-only refinement for Type-D profiles.\n# Runtime matching uses conservative newest-first prefix similarity so stale\n# tail history cannot defeat a strong learned page transition pattern.
+# Activity trail is a classification-only refinement for Type-D profiles.
+# Runtime matching uses conservative newest-first prefix similarity so stale
+# tail history cannot defeat a strong learned page transition pattern.
 # It NEVER creates free-time authority on its own. The three-state learned
 # nonplaying profile above must already be valid; only after its existing
 # two-fresh-report audio-off gate confirms nonplaying may a uniquely learned
