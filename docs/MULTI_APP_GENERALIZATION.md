@@ -221,3 +221,17 @@ r7 不扩大任何免计时权限，只增加 RAM-only Type-D 时序分类状态
 - PPS/BPS 仍不参与 Type-D paused/app_home 分类，也不产生 free authority。
 
 这条规则专门解决真实顺序：app_home → playing → paused，且三者可能共享同一个 Activity、UI 不可用、trail 在播放/暂停之间不更新的场景。
+
+## r8：AccessibilityEvent 只读诊断探针
+
+r7 真机确认了 playing → paused 的时序分类，但 paused → app_home 在腾讯视频上仍可能完全看不到 package、Activity、Activity trail、UI Structure 或 audio 的变化。继续调 N1 阈值无法凭空创造信息。
+
+r8 暂不改变四状态和计费决策，只扩展电视 Agent 诊断信号：
+- Agent 0.3.7 在现有 AccessibilityService 的 onAccessibilityEvent 中仅保存最新事件元数据：package、class、单调 sequence、event type、window id、content-change types 和 age；
+- 不读取 text/contentDescription，不新增日志、SQLite、文件历史或离线队列；
+- TVG5 将这些字段随 latest-only 心跳发送给 N1；
+- N1 只在 bridge-report 中展示，Fusion 和 billing 明确不读取 AccessibilityEvent 字段；
+- 只有事件 package 与当前前台 package 一致、事件年龄不超过 30 秒时才上报有效事件，否则归零；
+- TVG1–TVG4 保持向后兼容。
+
+目标不是立即判定 app_home，而是先在真机对比 paused 与“返回 App 首页”时事件 type/class/seq/window/content-change 是否形成稳定、可泛化的差异。

@@ -80,6 +80,18 @@ final class BridgeProtocol {
                 && uiFingerprint.matches("[0-9a-f]{32}");
     }
 
+    static boolean usableAccessibilityEvent(String foregroundPackage,
+                                            String eventPackage,
+                                            long eventAgeMs,
+                                            long eventSequence,
+                                            int eventType) {
+        return foregroundPackage != null && eventPackage != null
+                && foregroundPackage.length() != 0
+                && foregroundPackage.equals(eventPackage)
+                && eventAgeMs >= 0L && eventAgeMs <= 30000L
+                && eventSequence > 0L && eventType > 0;
+    }
+
     static String sanitizeTrail(String value) {
         if (value == null || value.length() == 0) return "none";
         StringBuilder sb = new StringBuilder();
@@ -141,6 +153,30 @@ final class BridgeProtocol {
                 + Math.max(0, uiNodes) + "|" + Math.max(0, uiClickable) + "|"
                 + Math.max(0, uiFocused) + "|" + Math.max(0, uiIds) + "|"
                 + fingerprint + "\n";
+    }
+
+    static String bodyV5(String key, long seq, String pkg, String cls,
+                         boolean audio, boolean screen, long wallTimeMs,
+                         String usageAccess, String foregroundSource,
+                         String foregroundStatus, String activityTrail,
+                         String uiPackage, long uiAgeMs, int uiNodes,
+                         int uiClickable, int uiFocused, int uiIds,
+                         String uiFingerprint, String eventPackage,
+                         String eventClass, long eventSequence, int eventType,
+                         int eventWindowId, int eventContentChanges,
+                         long eventAgeMs) {
+        String v4 = bodyV4(key, seq, pkg, cls, audio, screen, wallTimeMs,
+                usageAccess, foregroundSource, foregroundStatus, activityTrail,
+                uiPackage, uiAgeMs, uiNodes, uiClickable, uiFocused, uiIds,
+                uiFingerprint);
+        return "TVG5" + v4.substring(4, v4.length() - 1) + "|"
+                + sanitize(eventPackage, 128) + "|"
+                + sanitize(eventClass, 160) + "|"
+                + Math.max(0L, eventSequence) + "|"
+                + Math.max(0, eventType) + "|"
+                + Math.max(0, eventWindowId) + "|"
+                + Math.max(0, eventContentChanges) + "|"
+                + Math.max(0L, eventAgeMs) + "\n";
     }
 
 }

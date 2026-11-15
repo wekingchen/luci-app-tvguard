@@ -41,7 +41,7 @@ done
     echo "charge unknown"
     exit 0
 }
-IFS='|' read -r seen pkg activity audio screen client_ms seq usage_access foreground_source foreground_status activity_trail ui_package ui_age_ms ui_nodes ui_clickable ui_focused ui_ids ui_fingerprint < "$LATEST" || :
+IFS='|' read -r seen pkg activity audio screen client_ms seq usage_access foreground_source foreground_status activity_trail ui_package ui_age_ms ui_nodes ui_clickable ui_focused ui_ids ui_fingerprint event_package event_class event_seq event_type event_window_id event_content_changes event_age_ms < "$LATEST" || :
 activity_trail="${activity_trail:-none}"
 ui_package="${ui_package:-none}"
 ui_age_ms="${ui_age_ms:-0}"

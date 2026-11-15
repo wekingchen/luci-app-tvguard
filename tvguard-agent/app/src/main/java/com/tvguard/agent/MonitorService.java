@@ -217,11 +217,26 @@ public final class MonitorService extends Service {
                 int reportUiFocused = usableUi ? ui.focusedCount : 0;
                 int reportUiIds = usableUi ? ui.viewIdCount : 0;
                 String reportUiFingerprint = usableUi ? ui.fingerprint : "none";
+                UiStructureAccessibilityService.EventSnapshot event =
+                        UiStructureAccessibilityService.eventSnapshot();
+                long eventAgeMs = event.sampledMs == 0L ? 0L :
+                        Math.max(0L, now - event.sampledMs);
+                boolean usableEvent = BridgeProtocol.usableAccessibilityEvent(
+                        pkg, event.packageName, eventAgeMs, event.sequence, event.eventType);
+                String reportEventPackage = usableEvent ? event.packageName : "none";
+                String reportEventClass = usableEvent ? event.className : "unknown";
+                long reportEventSequence = usableEvent ? event.sequence : 0L;
+                int reportEventType = usableEvent ? event.eventType : 0;
+                int reportEventWindowId = usableEvent ? event.windowId : 0;
+                int reportEventContentChanges = usableEvent ? event.contentChangeTypes : 0;
+                long reportEventAgeMs = usableEvent ? eventAgeMs : 0L;
                 BridgeClient.maybeSend(MonitorService.this, pkg, cls,
                         activeAudio, screenOn, now, sample.usageAccess, source, status,
                         activityTrail, reportUiPackage, reportUiAgeMs, reportUiNodes,
                         reportUiClickable, reportUiFocused, reportUiIds,
-                        reportUiFingerprint);
+                        reportUiFingerprint, reportEventPackage, reportEventClass,
+                        reportEventSequence, reportEventType, reportEventWindowId,
+                        reportEventContentChanges, reportEventAgeMs);
             } catch (RuntimeException e) {
                 BridgeClient.markUplinkError("本地上报异常：" +
                         e.getClass().getSimpleName());

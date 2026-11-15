@@ -60,8 +60,8 @@ public final class MainActivity extends Activity {
         panel.setOrientation(LinearLayout.VERTICAL);
         panel.setPadding(32, 18, 32, 18);
         scroller.addView(panel);
-        addText(panel, "TVGuard 助手 · 0.3.6", 24, 0xFFFFFFFF);
-        addText(panel, "Android 6 前台上下文 + UI 结构学习 / 自动恢复版", 14, 0xFFB8C9D5);
+        addText(panel, "TVGuard 助手 · 0.3.7", 24, 0xFFFFFFFF);
+        addText(panel, "Android 6 前台上下文 + UI / Accessibility 事件诊断版", 14, 0xFFB8C9D5);
         toggle = new Button(this);
         toggle.setAllCaps(false);
         styleActionButton(toggle);

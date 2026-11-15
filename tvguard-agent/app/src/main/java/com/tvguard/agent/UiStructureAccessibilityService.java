@@ -17,6 +17,8 @@ public final class UiStructureAccessibilityService extends AccessibilityService 
     private static final int MAX_DEPTH = 10;
     private static final long REFRESH_INTERVAL_MS = 5000L;
     private static volatile Snapshot latest = Snapshot.empty();
+    private static volatile EventSnapshot latestEvent = EventSnapshot.empty();
+    private static volatile long eventSequence;
     private static volatile boolean connected;
     private final Handler refreshHandler = new Handler();
     private final Runnable refreshTask = new Runnable() {
@@ -53,6 +55,34 @@ public final class UiStructureAccessibilityService extends AccessibilityService 
         }
     }
 
+
+    /** Latest AccessibilityEvent metadata only; no text/content and no disk history. */
+    public static final class EventSnapshot {
+        public final long sampledMs;
+        public final String packageName;
+        public final String className;
+        public final long sequence;
+        public final int eventType;
+        public final int windowId;
+        public final int contentChangeTypes;
+
+        EventSnapshot(long sampledMs, String packageName, String className,
+                      long sequence, int eventType, int windowId,
+                      int contentChangeTypes) {
+            this.sampledMs = sampledMs;
+            this.packageName = packageName == null ? "" : packageName;
+            this.className = className == null ? "" : className;
+            this.sequence = sequence;
+            this.eventType = eventType;
+            this.windowId = windowId;
+            this.contentChangeTypes = contentChangeTypes;
+        }
+
+        static EventSnapshot empty() {
+            return new EventSnapshot(0L, "", "", 0L, 0, 0, 0);
+        }
+    }
+
     private static final class Accumulator {
         final MessageDigest digest;
         int nodes;
@@ -69,6 +99,10 @@ public final class UiStructureAccessibilityService extends AccessibilityService 
         return latest;
     }
 
+    public static EventSnapshot eventSnapshot() {
+        return latestEvent;
+    }
+
     public static boolean isConnected() {
         return connected;
     }
@@ -76,6 +110,8 @@ public final class UiStructureAccessibilityService extends AccessibilityService 
     @Override
     protected void onServiceConnected() {
         connected = true;
+        eventSequence = 0L;
+        latestEvent = EventSnapshot.empty();
         AccessibilityRecovery.onConnected(this);
         refreshHandler.removeCallbacks(refreshTask);
         captureCurrent();
@@ -84,6 +120,7 @@ public final class UiStructureAccessibilityService extends AccessibilityService 
 
     @Override
     public void onAccessibilityEvent(AccessibilityEvent event) {
+        recordEvent(event);
         captureCurrent();
     }
 
@@ -98,6 +135,7 @@ public final class UiStructureAccessibilityService extends AccessibilityService 
         AccessibilityRecovery.onDisconnected();
         refreshHandler.removeCallbacks(refreshTask);
         latest = Snapshot.empty();
+        latestEvent = EventSnapshot.empty();
         return super.onUnbind(intent);
     }
 
@@ -107,7 +145,27 @@ public final class UiStructureAccessibilityService extends AccessibilityService 
         AccessibilityRecovery.onDisconnected();
         refreshHandler.removeCallbacks(refreshTask);
         latest = Snapshot.empty();
+        latestEvent = EventSnapshot.empty();
         super.onDestroy();
+    }
+
+
+    private void recordEvent(AccessibilityEvent event) {
+        if (event == null) return;
+        try {
+            CharSequence pkgValue = event.getPackageName();
+            String pkg = pkgValue == null ? "" : pkgValue.toString();
+            if (pkg.length() == 0 || pkg.equals(getPackageName())) return;
+            CharSequence classValue = event.getClassName();
+            String cls = classValue == null ? "" : classValue.toString();
+            long seq = ++eventSequence;
+            latestEvent = new EventSnapshot(System.currentTimeMillis(), pkg, cls,
+                    seq, event.getEventType(), event.getWindowId(),
+                    event.getContentChangeTypes());
+        } catch (RuntimeException ignored) {
+            // Vendor AccessibilityEvent implementations may be partially malformed.
+            // Keep the previous bounded in-memory event snapshot.
+        }
     }
 
     private void captureCurrent() {

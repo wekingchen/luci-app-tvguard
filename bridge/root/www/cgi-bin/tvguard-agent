@@ -15,7 +15,7 @@ forbidden() { send '403 Forbidden' 'forbidden'; exit 0; }
 [ "${REQUEST_METHOD:-}" = POST ] || { send '405 Method Not Allowed' 'POST only'; exit 0; }
 len="${CONTENT_LENGTH:-}"
 case "$len" in ''|*[!0-9]*) bad ;; esac
-[ "$len" -gt 0 ] && [ "$len" -le 1024 ] || bad
+[ "$len" -gt 0 ] && [ "$len" -le 1536 ] || bad
 TV_IP="$(uci -q get tvguard.main.ip 2>/dev/null || :)"
 [ -n "$TV_IP" ] && [ "${REMOTE_ADDR:-}" = "$TV_IP" ] || forbidden
 [ -r "$KEY_FILE" ] || forbidden
@@ -46,7 +46,7 @@ fi
 
 oldIFS="$IFS"
 IFS='|'
-read -r version token seq pkg activity audio screen client_ms usage_access foreground_source foreground_status activity_trail ui_package ui_age_ms ui_nodes ui_clickable ui_focused ui_ids ui_fingerprint extra <<EOF
+read -r version token seq pkg activity audio screen client_ms usage_access foreground_source foreground_status activity_trail ui_package ui_age_ms ui_nodes ui_clickable ui_focused ui_ids ui_fingerprint event_package event_class event_seq event_type event_window_id event_content_changes event_age_ms extra <<EOF
 $line
 EOF
 IFS="$oldIFS"
@@ -64,6 +64,13 @@ case "$version" in
         ui_focused=0
         ui_ids=0
         ui_fingerprint=none
+        event_package=none
+        event_class=unknown
+        event_seq=0
+        event_type=0
+        event_window_id=0
+        event_content_changes=0
+        event_age_ms=0
         ;;
     TVG2)
         [ -z "${activity_trail:-}${ui_package:-}${ui_age_ms:-}${ui_nodes:-}${ui_clickable:-}${ui_focused:-}${ui_ids:-}${ui_fingerprint:-}${extra:-}" ] || bad
@@ -75,6 +82,13 @@ case "$version" in
         ui_focused=0
         ui_ids=0
         ui_fingerprint=none
+        event_package=none
+        event_class=unknown
+        event_seq=0
+        event_type=0
+        event_window_id=0
+        event_content_changes=0
+        event_age_ms=0
         ;;
     TVG3)
         [ -z "${ui_package:-}${ui_age_ms:-}${ui_nodes:-}${ui_clickable:-}${ui_focused:-}${ui_ids:-}${ui_fingerprint:-}${extra:-}" ] || bad
@@ -86,12 +100,34 @@ case "$version" in
         ui_focused=0
         ui_ids=0
         ui_fingerprint=none
+        event_package=none
+        event_class=unknown
+        event_seq=0
+        event_type=0
+        event_window_id=0
+        event_content_changes=0
+        event_age_ms=0
         ;;
     TVG4)
+        [ -z "${event_package:-}${event_class:-}${event_seq:-}${event_type:-}${event_window_id:-}${event_content_changes:-}${event_age_ms:-}${extra:-}" ] || bad
+        activity_trail="${activity_trail:-none}"
+        ui_package="${ui_package:-none}"
+        ui_fingerprint="${ui_fingerprint:-none}"
+        event_package=none
+        event_class=unknown
+        event_seq=0
+        event_type=0
+        event_window_id=0
+        event_content_changes=0
+        event_age_ms=0
+        ;;
+    TVG5)
         [ -z "${extra:-}" ] || bad
         activity_trail="${activity_trail:-none}"
         ui_package="${ui_package:-none}"
         ui_fingerprint="${ui_fingerprint:-none}"
+        event_package="${event_package:-none}"
+        event_class="${event_class:-unknown}"
         ;;
     *) bad ;;
 esac
@@ -125,11 +161,22 @@ case "$ui_fingerprint" in
     [0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]) : ;;
     *) bad ;;
 esac
+case "$event_package" in ''|*[!A-Za-z0-9._]*) bad ;; esac
+case "$event_class" in ''|*[!A-Za-z0-9._\$]*) bad ;; esac
+[ "${#event_package}" -le 128 ] && [ "${#event_class}" -le 160 ] || bad
+for number in "$event_seq" "$event_type" "$event_window_id" "$event_content_changes" "$event_age_ms"; do
+    case "$number" in ''|*[!0-9]*) bad ;; esac
+    [ "${#number}" -le 16 ] || bad
+done
 
 mkdir -p "$RAM_DIR" || { send '503 Service Unavailable' 'unavailable'; exit 0; }
 now="$(date +%s)"
 tmp="$RAM_DIR/latest.$$"
-if printf '%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s\n'         "$now" "$pkg" "$activity" "$audio" "$screen" "$client_ms" "$seq"         "$usage_access" "$foreground_source" "$foreground_status" "$activity_trail"         "$ui_package" "$ui_age_ms" "$ui_nodes" "$ui_clickable" "$ui_focused" "$ui_ids" "$ui_fingerprint" > "$tmp" &&
+if printf '%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s\n' \
+        "$now" "$pkg" "$activity" "$audio" "$screen" "$client_ms" "$seq" \
+        "$usage_access" "$foreground_source" "$foreground_status" "$activity_trail" \
+        "$ui_package" "$ui_age_ms" "$ui_nodes" "$ui_clickable" "$ui_focused" "$ui_ids" "$ui_fingerprint" \
+        "$event_package" "$event_class" "$event_seq" "$event_type" "$event_window_id" "$event_content_changes" "$event_age_ms" > "$tmp" &&
    mv -f "$tmp" "$OUT"; then
     send '200 OK' 'ok'
 else

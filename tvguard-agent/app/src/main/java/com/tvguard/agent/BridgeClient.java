@@ -161,6 +161,22 @@ final class BridgeClient {
                           String uiPackage, long uiAgeMs, int uiNodes,
                           int uiClickable, int uiFocused, int uiIds,
                           String uiFingerprint) {
+        maybeSend(ctx, pkg, cls, audio, screen, wallTimeMs,
+                usageAccess, foregroundSource, foregroundStatus, activityTrail,
+                uiPackage, uiAgeMs, uiNodes, uiClickable, uiFocused, uiIds,
+                uiFingerprint, "none", "unknown", 0L, 0, 0, 0, 0L);
+    }
+
+    static void maybeSend(Context ctx, String pkg, String cls,
+                          boolean audio, boolean screen, long wallTimeMs,
+                          String usageAccess, String foregroundSource,
+                          String foregroundStatus, String activityTrail,
+                          String uiPackage, long uiAgeMs, int uiNodes,
+                          int uiClickable, int uiFocused, int uiIds,
+                          String uiFingerprint, String eventPackage,
+                          String eventClass, long eventSequence, int eventType,
+                          int eventWindowId, int eventContentChanges,
+                          long eventAgeMs) {
         long now = SystemClock.elapsedRealtime();
         if (sentElapsed != 0 && now >= sentElapsed && now - sentElapsed < 10000L) return;
         sentElapsed = now;
@@ -168,9 +184,11 @@ final class BridgeClient {
         if (!BridgeProtocol.validEndpoint(endpoint) || !BridgeProtocol.validKey(token)) {
             state = "未配对"; return;
         }
-        String body = BridgeProtocol.bodyV4(token, ++sequence, pkg, cls, audio, screen,
+        String body = BridgeProtocol.bodyV5(token, ++sequence, pkg, cls, audio, screen,
                 wallTimeMs, usageAccess, foregroundSource, foregroundStatus, activityTrail,
-                uiPackage, uiAgeMs, uiNodes, uiClickable, uiFocused, uiIds, uiFingerprint);
+                uiPackage, uiAgeMs, uiNodes, uiClickable, uiFocused, uiIds, uiFingerprint,
+                eventPackage, eventClass, eventSequence, eventType, eventWindowId,
+                eventContentChanges, eventAgeMs);
         HttpURLConnection conn = null;
         try {
             conn = (HttpURLConnection) new URL(endpoint).openConnection(Proxy.NO_PROXY);

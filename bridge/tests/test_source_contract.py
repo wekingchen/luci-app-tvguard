@@ -18,6 +18,7 @@ assert 'REQUEST_METHOD' in cgi and 'REMOTE_ADDR' in cgi
 assert 'agent-bridge.key' in cgi
 assert 'TVG3' in cgi and 'activity_trail' in cgi
 assert 'TVG4' in cgi and 'ui_fingerprint' in cgi
+assert 'TVG5' in cgi and 'event_class' in cgi and 'event_type' in cgi
 assert '>>' not in cgi
 assert 'USED_S' not in cgi and 'iptables' not in cgi
 
@@ -32,6 +33,10 @@ assert 'fusion_pause_streak=' in report
 assert 'recent_activity_trail=' in report
 assert 'TVG1_TVG2_TVG3_TVG4' in report
 assert 'ui_structure_fingerprint=' in report
+assert 'accessibility_event_class=' in report
+assert 'accessibility_event_seq=' in report
+assert 'accessibility_event_type=' in report
+assert 'accessibility_event_age_ms=' in report
 assert 'soak-v3.csv' in report and 'soak-v3.csv' in soak
 assert 'repeated_report_not_new_evidence' in soak
 assert 'agent_process_restart_suspected' in soak
@@ -97,6 +102,7 @@ assert 'pause_streak" -ge 3' in fusion  # legacy network-pause path stays conser
 assert '$19=="high"' in fusion and '$27+0' in fusion
 assert '$40=="high"' in fusion and '$34' in fusion and '$35+0>=75' in fusion
 assert 'activity_trail' in fusion
+assert 'event_class' not in fusion and 'accessibility_event' not in fusion
 assert 'learned_trail_profile' in fusion
 assert 'paused_classified_learned_activity_trail' in fusion
 assert 'app_home_classified_learned_activity_trail' in fusion

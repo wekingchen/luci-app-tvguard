@@ -24,6 +24,7 @@ with tempfile.TemporaryDirectory() as folder:
     v3='TVG3|0123456789abcdef0123456789abcdef|3|com.gitvdemo.video|com.gala.video.plugincenter.component.InstrActivityProxy0|1|1|1794319210000|allowed|usage_events|full_context|'+trail+'\n'
     ui_fp='0123456789abcdef0123456789abcdef'
     v4='TVG4|0123456789abcdef0123456789abcdef|4|com.gitvdemo.video|com.gala.video.plugincenter.component.InstrActivityProxy0|1|1|1794319220000|allowed|usage_events|full_context|'+trail+'|com.gitvdemo.video|250|27|12|1|6|'+ui_fp+'\n'
+    v5='TVG5|0123456789abcdef0123456789abcdef|5|com.gitvdemo.video|com.gala.video.plugincenter.component.InstrActivityProxy0|0|1|1794319230000|allowed|usage_events|full_context|'+trail+'|none|0|0|0|0|0|none|com.gitvdemo.video|android.view.View|23|2048|7|1|250\n'
     def send(body=base,remote='192.168.101.76',method='POST'):
         env={**os.environ,'REQUEST_METHOD':method,'REMOTE_ADDR':remote,
              'CONTENT_LENGTH':str(len(body))}
@@ -34,13 +35,15 @@ with tempfile.TemporaryDirectory() as folder:
     assert (state/'latest').exists()
     latest=(state/'latest').read_text()
     assert 'com.gitvdemo.video' in latest
-    assert latest.rstrip().endswith('|allowed|usage_events|full_context|none|none|0|0|0|0|0|none')
+    assert latest.rstrip().endswith('|allowed|usage_events|full_context|none|none|0|0|0|0|0|none|none|unknown|0|0|0|0|0')
     assert '200 OK' in send(body=v3)
-    assert (state/'latest').read_text().rstrip().endswith('|allowed|usage_events|full_context|'+trail+'|none|0|0|0|0|0|none')
+    assert (state/'latest').read_text().rstrip().endswith('|allowed|usage_events|full_context|'+trail+'|none|0|0|0|0|0|none|none|unknown|0|0|0|0|0')
     assert '200 OK' in send(body=v4)
-    assert (state/'latest').read_text().rstrip().endswith('|'+trail+'|com.gitvdemo.video|250|27|12|1|6|'+ui_fp)
+    assert (state/'latest').read_text().rstrip().endswith('|'+trail+'|com.gitvdemo.video|250|27|12|1|6|'+ui_fp+'|none|unknown|0|0|0|0|0')
+    assert '200 OK' in send(body=v5)
+    assert (state/'latest').read_text().rstrip().endswith('|'+trail+'|none|0|0|0|0|0|none|com.gitvdemo.video|android.view.View|23|2048|7|1|250')
     assert '200 OK' in send(body=legacy)
-    assert (state/'latest').read_text().rstrip().endswith('|legacy|legacy|legacy|none|none|0|0|0|0|0|none')
+    assert (state/'latest').read_text().rstrip().endswith('|legacy|legacy|legacy|none|none|0|0|0|0|0|none|none|unknown|0|0|0|0|0')
     assert '403 Forbidden' in send(remote='192.168.101.75')
     assert '403 Forbidden' in send(body=base.replace('0123456789abcdef','0000000000000000'))
     assert '405 Method Not Allowed' in send(method='GET')
@@ -51,6 +54,7 @@ with tempfile.TemporaryDirectory() as folder:
     bad_fp=v4.rsplit('|',1)[0]+'|not-a-hash\n'
     assert '400 Bad Request' in send(body=bad_fp)
     assert '400 Bad Request' in send(body=v4.replace('|27|12|1|6|', '|27|bad|1|6|'))
-    assert '400 Bad Request' in send(body='X'*1025)
+    assert '400 Bad Request' in send(body=v5.replace('|23|2048|7|1|250', '|23|bad|7|1|250'))
+    assert '400 Bad Request' in send(body='X'*1537)
     assert len(list(state.glob('latest*')))==1
-print('bridge TVG1/TVG2/TVG3/TVG4 validation, diagnostic isolation and RAM-only write PASS')
+print('bridge TVG1/TVG2/TVG3/TVG4/TVG5 validation, diagnostic isolation and RAM-only write PASS')

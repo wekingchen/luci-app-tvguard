@@ -68,6 +68,32 @@ public final class BridgeProtocolTest {
         assertTrue(payload.length() < 1024);
     }
 
+    @Test public void tvg5AddsAccessibilityEventDiagnosticsWithoutText() {
+        String payload = BridgeProtocol.bodyV5(KEY, 8, "com.example.video",
+                "com.example.video.PlayerActivity", false, true, 123456792L,
+                "allowed", "usage_events", "full_context", "none",
+                "none", 0L, 0, 0, 0, 0, "none",
+                "com.example.video", "android.view.View", 23L,
+                2048, 7, 1, 250L);
+        assertTrue(payload.startsWith("TVG5|" + KEY + "|8|"));
+        assertTrue(payload.contains("|com.example.video|android.view.View|23|2048|7|1|250\n"));
+        assertFalse(payload.contains("subtitle"));
+        assertTrue(payload.length() < 1536);
+    }
+
+    @Test public void accessibilityEventMustMatchForegroundAndStayFresh() {
+        assertTrue(BridgeProtocol.usableAccessibilityEvent("com.example.video",
+                "com.example.video", 29999L, 3L, 2048));
+        assertFalse(BridgeProtocol.usableAccessibilityEvent("com.example.video",
+                "com.example.other", 100L, 3L, 2048));
+        assertFalse(BridgeProtocol.usableAccessibilityEvent("com.example.video",
+                "com.example.video", 30001L, 3L, 2048));
+        assertFalse(BridgeProtocol.usableAccessibilityEvent("com.example.video",
+                "com.example.video", 100L, 0L, 2048));
+        assertFalse(BridgeProtocol.usableAccessibilityEvent("com.example.video",
+                "com.example.video", 100L, 3L, 0));
+    }
+
     @Test public void uiEvidenceMustMatchForegroundAndStayFresh() {
         String fp = "0123456789abcdef0123456789abcdef";
         assertTrue(BridgeProtocol.usableUi("com.example.video",

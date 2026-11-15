@@ -35,8 +35,8 @@ assert "startForeground(" not in service
 assert "stopForeground(" not in service
 assert "static boolean isRunning()" in service
 gradle = (root / "app/build.gradle").read_text()
-assert "versionCode 19" in gradle
-assert "versionName '0.3.6'" in gradle
+assert "versionCode 20" in gradle
+assert "versionName '0.3.7'" in gradle
 
 main_activity = (src / "java/com/tvguard/agent/MainActivity.java").read_text()
 assert "不维护视频 App 白名单" in main_activity
@@ -76,7 +76,7 @@ assert "SharedPreferences.Editor" in service
 assert "editor.commit()" in service
 main_activity = (src / "java/com/tvguard/agent/MainActivity.java").read_text()
 editor = (src / "java/com/tvguard/agent/TvAddressEditor.java").read_text()
-assert "TVGuard 助手 · 0.3.6" in main_activity
+assert "TVGuard 助手 · 0.3.7" in main_activity
 gradle = (root / "app/build.gradle").read_text()
 assert "targetSdk 23" in gradle
 assert "disable 'ExpiredTargetSdkVersion'" in gradle
@@ -122,9 +122,12 @@ protocol = (src / "java/com/tvguard/agent/BridgeProtocol.java").read_text()
 assert '"TVG2|"' in protocol
 assert '"TVG3|"' in protocol
 assert '"TVG4|"' in protocol
+assert '"TVG5"' in protocol
 assert "activityTrail" in protocol
 assert "bodyV3" in protocol
 assert "bodyV4" in protocol
+assert "bodyV5" in protocol
+assert "usableAccessibilityEvent" in protocol
 assert "usageAccess" in protocol and "foregroundSource" in protocol
 assert "foregroundStatus" in protocol
 ui_service = (src / "java/com/tvguard/agent/UiStructureAccessibilityService.java").read_text()
@@ -145,6 +148,11 @@ assert "refreshHandler.removeCallbacks(refreshTask)" in ui_service
 assert "getViewIdResourceName" in ui_service
 assert "getText(" not in ui_service
 assert "getContentDescription(" not in ui_service
+assert "EventSnapshot" in ui_service
+assert "recordEvent(event)" in ui_service
+assert "event.getEventType()" in ui_service
+assert "event.getWindowId()" in ui_service
+assert "event.getContentChangeTypes()" in ui_service
 assert "SharedPreferences" not in ui_service
 assert "SQLite" not in ui_service
 assert "java.io.File" not in ui_service
@@ -185,6 +193,8 @@ assert recovery_policy.index("if (!globalEnabled || !configured)") < recovery_po
 assert "connected && globalEnabled && configured" in accessibility_recovery
 assert accessibility_recovery.index('if (!isGlobalEnabled(context)) return "global_disabled";') < accessibility_recovery.index('if (UiStructureAccessibilityService.isConnected()) return "connected";')
 assert "BridgeProtocol.usableUi(" in service
+assert "UiStructureAccessibilityService.eventSnapshot()" in service
+assert "BridgeProtocol.usableAccessibilityEvent(" in service
 assert 'reportUiPackage = usableUi ? ui.packageName : "none"' in service
 assert "UNBOUND_GRACE_MS = 15000L" in recovery_policy
 assert "NUDGE_COOLDOWN_MS = 30000L" in recovery_policy
