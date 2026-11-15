@@ -514,7 +514,7 @@ with tempfile.TemporaryDirectory(prefix="tvguard-fusion-") as folder:
                pause_hint="none", pause_score=0, active_floor=100) == (
         "unknown", "media_context_switch_play_warming", 0)
     state_fields = (d / "fusion.state").read_text().strip().split("|")
-    assert state_fields[0] == "4", state_fields
+    assert state_fields[0] == "5", state_fields
     assert state_fields[6] == APP_A, state_fields
     assert state_fields[7] == PLAYER_A, state_fields
     for seq, seen, pps in ((3, 620, 11), (4, 630, 9)):
