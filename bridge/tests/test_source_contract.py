@@ -96,7 +96,11 @@ assert 'pause_streak" -ge 2' in fusion
 assert 'pause_streak" -ge 3' in fusion  # legacy network-pause path stays conservative
 assert '$19=="high"' in fusion and '$27+0' in fusion
 assert '$40=="high"' in fusion and '$34' in fusion and '$35+0>=75' in fusion
-assert 'activity_trail' not in fusion
+assert 'activity_trail' in fusion
+assert 'learned_trail_profile' in fusion
+assert 'paused_classified_learned_activity_trail' in fusion
+assert 'app_home_classified_learned_activity_trail' in fusion
+assert 'calibration-v5.csv' in fusion
 assert 'learned_ui_profile' in fusion
 assert 'ui_fingerprint' in fusion
 assert 'ui_total_age_ms' in fusion and 'ui_total_age_ms" -le 20000' in fusion
@@ -132,5 +136,7 @@ assert 'iptables' not in billing
 assert '/etc/' not in billing
 assert billing.count('ui_fingerprint') >= 3
 assert 'paused_confirmed_learned_ui_context' in billing
+assert 'paused_classified_learned_activity_trail' in billing
 fusion_call = billing[billing.index('fusion="$("$FUSION"'):billing.index('set -- $fusion')]
 assert 'ui_fingerprint' in fusion_call and 'ui_age_ms' in fusion_call and 'ui_package' in fusion_call
+assert 'activity_trail' in fusion_call

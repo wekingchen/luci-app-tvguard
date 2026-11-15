@@ -164,3 +164,19 @@ App 首页   已识别
 满足后，exact context + audio=1 可直接确认 playing；exact context + audio=0 仍需至少 2 个 fresh report 才确认 generic nonplaying。generic nonplaying 可以获得 billing free，但展示层可以继续利用网络/时间画像尝试区分 paused 与 app_home；若无法可靠区分，宁可显示中性 nonplaying，也不能为了漂亮的标签牺牲计费安全。
 
 该机制不得覆盖现有 r7 Type-A learned-audio profile：如果 exact context 没有 app_home 冲突，继续沿用 playing/paused 成对画像；只有共享 exact context 的 app_home 高可信样本明确存在时，才允许切换到 Type-D generic nonplaying 画像。
+
+
+## r5：Type-D 四状态运行时细分
+
+真机再次验证后，Type-D 共享前台上下文的 paused 与 app_home 会被旧运行时诚实地折叠为 nonplaying。这保证了计费安全，但没有兑现 Learning Center 的四状态诊断目标。
+
+r5 在不扩大免计时授权的前提下增加 **Activity trail 分类层**：
+
+- playing 仍由已经通过三态人工学习的 Type-D audio profile 确认；
+- audio=0 仍必须先通过原有两个 fresh report 的 nonplaying 确认门槛；
+- 只有人工 paused / app_home 会话的 Activity trail 覆盖率与稳定度均达到 75% 以上，且两类 dominant trail 不冲突时，才允许把已确认的 nonplaying 进一步标为 paused 或 app_home；
+- trail 缺失、未知、冲突或不匹配时继续输出 nonplaying，绝不猜测；
+- PPS/TCP/UDP/BPS 不参与 paused 与 app_home 的细分，也不能获得新的 free authority；
+- 新会话把 trail 摘要追加到 learning-sessions.csv 41–43 列；旧 29/40 列会话可从最新高可信 calibration-v5.csv 会话回溯，避免要求用户重采。
+
+因此 r5 的安全层次是：**Type-D learned nonplaying 决定“是否可免计时”，Activity trail 只决定“免计时状态叫什么”**。

@@ -204,7 +204,8 @@ if [ "$age" -gt 20 ]; then
 elif [ -x "$FUSION" ]; then
     fusion="$("$FUSION" "$now" "$seen" "$seq" "$pkg" "$activity" "$audio" "$screen" \
         "${network_pps:-0}" "$shadow" "$adaptive_state" "$adaptive_score" "$adaptive_reason" \
-        "$pause_hint" "$pause_score" "$active_floor" 2>/dev/null || echo 'unknown fusion_error 0')"
+        "$pause_hint" "$pause_score" "$active_floor" "$ui_package" "$ui_age_ms" "$ui_fingerprint" "$activity_trail" \
+        2>/dev/null || echo 'unknown fusion_error 0')"
     set -- $fusion
     if [ "$#" -eq 3 ]; then
         case "$1" in playing|paused|app_home|system_home|nonplaying|unknown) combined="$1" ;; esac

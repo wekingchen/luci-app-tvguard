@@ -42,6 +42,7 @@ done
     exit 0
 }
 IFS='|' read -r seen pkg activity audio screen client_ms seq usage_access foreground_source foreground_status activity_trail ui_package ui_age_ms ui_nodes ui_clickable ui_focused ui_ids ui_fingerprint < "$LATEST" || :
+activity_trail="${activity_trail:-none}"
 ui_package="${ui_package:-none}"
 ui_age_ms="${ui_age_ms:-0}"
 ui_fingerprint="${ui_fingerprint:-none}"
@@ -69,7 +70,7 @@ fi
 
 fusion="$("$FUSION" "$now" "$seen" "$seq" "$pkg" "$activity" "$audio" "$screen" \
     "$pps" "$shadow" "$adaptive_state" "$adaptive_score" "$adaptive_reason" \
-    "$pause_hint" "$pause_score" "$active_floor" "$ui_package" "$ui_age_ms" "$ui_fingerprint" \
+    "$pause_hint" "$pause_score" "$active_floor" "$ui_package" "$ui_age_ms" "$ui_fingerprint" "$activity_trail" \
     2>/dev/null || echo 'unknown fusion_error 0')"
 set -- $fusion
 [ "$#" -eq 3 ] || {
@@ -110,7 +111,7 @@ case "$1" in
         # temporal hold is deliberately still chargeable so an uncertain
         # transition back to playback cannot inherit free time.
         case "$2" in
-            paused_confirmed_learned_context|paused_confirmed_learned_audio_context|paused_confirmed_learned_ui_context)
+            paused_confirmed_learned_context|paused_confirmed_learned_audio_context|paused_confirmed_learned_ui_context|paused_classified_learned_activity_trail)
                 echo "free paused"
                 ;;
             *)

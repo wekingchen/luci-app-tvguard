@@ -57,6 +57,26 @@ with tempfile.TemporaryDirectory(prefix="tvguard-billing-hint-") as folder:
             row("13-home", "app_home", home_audio) + "\n"
         )
 
+    def write_nonplaying_trail_profile(pkg=PKG, activity=PLAYER,
+                                        pause_trail="com.example.media.RootTask~com.example.media.Main",
+                                        home_trail="com.example.media.RootTask~com.example.media.Exit"):
+        def row(sid, label, audio, trail):
+            values = [
+                1000, sid, label, "general", 180, "completed", 17, 179,
+                94, 20, 50, 120, 1, 45, 90000, 150000, "variable", "high",
+                "high", 100, 100, 100, pkg, 100, activity, 100,
+                audio, 100, 0, 0, 0, "none", 0, "none", 0, 0, 0, 0, 0, "none",
+                100, trail, 100,
+            ]
+            assert len(values) == 43
+            return ",".join(map(str, values))
+        (d / "learning-sessions.csv").write_text(
+            row("31-play", "playing", 100, "none") + "\n" +
+            row("32-pause", "paused", 0, pause_trail) + "\n" +
+            row("33-home", "app_home", 0, home_trail) + "\n"
+        )
+        return pause_trail, home_trail
+
     def write_ui_profile(pkg=PKG, activity=PLAYER,
                          play_fp=UI_PLAY_FP, pause_fp=UI_PAUSE_FP):
         def row(sid, label, fp, nodes, clickable, ids):
@@ -85,14 +105,16 @@ with tempfile.TemporaryDirectory(prefix="tvguard-billing-hint-") as folder:
 
     def put(seq, seen, pkg, activity, audio=1, screen=1,
             ui_package=None, ui_age_ms=0, ui_fp="none",
-            ui_nodes=0, ui_clickable=0, ui_focused=0, ui_ids=0):
-        if ui_package is None:
+            ui_nodes=0, ui_clickable=0, ui_focused=0, ui_ids=0,
+            activity_trail=None):
+        if ui_package is None and activity_trail is None:
             latest.write_text(
                 f"{seen}|{pkg}|{activity}|{audio}|{screen}|{seen*1000}|{seq}\n")
         else:
             latest.write_text(
                 f"{seen}|{pkg}|{activity}|{audio}|{screen}|{seen*1000}|{seq}|"
-                f"allowed|usage_events|full_context|none|{ui_package}|{ui_age_ms}|"
+                f"allowed|usage_events|full_context|{activity_trail or 'none'}|"
+                f"{ui_package or 'none'}|{ui_age_ms}|"
                 f"{ui_nodes}|{ui_clickable}|{ui_focused}|{ui_ids}|{ui_fp}\n")
 
     def run(now, pps=20, shadow="unknown", adaptive_state="ambiguous",
@@ -181,6 +203,33 @@ with tempfile.TemporaryDirectory(prefix="tvguard-billing-hint-") as folder:
                adaptive_score=50, adaptive_reason="overlap",
                pause_hint="none", pause_score=0) == (
         "charge", "playing")
+    (d / "learning-sessions.csv").unlink()
+
+    # Type-D trail refinement keeps the same nonplaying billing authority
+    # while exposing paused/app_home when a unique learned trail matches.
+    write_nonplaying_trail_profile()
+    pause_trail = "com.example.media.RootTask~com.example.media.Main"
+    home_trail = "com.example.media.RootTask~com.example.media.Exit"
+    put(20, 395, PKG, PLAYER, audio=0, activity_trail=pause_trail)
+    assert run(395, pps=300, shadow="playing", adaptive_state="active",
+               adaptive_score=100, adaptive_reason="clear_current") == (
+        "charge", "unknown")
+    put(21, 405, PKG, PLAYER, audio=0, activity_trail=pause_trail)
+    assert run(405, pps=300, shadow="playing", adaptive_state="active",
+               adaptive_score=100, adaptive_reason="clear_current") == (
+        "free", "paused")
+    put(22, 415, PKG, PLAYER, audio=1, activity_trail=home_trail)
+    assert run(415, pps=5, shadow="idle", adaptive_state="ambiguous",
+               adaptive_score=50, adaptive_reason="overlap") == (
+        "charge", "playing")
+    put(23, 425, PKG, PLAYER, audio=0, activity_trail=home_trail)
+    assert run(425, pps=300, shadow="playing", adaptive_state="active",
+               adaptive_score=100, adaptive_reason="clear_current") == (
+        "charge", "unknown")
+    put(24, 435, PKG, PLAYER, audio=0, activity_trail=home_trail)
+    assert run(435, pps=300, shadow="playing", adaptive_state="active",
+               adaptive_score=100, adaptive_reason="clear_current") == (
+        "free", "app_home")
     (d / "learning-sessions.csv").unlink()
 
     # Same-context/same-audio learned UI profile: network activity is irrelevant

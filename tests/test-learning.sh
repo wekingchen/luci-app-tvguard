@@ -52,9 +52,10 @@ grep -q '^最近 Activity 轨迹: 覆盖 100% · com.mitv.tvhome.MainActivityUse
 grep -q '^电视上下文: 音频活跃 5% · 屏幕亮 100% · 前台切换 0 次$' "$REPORT"
 grep -q '^联合质量: high$' "$REPORT"
 grep -q '高可信 Agent 联合人工学习会话' "$REPORT"
-awk -F, 'NF==40 && $2=="1700000000-1" && $3=="system_home" && $9==100 && $18=="high" &&
+awk -F, 'NF==43 && $2=="1700000000-1" && $3=="system_home" && $9==100 && $18=="high" &&
           $19=="high" && $23=="com.mitv.tvhome" && $25=="com.mitv.tvhome.MainActivityUserMode" &&
-          $27==5 && $28==100 {ok=1} END {exit !ok}' \
+          $27==5 && $28==100 && $41==100 &&
+          $42=="com.mitv.tvhome.MainActivityUserMode" && $43==100 {ok=1} END {exit !ok}' \
     "$TMP/state/learning-sessions.csv"
 
 # Legacy 18-column v5 remains valid. Unknown foreground must stay network-only,
@@ -106,7 +107,7 @@ for label in playing paused; do
     sh "$DST" "$sid" "$label" 120 general completed 1794476120
 done
 awk -F, -v p="$PKG" -v a="$ACT" '
-    NF==40 && $6=="completed" && $18=="high" && $19=="high" &&
+    NF==43 && $6=="completed" && $18=="high" && $19=="high" &&
     $23==p && $24==100 && $25==a && $26==100 && $28==100 {
         if ($3=="playing" && $27==100) play=1
         if ($3=="paused" && $27==0) pause=1
@@ -152,7 +153,7 @@ for label in playing paused; do
 done
 
 awk -F, -v p="$PKG" -v a="$ACT" -v pf="$PLAY_FP" -v qf="$PAUSE_FP" '
-    NF==40 && $6=="completed" && $18=="high" && $19=="high" &&
+    NF==43 && $6=="completed" && $18=="high" && $19=="high" &&
     $23==p && $25==a && $31==100 && $32==p && $33==100 && $35==100 && $40=="high" {
         if ($3=="playing" && $34==pf && $36==4 && $37==0 && $39==1) play=1
         if ($3=="paused" && $34==qf && $36==26 && $37==12 && $39==8) pause=1

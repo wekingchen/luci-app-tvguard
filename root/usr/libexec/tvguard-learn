@@ -322,10 +322,12 @@ EOF
 chmod 600 "$tmp"
 mv -f "$tmp" "$LAST"
 
-# learning-sessions schema v3 keeps the original 29 columns intact and
-# appends reusable TVG4 UI structure-learning features. Older 18/29-column rows
-# remain valid for their original paths but cannot authorize learned UI pause.
-printf '%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s\n' \
+# learning-sessions schema v4 keeps the original 40 columns intact and appends
+# reusable TVG3 Activity-trail classification evidence in columns 41..43:
+# trail coverage, dominant trail, dominant-trail share. Older 18/29/40-column
+# rows stay valid; Fusion can recover recent legacy trail evidence from
+# calibration-v5.csv without forcing the user to repeat a manual session.
+printf '%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s\n' \
     "$finished" "$sid" "$label" "$app" "$duration" "$result" "$samples" "$elapsed" \
     "$coverage" "$p10" "$p50" "$p90" "$t50" "$u50" "$b50" "$b90" "$stability" "$quality" \
     "$joint_quality" "$agent_coverage" "$agent_package_coverage" "$agent_full_coverage" \
@@ -333,6 +335,7 @@ printf '%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,
     "$audio_ratio" "$screen_ratio" "$context_changes" "$ui_samples" "$ui_coverage" \
     "$dominant_ui_package" "$dominant_ui_package_share" "$dominant_ui_fingerprint" \
     "$dominant_ui_fingerprint_share" "$ui_node_avg" "$ui_clickable_avg" "$ui_focused_avg" \
-    "$ui_ids_avg" "$ui_quality" >> "$SESSIONS"
+    "$ui_ids_avg" "$ui_quality" "$activity_trail_coverage" "$dominant_activity_trail" \
+    "$dominant_activity_trail_share" >> "$SESSIONS"
 chmod 600 "$SESSIONS"
 "$RETENTION" trim >/dev/null 2>&1 || :

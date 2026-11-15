@@ -55,6 +55,26 @@ with tempfile.TemporaryDirectory(prefix="tvguard-fusion-") as folder:
             row("13-home", "app_home", home_audio) + "\n"
         )
 
+    def write_nonplaying_trail_profile(pkg=APP_A, activity=PLAYER_A,
+                                        pause_trail="com.example.videoa.ui.RootTaskActivity~com.example.videoa.ui.MainActivity",
+                                        home_trail="com.example.videoa.ui.RootTaskActivity~com.example.videoa.ui.ExitActivity"):
+        def row(sid, label, audio, trail):
+            values = [
+                1000, sid, label, "general", 180, "completed", 17, 179,
+                94, 20, 50, 120, 1, 45, 90000, 150000, "variable", "high",
+                "high", 100, 100, 100, pkg, 100, activity, 100,
+                audio, 100, 0, 0, 0, "none", 0, "none", 0, 0, 0, 0, 0, "none",
+                100, trail, 100,
+            ]
+            assert len(values) == 43
+            return ",".join(map(str, values))
+        (d / "learning-sessions.csv").write_text(
+            row("31-play", "playing", 100, "none") + "\n" +
+            row("32-pause", "paused", 0, pause_trail) + "\n" +
+            row("33-home", "app_home", 0, home_trail) + "\n"
+        )
+        return pause_trail, home_trail
+
     def write_ui_profile(pkg=APP_A, activity=PLAYER_A,
                          play_fp=UI_PLAY_FP, pause_fp=UI_PAUSE_FP):
         def row(sid, label, fp, nodes, clickable, ids):
@@ -83,7 +103,8 @@ with tempfile.TemporaryDirectory(prefix="tvguard-fusion-") as folder:
             pps=20, shadow="idle", adaptive_state="ambiguous",
             adaptive_score=50, adaptive_reason="overlap",
             pause_hint="bursty_pause", pause_score=75, active_floor=100,
-            ui_package=None, ui_age_ms=0, ui_fp="none"):
+            ui_package=None, ui_age_ms=0, ui_fp="none",
+            activity_trail=None):
         args = [
             "dash", str(target),
             str(seen), str(seen), str(seq), pkg, activity,
@@ -91,7 +112,9 @@ with tempfile.TemporaryDirectory(prefix="tvguard-fusion-") as folder:
             adaptive_state, str(adaptive_score), adaptive_reason,
             pause_hint, str(pause_score), str(active_floor),
         ]
-        if ui_package is not None:
+        if activity_trail is not None:
+            args += [ui_package or "none", str(ui_age_ms), ui_fp, activity_trail]
+        elif ui_package is not None:
             args += [ui_package, str(ui_age_ms), ui_fp]
         out = subprocess.check_output(args, text=True).strip().split()
         assert len(out) == 3, out
@@ -182,6 +205,71 @@ with tempfile.TemporaryDirectory(prefix="tvguard-fusion-") as folder:
                pause_hint="none", pause_score=0,
                active_floor=100) == (
         "playing", "playing_confirmed_learned_nonplaying_profile", 0)
+
+    # Type-D four-state refinement: Activity trail labels only an already
+    # confirmed nonplaying state and never bypasses the two-report gate.
+    reset()
+    pause_trail, home_trail = write_nonplaying_trail_profile()
+    assert run(1, 381, audio=0, pps=300, shadow="playing",
+               adaptive_state="active", adaptive_score=100,
+               adaptive_reason="clear_current", pause_hint="none",
+               pause_score=0, active_floor=100,
+               activity_trail=pause_trail) == (
+        "unknown", "nonplaying_audio_profile_warming", 1)
+    assert run(2, 391, audio=0, pps=300, shadow="playing",
+               adaptive_state="active", adaptive_score=100,
+               adaptive_reason="clear_current", pause_hint="none",
+               pause_score=0, active_floor=100,
+               activity_trail=pause_trail) == (
+        "paused", "paused_classified_learned_activity_trail", 2)
+    assert run(3, 401, audio=1, pps=5, shadow="idle",
+               adaptive_state="ambiguous", adaptive_score=50,
+               adaptive_reason="overlap", pause_hint="none",
+               pause_score=0, active_floor=100,
+               activity_trail=home_trail) == (
+        "playing", "playing_confirmed_learned_nonplaying_profile", 0)
+    assert run(4, 411, audio=0, pps=300, shadow="playing",
+               adaptive_state="active", adaptive_score=100,
+               adaptive_reason="clear_current", pause_hint="none",
+               pause_score=0, active_floor=100,
+               activity_trail=home_trail) == (
+        "unknown", "nonplaying_audio_profile_warming", 1)
+    assert run(5, 421, audio=0, pps=300, shadow="playing",
+               adaptive_state="active", adaptive_score=100,
+               adaptive_reason="clear_current", pause_hint="none",
+               pause_score=0, active_floor=100,
+               activity_trail=home_trail) == (
+        "app_home", "app_home_classified_learned_activity_trail", 2)
+
+    # Legacy 29/40-column summaries can recover today's already-collected trail
+    # evidence from calibration-v5.csv without repeating manual learning.
+    reset()
+    write_nonplaying_profile()
+    legacy_pause = "com.example.videoa.ui.RootTaskActivity~com.example.videoa.ui.MainActivity"
+    legacy_home = "com.example.videoa.ui.RootTaskActivity~com.example.videoa.ui.ExitActivity"
+    rows = []
+    for sid, label, trail in (
+        ("12-pause", "paused", legacy_pause),
+        ("13-home", "app_home", legacy_home),
+    ):
+        for i in range(12):
+            rows.append(",".join(map(str, [
+                1000 + i, sid, label, "fresh", i + 1, APP_A, PLAYER_A,
+                0, 1, 20, 10, 1, 9, 10000, "allowed", "usage_events",
+                "full_context", "full", trail,
+            ])))
+    (d / "calibration-v5.csv").write_text("\n".join(rows) + "\n")
+    assert run(1, 431, audio=0, pps=80, shadow="unknown",
+               adaptive_state="ambiguous", adaptive_score=50,
+               adaptive_reason="overlap", pause_hint="none", pause_score=0,
+               active_floor=100, activity_trail=legacy_pause) == (
+        "unknown", "nonplaying_audio_profile_warming", 1)
+    assert run(2, 441, audio=0, pps=80, shadow="unknown",
+               adaptive_state="ambiguous", adaptive_score=50,
+               adaptive_reason="overlap", pause_hint="none", pause_score=0,
+               active_floor=100, activity_trail=legacy_pause) == (
+        "paused", "paused_classified_learned_activity_trail", 2)
+    (d / "calibration-v5.csv").unlink()
 
     # Type-D authority requires BOTH free-state labels. A same-context home
     # sample with audio still active is a conflict, not permission to free time.

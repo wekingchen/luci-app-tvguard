@@ -13,7 +13,7 @@ LOCK="$RAM/fusion.lock"
 
 argc="$#"
 case "$argc" in
-    15|18) : ;;
+    15|18|19) : ;;
     *) echo "unknown invalid_arguments 0"; exit 0 ;;
 esac
 
@@ -36,10 +36,14 @@ active_floor="$6"
 ui_package=none
 ui_age_ms=0
 ui_fingerprint=none
-if [ "$argc" -eq 18 ]; then
+activity_trail=none
+if [ "$argc" -ge 18 ]; then
     ui_package="$7"
     ui_age_ms="$8"
     ui_fingerprint="$9"
+fi
+if [ "$argc" -eq 19 ]; then
+    activity_trail="${10}"
 fi
 
 for n in "$now" "$seen" "$seq" "$audio" "$screen" "$pps" "$adaptive_score" "$pause_score" "$active_floor" "$ui_age_ms"; do
@@ -59,6 +63,10 @@ case "$ui_fingerprint" in
     *[!0-9a-f]*) ui_fingerprint=none ;;
     *) [ "${#ui_fingerprint}" -eq 32 ] || ui_fingerprint=none ;;
 esac
+case "$activity_trail" in
+    ''|*[!A-Za-z0-9._~\$]*) activity_trail=none ;;
+esac
+[ "${#activity_trail}" -le 240 ] || activity_trail=none
 
 ui_fresh=0
 ui_total_age_ms=0
@@ -217,6 +225,109 @@ if [ "$full_context" -eq 1 ] && [ -x "$DATA" ]; then
 fi
 case "$learned_audio_profile" in 0|1) : ;; *) learned_audio_profile=0 ;; esac
 case "$learned_nonplaying_profile" in 0|1) : ;; *) learned_nonplaying_profile=0 ;; esac
+
+# Activity trail is a classification-only refinement for Type-D profiles.
+# It NEVER creates free-time authority on its own. The three-state learned
+# nonplaying profile above must already be valid; only after its existing
+# two-fresh-report audio-off gate confirms nonplaying may a uniquely learned
+# trail label that state as paused or app_home. Unknown/conflicting trails keep
+# the honest generic nonplaying state.
+#
+# New 43-column learning rows persist trail coverage/dominant/share in columns
+# 41..43. For existing 29/40-column rows, fall back to the latest qualifying
+# manual paused/app_home sessions in calibration-v5.csv so already-collected
+# real-device samples do not need to be repeated.
+learned_trail_profile=0
+learned_trail_match=unmatched
+if [ "$learned_nonplaying_profile" -eq 1 ] &&
+   [ "$full_context" -eq 1 ] &&
+   [ "$activity_trail" != none ] &&
+   [ -x "$DATA" ]; then
+    data_root="$("$DATA" root 2>/dev/null || :)"
+    model="$data_root/learning-sessions.csv"
+    v5="$data_root/calibration-v5.csv"
+    if [ -n "$data_root" ] && [ -s "$model" ]; then
+        trail_profile="$(awk -F, -v pkg="$pkg" -v activity="$activity" -v trail="$activity_trail" '
+        NF>=43 && $6=="completed" && $18=="high" && $19=="high" &&
+        $23==pkg && $25==activity && $24+0>=75 && $26+0>=75 &&
+        $41+0>=75 && $43+0>=75 && $42!="" && $42!="none" {
+            if ($3=="paused") { qn++; q[$42]++ }
+            else if ($3=="app_home") { hn++; h[$42]++ }
+        }
+        END {
+            profile=(qn>=1 && hn>=1)
+            qm=(trail!="" && trail!="none" && q[trail]>0)
+            hm=(trail!="" && trail!="none" && h[trail]>0)
+            kind="unmatched"
+            if (qm && !hm) kind="paused"
+            else if (hm && !qm) kind="app_home"
+            else if (qm || hm) kind="conflict"
+            printf "%d %s\n", profile, kind
+        }' "$model" 2>/dev/null || echo '0 unmatched')"
+        set -- $trail_profile
+        if [ "$#" -eq 2 ]; then
+            case "$1" in 0|1) learned_trail_profile="$1" ;; *) learned_trail_profile=0 ;; esac
+            case "$2" in paused|app_home|conflict|unmatched) learned_trail_match="$2" ;; *) learned_trail_match=unmatched ;; esac
+        fi
+        if [ "$learned_trail_profile" -eq 0 ] && [ -s "$v5" ]; then
+            trail_profile="$(awk -F, -v pkg="$pkg" -v activity="$activity" -v trail="$activity_trail" '
+            FNR==NR {
+                if (NF>=29 && $6=="completed" && $18=="high" && $19=="high" &&
+                    $23==pkg && $25==activity && $24+0>=75 && $26+0>=75 &&
+                    $28+0>=90 && ($3=="paused" || $3=="app_home")) {
+                    label=$3
+                    epoch=$1+0
+                    if (!(label in latest) || epoch>=latest[label]) {
+                        latest[label]=epoch
+                        sid[label]=$2
+                    }
+                }
+                next
+            }
+            {
+                label=$3
+                if ((label=="paused" || label=="app_home") &&
+                    (label in sid) && $2==sid[label] && $4=="fresh" &&
+                    $6==pkg && $7==activity) {
+                    total[label]++
+                    t=$19
+                    if (t!="" && t!="none") {
+                        known[label]++
+                        count[label SUBSEP t]++
+                    }
+                }
+            }
+            END {
+                for (k in count) {
+                    split(k,a,SUBSEP)
+                    label=a[1]
+                    t=a[2]
+                    if (count[k]>bestn[label]) {
+                        bestn[label]=count[k]
+                        best[label]=t
+                    }
+                }
+                qc=(total["paused"]>0 ? int(known["paused"]*100/total["paused"]) : 0)
+                hc=(total["app_home"]>0 ? int(known["app_home"]*100/total["app_home"]) : 0)
+                qs=(known["paused"]>0 ? int(bestn["paused"]*100/known["paused"]) : 0)
+                hs=(known["app_home"]>0 ? int(bestn["app_home"]*100/known["app_home"]) : 0)
+                profile=(qc>=75 && hc>=75 && qs>=75 && hs>=75 &&
+                         best["paused"]!="" && best["app_home"]!="" &&
+                         best["paused"]!="none" && best["app_home"]!="none" &&
+                         best["paused"]!=best["app_home"])
+                kind="unmatched"
+                if (profile && trail==best["paused"]) kind="paused"
+                else if (profile && trail==best["app_home"]) kind="app_home"
+                printf "%d %s\n", profile, kind
+            }' "$model" "$v5" 2>/dev/null || echo '0 unmatched')"
+            set -- $trail_profile
+            if [ "$#" -eq 2 ]; then
+                case "$1" in 0|1) learned_trail_profile="$1" ;; *) learned_trail_profile=0 ;; esac
+                case "$2" in paused|app_home|conflict|unmatched) learned_trail_match="$2" ;; *) learned_trail_match=unmatched ;; esac
+            fi
+        fi
+    fi
+fi
 
 # UI profile authority is learned only from completed high-quality manual
 # sessions that have stable exact package+Activity and stable TVG4 structure
@@ -397,12 +508,22 @@ elif [ "$learned_nonplaying_profile" -eq 1 ]; then
             pause_miss=0
         fi
         if [ "$latched" = paused ] || [ "$pause_streak" -ge 2 ]; then
-            # Reuse the existing latch storage but expose an honest public
-            # state: we know the exact context is non-playing, not whether the
-            # user is paused or browsing the app home page.
+            # The existing Type-D gate is the billing authority. A uniquely
+            # learned Activity trail may refine the public state, but a missing
+            # or conflicting trail must remain generic nonplaying.
             latched=paused
-            combined=nonplaying
-            candidate=nonplaying_confirmed_learned_audio_context
+            if [ "$learned_trail_profile" -eq 1 ] &&
+               [ "$learned_trail_match" = paused ]; then
+                combined=paused
+                candidate=paused_classified_learned_activity_trail
+            elif [ "$learned_trail_profile" -eq 1 ] &&
+                 [ "$learned_trail_match" = app_home ]; then
+                combined=app_home
+                candidate=app_home_classified_learned_activity_trail
+            else
+                combined=nonplaying
+                candidate=nonplaying_confirmed_learned_audio_context
+            fi
         else
             combined=unknown
             candidate=nonplaying_audio_profile_warming
