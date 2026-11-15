@@ -226,7 +226,7 @@ fi
 case "$learned_audio_profile" in 0|1) : ;; *) learned_audio_profile=0 ;; esac
 case "$learned_nonplaying_profile" in 0|1) : ;; *) learned_nonplaying_profile=0 ;; esac
 
-# Activity trail is a classification-only refinement for Type-D profiles.
+# Activity trail is a classification-only refinement for Type-D profiles.\n# Runtime matching uses conservative newest-first prefix similarity so stale\n# tail history cannot defeat a strong learned page transition pattern.
 # It NEVER creates free-time authority on its own. The three-state learned
 # nonplaying profile above must already be valid; only after its existing
 # two-fresh-report audio-off gate confirms nonplaying may a uniquely learned
@@ -248,6 +248,19 @@ if [ "$learned_nonplaying_profile" -eq 1 ] &&
     v5="$data_root/calibration-v5.csv"
     if [ -n "$data_root" ] && [ -s "$model" ]; then
         trail_profile="$(awk -F, -v pkg="$pkg" -v activity="$activity" -v trail="$activity_trail" '
+        function prefix_score(obs, proto,   oa,pa,on,pn,i,m) {
+            on=split(obs,oa,"~")
+            pn=split(proto,pa,"~")
+            # One Activity is only the shared exact foreground context and is
+            # not enough to distinguish paused from app_home.
+            if (on<1 || pn<2) return 0
+            m=0
+            for (i=1; i<=on && i<=pn; i++) {
+                if (oa[i]!=pa[i]) break
+                m++
+            }
+            return int(m*100/pn)
+        }
         NF>=43 && $6=="completed" && $18=="high" && $19=="high" &&
         $23==pkg && $25==activity && $24+0>=75 && $26+0>=75 &&
         $41+0>=75 && $43+0>=75 && $42!="" && $42!="none" {
@@ -256,12 +269,23 @@ if [ "$learned_nonplaying_profile" -eq 1 ] &&
         }
         END {
             profile=(qn>=1 && hn>=1)
-            qm=(trail!="" && trail!="none" && q[trail]>0)
-            hm=(trail!="" && trail!="none" && h[trail]>0)
+            qs=0
+            hs=0
+            for (t in q) {
+                score=prefix_score(trail,t)
+                if (score>qs) qs=score
+            }
+            for (t in h) {
+                score=prefix_score(trail,t)
+                if (score>hs) hs=score
+            }
             kind="unmatched"
-            if (qm && !hm) kind="paused"
-            else if (hm && !qm) kind="app_home"
-            else if (qm || hm) kind="conflict"
+            # Classification-only evidence is accepted only when one learned
+            # label reaches >=60% prefix similarity and leads the other by
+            # >=20 points. Otherwise remain generic nonplaying.
+            if (profile && qs>=60 && qs-hs>=20) kind="paused"
+            else if (profile && hs>=60 && hs-qs>=20) kind="app_home"
+            else if (profile && (qs>0 || hs>0)) kind="conflict"
             printf "%d %s\n", profile, kind
         }' "$model" 2>/dev/null || echo '0 unmatched')"
         set -- $trail_profile
@@ -297,6 +321,17 @@ if [ "$learned_nonplaying_profile" -eq 1 ] &&
                     }
                 }
             }
+            function prefix_score(obs, proto,   oa,pa,on,pn,i,m) {
+                on=split(obs,oa,"~")
+                pn=split(proto,pa,"~")
+                if (on<1 || pn<2) return 0
+                m=0
+                for (i=1; i<=on && i<=pn; i++) {
+                    if (oa[i]!=pa[i]) break
+                    m++
+                }
+                return int(m*100/pn)
+            }
             END {
                 for (k in count) {
                     split(k,a,SUBSEP)
@@ -309,15 +344,18 @@ if [ "$learned_nonplaying_profile" -eq 1 ] &&
                 }
                 qc=(total["paused"]>0 ? int(known["paused"]*100/total["paused"]) : 0)
                 hc=(total["app_home"]>0 ? int(known["app_home"]*100/total["app_home"]) : 0)
-                qs=(known["paused"]>0 ? int(bestn["paused"]*100/known["paused"]) : 0)
-                hs=(known["app_home"]>0 ? int(bestn["app_home"]*100/known["app_home"]) : 0)
-                profile=(qc>=75 && hc>=75 && qs>=75 && hs>=75 &&
+                qstable=(known["paused"]>0 ? int(bestn["paused"]*100/known["paused"]) : 0)
+                hstable=(known["app_home"]>0 ? int(bestn["app_home"]*100/known["app_home"]) : 0)
+                profile=(qc>=75 && hc>=75 && qstable>=75 && hstable>=75 &&
                          best["paused"]!="" && best["app_home"]!="" &&
                          best["paused"]!="none" && best["app_home"]!="none" &&
                          best["paused"]!=best["app_home"])
+                qscore=(profile ? prefix_score(trail,best["paused"]) : 0)
+                hscore=(profile ? prefix_score(trail,best["app_home"]) : 0)
                 kind="unmatched"
-                if (profile && trail==best["paused"]) kind="paused"
-                else if (profile && trail==best["app_home"]) kind="app_home"
+                if (profile && qscore>=60 && qscore-hscore>=20) kind="paused"
+                else if (profile && hscore>=60 && hscore-qscore>=20) kind="app_home"
+                else if (profile && (qscore>0 || hscore>0)) kind="conflict"
                 printf "%d %s\n", profile, kind
             }' "$model" "$v5" 2>/dev/null || echo '0 unmatched')"
             set -- $trail_profile

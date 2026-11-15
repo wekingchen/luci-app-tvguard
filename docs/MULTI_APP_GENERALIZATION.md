@@ -180,3 +180,26 @@ r5 在不扩大免计时授权的前提下增加 **Activity trail 分类层**：
 - 新会话把 trail 摘要追加到 learning-sessions.csv 41–43 列；旧 29/40 列会话可从最新高可信 calibration-v5.csv 会话回溯，避免要求用户重采。
 
 因此 r5 的安全层次是：**Type-D learned nonplaying 决定“是否可免计时”，Activity trail 只决定“免计时状态叫什么”**。
+
+
+## r6：Activity trail 前缀画像泛化
+
+r5 真机验证发现，Activity trail 是“最近历史窗口”而不是静态页面 ID：同一个腾讯 App 首页，人工学习时可出现 `Home~Exit~Home~Exit`，而后续真实返回首页时出现 `Home~Exit~Home~Main`。两者的最新三段路径一致，但最老历史残留不同。整条字符串 exact match 会因此退回 `nonplaying`。
+
+r6 保留 r5 的计费安全边界，只改分类层：
+
+- trail 按 Agent 当前的 newest-first 顺序计算“从最新 Activity 开始”的最长公共前缀；
+- 得分 = 公共前缀长度 / 人工画像 trail 长度；
+- 人工画像至少需要 2 个 Activity，只有单个共享前台 Activity 不具备分类权；
+- paused/app_home 某一类得分必须 ≥60%，并且至少领先另一类 20 个百分点，才允许细分；
+- 不满足最低分、领先幅度不足或两类冲突时继续输出 `nonplaying`；
+- exact match 自然得到 100%，因此完全兼容 r5 已验证的暂停场景；
+- PPS/BPS、App 名称、Activity 名称关键词都不参与这一步，也不新增 free authority。
+
+真机腾讯样例：
+
+- paused 人工画像：`HomeSingleTaskActivity~MainActivity`
+- app_home 人工画像：`HomeSingleTaskActivity~TVCommonExitActivity~HomeSingleTaskActivity~TVCommonExitActivity`
+- app_home 实时：`HomeSingleTaskActivity~TVCommonExitActivity~HomeSingleTaskActivity~MainActivity`
+
+实时首页对 app_home 得分 75%，对 paused 得分 50%，领先 25 个百分点，因此 r6 可细分为 `app_home`。如果实时只剩共同的 `HomeSingleTaskActivity`，则两类都达不到 60%，继续保持 `nonplaying`。

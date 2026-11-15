@@ -59,7 +59,7 @@ with tempfile.TemporaryDirectory(prefix="tvguard-billing-hint-") as folder:
 
     def write_nonplaying_trail_profile(pkg=PKG, activity=PLAYER,
                                         pause_trail="com.example.media.RootTask~com.example.media.Main",
-                                        home_trail="com.example.media.RootTask~com.example.media.Exit"):
+                                        home_trail="com.example.media.RootTask~com.example.media.Exit~com.example.media.RootTask~com.example.media.Exit"):
         def row(sid, label, audio, trail):
             values = [
                 1000, sid, label, "general", 180, "completed", 17, 179,
@@ -209,7 +209,8 @@ with tempfile.TemporaryDirectory(prefix="tvguard-billing-hint-") as folder:
     # while exposing paused/app_home when a unique learned trail matches.
     write_nonplaying_trail_profile()
     pause_trail = "com.example.media.RootTask~com.example.media.Main"
-    home_trail = "com.example.media.RootTask~com.example.media.Exit"
+    home_trail = "com.example.media.RootTask~com.example.media.Exit~com.example.media.RootTask~com.example.media.Exit"
+    home_runtime = "com.example.media.RootTask~com.example.media.Exit~com.example.media.RootTask~com.example.media.Main"
     put(20, 395, PKG, PLAYER, audio=0, activity_trail=pause_trail)
     assert run(395, pps=300, shadow="playing", adaptive_state="active",
                adaptive_score=100, adaptive_reason="clear_current") == (
@@ -218,15 +219,15 @@ with tempfile.TemporaryDirectory(prefix="tvguard-billing-hint-") as folder:
     assert run(405, pps=300, shadow="playing", adaptive_state="active",
                adaptive_score=100, adaptive_reason="clear_current") == (
         "free", "paused")
-    put(22, 415, PKG, PLAYER, audio=1, activity_trail=home_trail)
+    put(22, 415, PKG, PLAYER, audio=1, activity_trail=home_runtime)
     assert run(415, pps=5, shadow="idle", adaptive_state="ambiguous",
                adaptive_score=50, adaptive_reason="overlap") == (
         "charge", "playing")
-    put(23, 425, PKG, PLAYER, audio=0, activity_trail=home_trail)
+    put(23, 425, PKG, PLAYER, audio=0, activity_trail=home_runtime)
     assert run(425, pps=300, shadow="playing", adaptive_state="active",
                adaptive_score=100, adaptive_reason="clear_current") == (
         "charge", "unknown")
-    put(24, 435, PKG, PLAYER, audio=0, activity_trail=home_trail)
+    put(24, 435, PKG, PLAYER, audio=0, activity_trail=home_runtime)
     assert run(435, pps=300, shadow="playing", adaptive_state="active",
                adaptive_score=100, adaptive_reason="clear_current") == (
         "free", "app_home")

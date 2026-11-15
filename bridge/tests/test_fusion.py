@@ -57,7 +57,7 @@ with tempfile.TemporaryDirectory(prefix="tvguard-fusion-") as folder:
 
     def write_nonplaying_trail_profile(pkg=APP_A, activity=PLAYER_A,
                                         pause_trail="com.example.videoa.ui.RootTaskActivity~com.example.videoa.ui.MainActivity",
-                                        home_trail="com.example.videoa.ui.RootTaskActivity~com.example.videoa.ui.ExitActivity"):
+                                        home_trail="com.example.videoa.ui.RootTaskActivity~com.example.videoa.ui.ExitActivity~com.example.videoa.ui.RootTaskActivity~com.example.videoa.ui.ExitActivity"):
         def row(sid, label, audio, trail):
             values = [
                 1000, sid, label, "general", 180, "completed", 17, 179,
@@ -210,6 +210,7 @@ with tempfile.TemporaryDirectory(prefix="tvguard-fusion-") as folder:
     # confirmed nonplaying state and never bypasses the two-report gate.
     reset()
     pause_trail, home_trail = write_nonplaying_trail_profile()
+    home_runtime = "com.example.videoa.ui.RootTaskActivity~com.example.videoa.ui.ExitActivity~com.example.videoa.ui.RootTaskActivity~com.example.videoa.ui.MainActivity"
     assert run(1, 381, audio=0, pps=300, shadow="playing",
                adaptive_state="active", adaptive_score=100,
                adaptive_reason="clear_current", pause_hint="none",
@@ -226,27 +227,44 @@ with tempfile.TemporaryDirectory(prefix="tvguard-fusion-") as folder:
                adaptive_state="ambiguous", adaptive_score=50,
                adaptive_reason="overlap", pause_hint="none",
                pause_score=0, active_floor=100,
-               activity_trail=home_trail) == (
+               activity_trail=home_runtime) == (
         "playing", "playing_confirmed_learned_nonplaying_profile", 0)
     assert run(4, 411, audio=0, pps=300, shadow="playing",
                adaptive_state="active", adaptive_score=100,
                adaptive_reason="clear_current", pause_hint="none",
                pause_score=0, active_floor=100,
-               activity_trail=home_trail) == (
+               activity_trail=home_runtime) == (
         "unknown", "nonplaying_audio_profile_warming", 1)
     assert run(5, 421, audio=0, pps=300, shadow="playing",
                adaptive_state="active", adaptive_score=100,
                adaptive_reason="clear_current", pause_hint="none",
                pause_score=0, active_floor=100,
-               activity_trail=home_trail) == (
+               activity_trail=home_runtime) == (
         "app_home", "app_home_classified_learned_activity_trail", 2)
+
+    # A single shared foreground Activity is insufficient for classification:
+    # the engine must keep the already-free state generic nonplaying.
+    reset()
+    write_nonplaying_trail_profile()
+    shared_only = "com.example.videoa.ui.RootTaskActivity"
+    assert run(1, 422, audio=0, pps=80, shadow="unknown",
+               adaptive_state="ambiguous", adaptive_score=50,
+               adaptive_reason="overlap", pause_hint="none", pause_score=0,
+               active_floor=100, activity_trail=shared_only) == (
+        "unknown", "nonplaying_audio_profile_warming", 1)
+    assert run(2, 432, audio=0, pps=80, shadow="unknown",
+               adaptive_state="ambiguous", adaptive_score=50,
+               adaptive_reason="overlap", pause_hint="none", pause_score=0,
+               active_floor=100, activity_trail=shared_only) == (
+        "nonplaying", "nonplaying_confirmed_learned_audio_context", 2)
 
     # Legacy 29/40-column summaries can recover today's already-collected trail
     # evidence from calibration-v5.csv without repeating manual learning.
     reset()
     write_nonplaying_profile()
     legacy_pause = "com.example.videoa.ui.RootTaskActivity~com.example.videoa.ui.MainActivity"
-    legacy_home = "com.example.videoa.ui.RootTaskActivity~com.example.videoa.ui.ExitActivity"
+    legacy_home = "com.example.videoa.ui.RootTaskActivity~com.example.videoa.ui.ExitActivity~com.example.videoa.ui.RootTaskActivity~com.example.videoa.ui.ExitActivity"
+    legacy_home_runtime = "com.example.videoa.ui.RootTaskActivity~com.example.videoa.ui.ExitActivity~com.example.videoa.ui.RootTaskActivity~com.example.videoa.ui.MainActivity"
     rows = []
     for sid, label, trail in (
         ("12-pause", "paused", legacy_pause),
@@ -269,6 +287,21 @@ with tempfile.TemporaryDirectory(prefix="tvguard-fusion-") as folder:
                adaptive_reason="overlap", pause_hint="none", pause_score=0,
                active_floor=100, activity_trail=legacy_pause) == (
         "paused", "paused_classified_learned_activity_trail", 2)
+    assert run(3, 451, audio=1, pps=5, shadow="idle",
+               adaptive_state="ambiguous", adaptive_score=50,
+               adaptive_reason="overlap", pause_hint="none", pause_score=0,
+               active_floor=100, activity_trail=legacy_home_runtime) == (
+        "playing", "playing_confirmed_learned_nonplaying_profile", 0)
+    assert run(4, 461, audio=0, pps=80, shadow="unknown",
+               adaptive_state="ambiguous", adaptive_score=50,
+               adaptive_reason="overlap", pause_hint="none", pause_score=0,
+               active_floor=100, activity_trail=legacy_home_runtime) == (
+        "unknown", "nonplaying_audio_profile_warming", 1)
+    assert run(5, 471, audio=0, pps=80, shadow="unknown",
+               adaptive_state="ambiguous", adaptive_score=50,
+               adaptive_reason="overlap", pause_hint="none", pause_score=0,
+               active_floor=100, activity_trail=legacy_home_runtime) == (
+        "app_home", "app_home_classified_learned_activity_trail", 2)
     (d / "calibration-v5.csv").unlink()
 
     # Type-D authority requires BOTH free-state labels. A same-context home

@@ -100,6 +100,9 @@ assert 'activity_trail' in fusion
 assert 'learned_trail_profile' in fusion
 assert 'paused_classified_learned_activity_trail' in fusion
 assert 'app_home_classified_learned_activity_trail' in fusion
+assert 'prefix_score' in fusion
+assert 'qs>=60 && qs-hs>=20' in fusion
+assert 'hs>=60 && hs-qs>=20' in fusion
 assert 'calibration-v5.csv' in fusion
 assert 'learned_ui_profile' in fusion
 assert 'ui_fingerprint' in fusion
