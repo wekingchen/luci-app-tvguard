@@ -47,7 +47,7 @@ def parse_rows(path: Path):
                 package_like = bool(re.fullmatch(r"[A-Za-z0-9._$]+", app))
                 if scene not in VALID_SCENES or not (app in VALID_APPS or package_like):
                     raise ValueError(f"line {number}: invalid scene/app label")
-            elif len(parts) in (14, 18):
+            elif len(parts) in (14, 18, 19):
                 schema = "v5"
                 base = parts[:14]
                 (stamp, session, scene, agent_state, _agent_age, package,
@@ -64,7 +64,7 @@ def parse_rows(path: Path):
                 app = package
             else:
                 raise ValueError(
-                    f"line {number}: expected v3 (8) or v5 (14/18) CSV fields")
+                    f"line {number}: expected v3 (8) or v5 (14/18/19) CSV fields")
             if source_schema is None:
                 source_schema = schema
             elif source_schema != schema:

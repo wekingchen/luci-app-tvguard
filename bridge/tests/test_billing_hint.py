@@ -11,6 +11,9 @@ hint_source = (root / "root/usr/libexec/tvguard-agent-billing-hint").read_text()
 PKG = "com.example.media"
 PLAYER = "com.example.media.RootTask"
 BROWSE = "com.example.media.Browse"
+UI_PLAY_FP = "99c131952ab0cc27edde65954ed12645"
+UI_PAUSE_FP = "40ed2fe6f6de308287179befd4eabc20"
+UI_PAUSE_ALT_FP = "21859656743a5cb437d2ca4aee6a7f70"
 
 with tempfile.TemporaryDirectory(prefix="tvguard-billing-hint-") as folder:
     d = Path(folder)
@@ -40,6 +43,72 @@ with tempfile.TemporaryDirectory(prefix="tvguard-billing-hint-") as folder:
             row("2-pause", "paused", pause_audio) + "\n"
         )
 
+    def write_nonplaying_profile(pkg=PKG, activity=PLAYER,
+                                  play_audio=100, pause_audio=5, home_audio=0):
+        def row(sid, label, audio):
+            return ",".join(map(str, [
+                1000, sid, label, "general", 180, "completed", 17, 179,
+                94, 20, 50, 120, 1, 45, 90000, 150000, "variable", "high",
+                "high", 100, 100, 100, pkg, 100, activity, 100,
+                audio, 100, 0,
+            ]))
+        (d / "learning-sessions.csv").write_text(
+            row("11-play", "playing", play_audio) + "\n" +
+            row("12-pause", "paused", pause_audio) + "\n" +
+            row("13-home", "app_home", home_audio) + "\n"
+        )
+
+    def write_nonplaying_trail_profile(pkg=PKG, activity=PLAYER,
+                                        pause_trail="com.example.media.RootTask~com.example.media.Main",
+                                        home_trail="com.example.media.RootTask~com.example.media.Exit~com.example.media.RootTask~com.example.media.Exit"):
+        def row(sid, label, audio, trail):
+            values = [
+                1000, sid, label, "general", 180, "completed", 17, 179,
+                94, 20, 50, 120, 1, 45, 90000, 150000, "variable", "high",
+                "high", 100, 100, 100, pkg, 100, activity, 100,
+                audio, 100, 0, 0, 0, "none", 0, "none", 0, 0, 0, 0, 0, "none",
+                100, trail, 100,
+            ]
+            assert len(values) == 43
+            return ",".join(map(str, values))
+        (d / "learning-sessions.csv").write_text(
+            row("31-play", "playing", 100, "none") + "\n" +
+            row("32-pause", "paused", 0, pause_trail) + "\n" +
+            row("33-home", "app_home", 0, home_trail) + "\n"
+        )
+        return pause_trail, home_trail
+
+    def write_standalone_home_profile(pkg=PKG, activity=BROWSE,
+                                      audio=0, conflict_label=None):
+        def row(sid, label, audio_ratio):
+            return ",".join(map(str, [
+                1000, sid, label, "general", 180, "completed", 17, 179,
+                94, 20, 50, 120, 1, 45, 90000, 150000, "variable", "high",
+                "high", 100, 100, 100, pkg, 100, activity, 100,
+                audio_ratio, 100, 0,
+            ]))
+        rows = [row("41-home", "app_home", audio)]
+        if conflict_label:
+            rows.append(row("42-conflict", conflict_label,
+                            100 if conflict_label == "playing" else 0))
+        (d / "learning-sessions.csv").write_text("\n".join(rows) + "\n")
+
+    def write_ui_profile(pkg=PKG, activity=PLAYER,
+                         play_fp=UI_PLAY_FP, pause_fp=UI_PAUSE_FP):
+        def row(sid, label, fp, nodes, clickable, ids):
+            return ",".join(map(str, [
+                1000, sid, label, "general", 180, "completed", 17, 179,
+                94, 20, 50, 120, 1, 45, 90000, 150000, "variable", "high",
+                "high", 100, 100, 100, pkg, 100, activity, 100,
+                100, 100, 0,
+                17, 100, pkg, 100, fp, 100,
+                nodes, clickable, 0, ids, "high",
+            ]))
+        (d / "learning-sessions.csv").write_text(
+            row("21-play", "playing", play_fp, 4, 0, 1) + "\n" +
+            row("22-pause", "paused", pause_fp, 26, 12, 8) + "\n"
+        )
+
     hint = d / "billing-hint"
     text = hint_source.replace(
         "RAM=/var/run/tvguard-agent-bridge", f"RAM={d}")
@@ -50,9 +119,19 @@ with tempfile.TemporaryDirectory(prefix="tvguard-billing-hint-") as folder:
 
     latest = d / "latest"
 
-    def put(seq, seen, pkg, activity, audio=1, screen=1):
-        latest.write_text(
-            f"{seen}|{pkg}|{activity}|{audio}|{screen}|{seen*1000}|{seq}\n")
+    def put(seq, seen, pkg, activity, audio=1, screen=1,
+            ui_package=None, ui_age_ms=0, ui_fp="none",
+            ui_nodes=0, ui_clickable=0, ui_focused=0, ui_ids=0,
+            activity_trail=None):
+        if ui_package is None and activity_trail is None:
+            latest.write_text(
+                f"{seen}|{pkg}|{activity}|{audio}|{screen}|{seen*1000}|{seq}\n")
+        else:
+            latest.write_text(
+                f"{seen}|{pkg}|{activity}|{audio}|{screen}|{seen*1000}|{seq}|"
+                f"allowed|usage_events|full_context|{activity_trail or 'none'}|"
+                f"{ui_package or 'none'}|{ui_age_ms}|"
+                f"{ui_nodes}|{ui_clickable}|{ui_focused}|{ui_ids}|{ui_fp}\n")
 
     def run(now, pps=20, shadow="unknown", adaptive_state="ambiguous",
             adaptive_score=50, adaptive_reason="overlap",
@@ -79,6 +158,24 @@ with tempfile.TemporaryDirectory(prefix="tvguard-billing-hint-") as folder:
                adaptive_score=95, adaptive_reason="stable_low",
                pause_hint="high_ratio_pause", pause_score=95) == (
         "charge", "unknown")
+
+    # A dedicated manually learned app-home Activity does not depend on
+    # shadow/Adaptive low-traffic classification. The first fresh report stays
+    # charged; the second exact-context audio-off report grants app_home/free.
+    write_standalone_home_profile()
+    put(3, 210, PKG, BROWSE, audio=0)
+    assert run(210, pps=92, shadow="unknown", adaptive_state="unready",
+               adaptive_score=0, adaptive_reason="overlap_model") == (
+        "charge", "unknown")
+    put(4, 220, PKG, BROWSE, audio=0)
+    assert run(220, pps=6, shadow="unknown", adaptive_state="unready",
+               adaptive_score=0, adaptive_reason="overlap_model") == (
+        "free", "app_home")
+    put(5, 230, PKG, BROWSE, audio=1)
+    assert run(230, pps=100, shadow="playing", adaptive_state="active",
+               adaptive_score=100, adaptive_reason="clear_current") == (
+        "charge", "unknown")
+    (d / "learning-sessions.csv").unlink()
 
     # Strong playback learns a generic media context, but playback itself charges.
     put(10, 300, PKG, PLAYER, audio=1)
@@ -119,6 +216,124 @@ with tempfile.TemporaryDirectory(prefix="tvguard-billing-hint-") as folder:
                adaptive_score=50, adaptive_reason="overlap",
                pause_hint="none", pause_score=0) == (
         "charge", "playing")
+    (d / "learning-sessions.csv").unlink()
+
+    # Shared-context Type-D profile: first audio-off report is still charged;
+    # the second fresh report grants generic nonplaying free time even if the
+    # network itself looks strongly active. Audio-on exits immediately.
+    write_nonplaying_profile()
+    put(17, 370, PKG, PLAYER, audio=0)
+    assert run(370, pps=300, shadow="playing", adaptive_state="active",
+               adaptive_score=100, adaptive_reason="clear_current",
+               pause_hint="none", pause_score=0) == (
+        "charge", "unknown")
+    put(18, 380, PKG, PLAYER, audio=0)
+    assert run(380, pps=300, shadow="playing", adaptive_state="active",
+               adaptive_score=100, adaptive_reason="clear_current",
+               pause_hint="none", pause_score=0) == (
+        "free", "nonplaying")
+    put(19, 390, PKG, PLAYER, audio=1)
+    assert run(390, pps=5, shadow="idle", adaptive_state="ambiguous",
+               adaptive_score=50, adaptive_reason="overlap",
+               pause_hint="none", pause_score=0) == (
+        "charge", "playing")
+    (d / "learning-sessions.csv").unlink()
+
+    # Type-D temporal refinement: the free-time gate is unchanged, while a
+    # recent confirmed playing -> audio-off transition may label paused even
+    # when the Activity trail is still the stale app-home trail.
+    write_nonplaying_trail_profile()
+    home_trail = "com.example.media.RootTask~com.example.media.Exit~com.example.media.RootTask~com.example.media.Exit"
+    home_runtime = "com.example.media.RootTask~com.example.media.Exit~com.example.media.RootTask~com.example.media.Main"
+
+    # Cold audio-off home path.
+    put(20, 395, PKG, PLAYER, audio=0, activity_trail=home_runtime)
+    assert run(395, pps=80, shadow="unknown", adaptive_state="ambiguous",
+               adaptive_score=50, adaptive_reason="overlap") == (
+        "charge", "unknown")
+    put(21, 405, PKG, PLAYER, audio=0, activity_trail=home_runtime)
+    assert run(405, pps=80, shadow="unknown", adaptive_state="ambiguous",
+               adaptive_score=50, adaptive_reason="overlap") == (
+        "free", "app_home")
+
+    # Playing reuses the same trail.
+    put(22, 415, PKG, PLAYER, audio=1, activity_trail=home_runtime)
+    assert run(415, pps=180, shadow="playing", adaptive_state="active",
+               adaptive_score=100, adaptive_reason="clear_current") == (
+        "charge", "playing")
+
+    # Pause retains same trail but becomes free paused after two fresh reports.
+    put(23, 425, PKG, PLAYER, audio=0, activity_trail=home_runtime)
+    assert run(425, pps=300, shadow="playing", adaptive_state="active",
+               adaptive_score=100, adaptive_reason="clear_current") == (
+        "charge", "unknown")
+    put(24, 435, PKG, PLAYER, audio=0, activity_trail=home_runtime)
+    assert run(435, pps=300, shadow="playing", adaptive_state="active",
+               adaptive_score=100, adaptive_reason="clear_current") == (
+        "free", "paused")
+
+    # Long pause remains free paused even after transition recency expires.
+    put(25, 495, PKG, PLAYER, audio=0, activity_trail=home_runtime)
+    assert run(495, pps=20, shadow="unknown", adaptive_state="ambiguous",
+               adaptive_score=50, adaptive_reason="overlap") == (
+        "free", "paused")
+
+    # A changed learned home path releases the paused semantic latch.
+    put(26, 505, PKG, PLAYER, audio=0, activity_trail=home_trail)
+    assert run(505, pps=12, shadow="idle", adaptive_state="idle",
+               adaptive_score=95, adaptive_reason="stable_low") == (
+        "free", "app_home")
+    (d / "learning-sessions.csv").unlink()
+
+    # Same-context/same-audio learned UI profile: network activity is irrelevant
+    # to the pause decision. Two fresh exact UI matches are required before free
+    # time, and the learned playing fingerprint resumes charging immediately.
+    write_ui_profile()
+    put(20, 400, PKG, PLAYER, audio=1, ui_package=PKG, ui_age_ms=1000,
+        ui_fp=UI_PLAY_FP, ui_nodes=4, ui_ids=1)
+    ui_play_result = run(400, pps=0, shadow="idle", adaptive_state="idle",
+                         adaptive_score=95, adaptive_reason="stable_low",
+                         pause_hint="idle_overlap", pause_score=60)
+    assert ui_play_result == ("charge", "playing"), ui_play_result
+    put(21, 410, PKG, PLAYER, audio=1, ui_package=PKG, ui_age_ms=1000,
+        ui_fp=UI_PAUSE_FP, ui_nodes=26, ui_clickable=12, ui_ids=8)
+    assert run(410, pps=500, shadow="playing", adaptive_state="active",
+               adaptive_score=100, adaptive_reason="clear_current") == (
+        "charge", "unknown")
+    put(22, 420, PKG, PLAYER, audio=1, ui_package=PKG, ui_age_ms=1000,
+        ui_fp=UI_PAUSE_FP, ui_nodes=26, ui_clickable=12, ui_ids=8)
+    assert run(420, pps=500, shadow="playing", adaptive_state="active",
+               adaptive_score=100, adaptive_reason="clear_current") == (
+        "free", "paused")
+    put(23, 430, PKG, PLAYER, audio=1, ui_package=PKG, ui_age_ms=1000,
+        ui_fp=UI_PLAY_FP, ui_nodes=4, ui_ids=1)
+    assert run(430, pps=0, shadow="idle", adaptive_state="idle",
+               adaptive_score=95, adaptive_reason="stable_low") == (
+        "charge", "playing")
+
+    # Fingerprint drift plus a transient focused_count 0->1 may grant
+    # paused/free only when the durable structure still uniquely matches the
+    # manually learned paused profile.
+    put(24, 440, PKG, PLAYER, audio=1, ui_package=PKG, ui_age_ms=1000,
+        ui_fp=UI_PAUSE_ALT_FP, ui_nodes=26, ui_clickable=12,
+        ui_focused=1, ui_ids=8)
+    assert run(440, pps=500, shadow="playing", adaptive_state="active",
+               adaptive_score=100, adaptive_reason="clear_current") == (
+        "charge", "unknown")
+    put(25, 450, PKG, PLAYER, audio=1, ui_package=PKG, ui_age_ms=1000,
+        ui_fp=UI_PAUSE_ALT_FP, ui_nodes=26, ui_clickable=12,
+        ui_focused=1, ui_ids=8)
+    assert run(450, pps=500, shadow="playing", adaptive_state="active",
+               adaptive_score=100, adaptive_reason="clear_current") == (
+        "free", "paused")
+
+    # Old/stale UI cannot preserve free time even if the fingerprint itself is
+    # a learned paused fingerprint.
+    put(26, 460, PKG, PLAYER, audio=1, ui_package=PKG, ui_age_ms=25000,
+        ui_fp=UI_PAUSE_FP, ui_nodes=26, ui_clickable=12, ui_ids=8)
+    assert run(460, pps=500, shadow="playing", adaptive_state="active",
+               adaptive_score=100, adaptive_reason="clear_current") == (
+        "charge", "unknown")
     (d / "learning-sessions.csv").unlink()
 
     # A paused state is free only after the strict learned-context Fusion

@@ -12,6 +12,9 @@ PLAYER_A = "com.example.videoa.ui.RootTaskActivity"
 BROWSE_A = "com.example.videoa.ui.BrowseActivity"
 APP_B = "com.example.videob"
 PLAYER_B = "com.example.videob.ui.WatchScreen"
+UI_PLAY_FP = "99c131952ab0cc27edde65954ed12645"
+UI_PAUSE_FP = "40ed2fe6f6de308287179befd4eabc20"
+UI_PAUSE_ALT_FP = "21859656743a5cb437d2ca4aee6a7f70"
 
 with tempfile.TemporaryDirectory(prefix="tvguard-fusion-") as folder:
     d = Path(folder)
@@ -38,6 +41,72 @@ with tempfile.TemporaryDirectory(prefix="tvguard-fusion-") as folder:
             row("2-pause", "paused", pause_audio) + "\n"
         )
 
+    def write_nonplaying_profile(pkg=APP_A, activity=PLAYER_A,
+                                  play_audio=100, pause_audio=5, home_audio=0):
+        def row(sid, label, audio):
+            return ",".join(map(str, [
+                1000, sid, label, "general", 180, "completed", 17, 179,
+                94, 20, 50, 120, 1, 45, 90000, 150000, "variable", "high",
+                "high", 100, 100, 100, pkg, 100, activity, 100,
+                audio, 100, 0,
+            ]))
+        (d / "learning-sessions.csv").write_text(
+            row("11-play", "playing", play_audio) + "\n" +
+            row("12-pause", "paused", pause_audio) + "\n" +
+            row("13-home", "app_home", home_audio) + "\n"
+        )
+
+    def write_nonplaying_trail_profile(pkg=APP_A, activity=PLAYER_A,
+                                        pause_trail="com.example.videoa.ui.RootTaskActivity~com.example.videoa.ui.MainActivity",
+                                        home_trail="com.example.videoa.ui.RootTaskActivity~com.example.videoa.ui.ExitActivity~com.example.videoa.ui.RootTaskActivity~com.example.videoa.ui.ExitActivity"):
+        def row(sid, label, audio, trail):
+            values = [
+                1000, sid, label, "general", 180, "completed", 17, 179,
+                94, 20, 50, 120, 1, 45, 90000, 150000, "variable", "high",
+                "high", 100, 100, 100, pkg, 100, activity, 100,
+                audio, 100, 0, 0, 0, "none", 0, "none", 0, 0, 0, 0, 0, "none",
+                100, trail, 100,
+            ]
+            assert len(values) == 43
+            return ",".join(map(str, values))
+        (d / "learning-sessions.csv").write_text(
+            row("31-play", "playing", 100, "none") + "\n" +
+            row("32-pause", "paused", 0, pause_trail) + "\n" +
+            row("33-home", "app_home", 0, home_trail) + "\n"
+        )
+        return pause_trail, home_trail
+
+    def write_standalone_home_profile(pkg=APP_A, activity=BROWSE_A,
+                                      audio=0, conflict_label=None):
+        def row(sid, label, audio_ratio):
+            return ",".join(map(str, [
+                1000, sid, label, "general", 180, "completed", 17, 179,
+                94, 20, 50, 120, 1, 45, 90000, 150000, "variable", "high",
+                "high", 100, 100, 100, pkg, 100, activity, 100,
+                audio_ratio, 100, 0,
+            ]))
+        rows = [row("41-home", "app_home", audio)]
+        if conflict_label:
+            rows.append(row("42-conflict", conflict_label,
+                            100 if conflict_label == "playing" else 0))
+        (d / "learning-sessions.csv").write_text("\n".join(rows) + "\n")
+
+    def write_ui_profile(pkg=APP_A, activity=PLAYER_A,
+                         play_fp=UI_PLAY_FP, pause_fp=UI_PAUSE_FP):
+        def row(sid, label, fp, nodes, clickable, ids):
+            return ",".join(map(str, [
+                1000, sid, label, "general", 180, "completed", 17, 179,
+                94, 20, 50, 120, 1, 45, 90000, 150000, "variable", "high",
+                "high", 100, 100, 100, pkg, 100, activity, 100,
+                100, 100, 0,
+                17, 100, pkg, 100, fp, 100,
+                nodes, clickable, 0, ids, "high",
+            ]))
+        (d / "learning-sessions.csv").write_text(
+            row("21-play", "playing", play_fp, 4, 0, 1) + "\n" +
+            row("22-pause", "paused", pause_fp, 26, 12, 8) + "\n"
+        )
+
     def reset():
         for name in ("fusion.state", "fusion.lock"):
             p = d / name
@@ -49,7 +118,10 @@ with tempfile.TemporaryDirectory(prefix="tvguard-fusion-") as folder:
     def run(seq, seen, pkg=APP_A, activity=PLAYER_A, audio=1, screen=1,
             pps=20, shadow="idle", adaptive_state="ambiguous",
             adaptive_score=50, adaptive_reason="overlap",
-            pause_hint="bursty_pause", pause_score=75, active_floor=100):
+            pause_hint="bursty_pause", pause_score=75, active_floor=100,
+            ui_package=None, ui_age_ms=0, ui_fp="none",
+            ui_nodes=None, ui_clickable=None, ui_focused=None, ui_ids=None,
+            activity_trail=None):
         args = [
             "dash", str(target),
             str(seen), str(seen), str(seq), pkg, activity,
@@ -57,6 +129,19 @@ with tempfile.TemporaryDirectory(prefix="tvguard-fusion-") as folder:
             adaptive_state, str(adaptive_score), adaptive_reason,
             pause_hint, str(pause_score), str(active_floor),
         ]
+        ui_shape = any(v is not None for v in (
+            ui_nodes, ui_clickable, ui_focused, ui_ids))
+        if ui_shape:
+            args += [
+                ui_package or "none", str(ui_age_ms), ui_fp,
+                str(ui_nodes or 0), str(ui_clickable or 0),
+                str(ui_focused or 0), str(ui_ids or 0),
+                activity_trail or "none",
+            ]
+        elif activity_trail is not None:
+            args += [ui_package or "none", str(ui_age_ms), ui_fp, activity_trail]
+        elif ui_package is not None:
+            args += [ui_package, str(ui_age_ms), ui_fp]
         out = subprocess.check_output(args, text=True).strip().split()
         assert len(out) == 3, out
         return out[0], out[1], int(out[2])
@@ -78,6 +163,38 @@ with tempfile.TemporaryDirectory(prefix="tvguard-fusion-") as folder:
                pause_hint="none", pause_score=0,
                active_floor=100) == (
         "playing", "playing_confirmed_context_learned", 0)
+
+    # A dedicated app-home Activity can be learned independently from the
+    # player Activity. Network/shadow may remain unresolved; two fresh exact
+    # context + audio-off reports are required before app_home/free semantics.
+    reset()
+    write_standalone_home_profile()
+    assert run(1, 240, pkg=APP_A, activity=BROWSE_A, audio=0,
+               pps=92, shadow="unknown", adaptive_state="unready",
+               adaptive_score=0, adaptive_reason="overlap_model",
+               pause_hint="none", pause_score=0, active_floor=100) == (
+        "unknown", "app_home_learned_context_warming", 0)
+    assert run(2, 250, pkg=APP_A, activity=BROWSE_A, audio=0,
+               pps=6, shadow="unknown", adaptive_state="unready",
+               adaptive_score=0, adaptive_reason="overlap_model",
+               pause_hint="none", pause_score=0, active_floor=100) == (
+        "app_home", "app_home_confirmed_learned_context", 0)
+    # Audio-on in the learned browse Activity fails closed.
+    assert run(3, 260, pkg=APP_A, activity=BROWSE_A, audio=1,
+               pps=100, shadow="playing", adaptive_state="active",
+               adaptive_score=100, adaptive_reason="clear_current",
+               pause_hint="none", pause_score=0, active_floor=100) == (
+        "unknown", "learned_app_home_context_audio_on", 0)
+
+    # A playing/paused conflict in the same exact context disables standalone
+    # home authority completely.
+    reset()
+    write_standalone_home_profile(conflict_label="playing")
+    assert run(1, 270, pkg=APP_A, activity=BROWSE_A, audio=0,
+               pps=6, shadow="unknown", adaptive_state="unready",
+               adaptive_score=0, adaptive_reason="overlap_model",
+               pause_hint="none", pause_score=0, active_floor=100) == (
+        "unknown", "unlearned_foreground_context", 0)
 
     # Human-labelled paired sessions teach exact-context audio semantics.
     # Low-bitrate audio-active playback must charge/play even below the network
@@ -110,6 +227,187 @@ with tempfile.TemporaryDirectory(prefix="tvguard-fusion-") as folder:
                active_floor=100) == (
         "playing", "playing_confirmed_learned_audio_profile", 0)
 
+    # Three high-quality human-labelled states in the SAME exact context teach
+    # Type-D playing vs generic nonplaying semantics. The runtime must not lie
+    # by calling audio-off "paused" or "app_home" when both share that context.
+    reset()
+    write_nonplaying_profile()
+    assert run(1, 350, pkg=APP_A, activity=PLAYER_A, audio=1,
+               pps=6, shadow="idle", adaptive_state="idle",
+               adaptive_score=95, adaptive_reason="stable_low",
+               pause_hint="idle_overlap", pause_score=60,
+               active_floor=100) == (
+        "playing", "playing_confirmed_learned_nonplaying_profile", 0)
+    assert run(2, 360, pkg=APP_A, activity=PLAYER_A, audio=0,
+               pps=300, shadow="playing", adaptive_state="active",
+               adaptive_score=100, adaptive_reason="clear_current",
+               pause_hint="none", pause_score=0,
+               active_floor=100) == (
+        "unknown", "nonplaying_audio_profile_warming", 1)
+    # Re-reading the same report never manufactures the second vote.
+    assert run(2, 360, pkg=APP_A, activity=PLAYER_A, audio=0,
+               pps=300, shadow="playing", adaptive_state="active",
+               adaptive_score=100, adaptive_reason="clear_current",
+               pause_hint="none", pause_score=0,
+               active_floor=100) == (
+        "unknown", "nonplaying_audio_profile_warming", 1)
+    assert run(3, 370, pkg=APP_A, activity=PLAYER_A, audio=0,
+               pps=300, shadow="playing", adaptive_state="active",
+               adaptive_score=100, adaptive_reason="clear_current",
+               pause_hint="none", pause_score=0,
+               active_floor=100) == (
+        "nonplaying", "nonplaying_confirmed_learned_audio_context", 2)
+    assert run(4, 380, pkg=APP_A, activity=PLAYER_A, audio=1,
+               pps=5, shadow="idle", adaptive_state="ambiguous",
+               adaptive_score=50, adaptive_reason="overlap",
+               pause_hint="none", pause_score=0,
+               active_floor=100) == (
+        "playing", "playing_confirmed_learned_nonplaying_profile", 0)
+
+    # Type-D four-state refinement: app_home may be learned from trail, but
+    # a confirmed playing -> audio-off transition with the SAME unchanged trail
+    # must override stale app-home history and classify paused.
+    reset()
+    pause_trail, home_trail = write_nonplaying_trail_profile()
+    home_runtime = "com.example.videoa.ui.RootTaskActivity~com.example.videoa.ui.ExitActivity~com.example.videoa.ui.RootTaskActivity~com.example.videoa.ui.MainActivity"
+
+    # Cold audio-off context: learned trail can identify app_home.
+    assert run(1, 381, audio=0, pps=80, shadow="unknown",
+               adaptive_state="ambiguous", adaptive_score=50,
+               adaptive_reason="overlap", pause_hint="none",
+               pause_score=0, active_floor=100,
+               activity_trail=home_runtime) == (
+        "unknown", "nonplaying_audio_profile_warming", 1)
+    assert run(2, 391, audio=0, pps=80, shadow="unknown",
+               adaptive_state="ambiguous", adaptive_score=50,
+               adaptive_reason="overlap", pause_hint="none",
+               pause_score=0, active_floor=100,
+               activity_trail=home_runtime) == (
+        "app_home", "app_home_classified_learned_activity_trail", 2)
+
+    # User starts playback, but Tencent-like Activity trail remains exactly the
+    # same stale app-home path. Audio=1 still confirms playing.
+    assert run(3, 401, audio=1, pps=180, shadow="playing",
+               adaptive_state="active", adaptive_score=100,
+               adaptive_reason="clear_current", pause_hint="none",
+               pause_score=0, active_floor=100,
+               activity_trail=home_runtime) == (
+        "playing", "playing_confirmed_learned_nonplaying_profile", 0)
+
+    # Pausing does not change the trail. r6 misclassified this as app_home;
+    # r7 must use recent playing transition and the unchanged trail.
+    assert run(4, 411, audio=0, pps=300, shadow="playing",
+               adaptive_state="active", adaptive_score=100,
+               adaptive_reason="clear_current", pause_hint="none",
+               pause_score=0, active_floor=100,
+               activity_trail=home_runtime) == (
+        "unknown", "nonplaying_audio_profile_warming", 1)
+    assert run(5, 421, audio=0, pps=300, shadow="playing",
+               adaptive_state="active", adaptive_score=100,
+               adaptive_reason="clear_current", pause_hint="none",
+               pause_score=0, active_floor=100,
+               activity_trail=home_runtime) == (
+        "paused", "paused_classified_recent_play_transition", 2)
+
+    # A long pause must stay paused after the 45-second transition window; the
+    # semantic latch persists while the same play trail remains unchanged.
+    assert run(6, 481, audio=0, pps=20, shadow="unknown",
+               adaptive_state="ambiguous", adaptive_score=50,
+               adaptive_reason="overlap", pause_hint="none",
+               pause_score=0, active_floor=100,
+               activity_trail=home_runtime) == (
+        "paused", "paused_classified_recent_play_transition", 3)
+
+    # Once a real page navigation changes the trail to the learned home path,
+    # the paused latch is released by the changed trail and app_home can win.
+    assert run(7, 491, audio=0, pps=12, shadow="idle",
+               adaptive_state="idle", adaptive_score=95,
+               adaptive_reason="stable_low", pause_hint="idle_overlap",
+               pause_score=60, active_floor=100,
+               activity_trail=home_trail) == (
+        "app_home", "app_home_classified_learned_activity_trail", 4)
+
+    # A single shared foreground Activity is insufficient for classification:
+    # the engine must keep the already-free state generic nonplaying.
+    reset()
+    write_nonplaying_trail_profile()
+    shared_only = "com.example.videoa.ui.RootTaskActivity"
+    assert run(1, 422, audio=0, pps=80, shadow="unknown",
+               adaptive_state="ambiguous", adaptive_score=50,
+               adaptive_reason="overlap", pause_hint="none", pause_score=0,
+               active_floor=100, activity_trail=shared_only) == (
+        "unknown", "nonplaying_audio_profile_warming", 1)
+    assert run(2, 432, audio=0, pps=80, shadow="unknown",
+               adaptive_state="ambiguous", adaptive_score=50,
+               adaptive_reason="overlap", pause_hint="none", pause_score=0,
+               active_floor=100, activity_trail=shared_only) == (
+        "nonplaying", "nonplaying_confirmed_learned_audio_context", 2)
+
+    # Legacy 29/40-column summaries can recover today's already-collected trail
+    # evidence from calibration-v5.csv without repeating manual learning.
+    reset()
+    write_nonplaying_profile()
+    legacy_pause = "com.example.videoa.ui.RootTaskActivity~com.example.videoa.ui.MainActivity"
+    legacy_home = "com.example.videoa.ui.RootTaskActivity~com.example.videoa.ui.ExitActivity~com.example.videoa.ui.RootTaskActivity~com.example.videoa.ui.ExitActivity"
+    legacy_home_runtime = "com.example.videoa.ui.RootTaskActivity~com.example.videoa.ui.ExitActivity~com.example.videoa.ui.RootTaskActivity~com.example.videoa.ui.MainActivity"
+    rows = []
+    for sid, label, trail in (
+        ("12-pause", "paused", legacy_pause),
+        ("13-home", "app_home", legacy_home),
+    ):
+        for i in range(12):
+            rows.append(",".join(map(str, [
+                1000 + i, sid, label, "fresh", i + 1, APP_A, PLAYER_A,
+                0, 1, 20, 10, 1, 9, 10000, "allowed", "usage_events",
+                "full_context", "full", trail,
+            ])))
+    (d / "calibration-v5.csv").write_text("\n".join(rows) + "\n")
+    assert run(1, 431, audio=0, pps=80, shadow="unknown",
+               adaptive_state="ambiguous", adaptive_score=50,
+               adaptive_reason="overlap", pause_hint="none", pause_score=0,
+               active_floor=100, activity_trail=legacy_pause) == (
+        "unknown", "nonplaying_audio_profile_warming", 1)
+    assert run(2, 441, audio=0, pps=80, shadow="unknown",
+               adaptive_state="ambiguous", adaptive_score=50,
+               adaptive_reason="overlap", pause_hint="none", pause_score=0,
+               active_floor=100, activity_trail=legacy_pause) == (
+        "paused", "paused_classified_learned_activity_trail", 2)
+    assert run(3, 451, audio=1, pps=5, shadow="idle",
+               adaptive_state="ambiguous", adaptive_score=50,
+               adaptive_reason="overlap", pause_hint="none", pause_score=0,
+               active_floor=100, activity_trail=legacy_home_runtime) == (
+        "playing", "playing_confirmed_learned_nonplaying_profile", 0)
+    assert run(4, 461, audio=0, pps=80, shadow="unknown",
+               adaptive_state="ambiguous", adaptive_score=50,
+               adaptive_reason="overlap", pause_hint="none", pause_score=0,
+               active_floor=100, activity_trail=legacy_home_runtime) == (
+        "unknown", "nonplaying_audio_profile_warming", 1)
+    assert run(5, 471, audio=0, pps=80, shadow="unknown",
+               adaptive_state="ambiguous", adaptive_score=50,
+               adaptive_reason="overlap", pause_hint="none", pause_score=0,
+               active_floor=100, activity_trail=legacy_home_runtime) == (
+        "paused", "paused_classified_recent_play_transition", 2)
+    # Legacy learned home evidence may take over once a real navigation changes
+    # the trail away from the last confirmed playing trail.
+    assert run(6, 481, audio=0, pps=12, shadow="idle",
+               adaptive_state="idle", adaptive_score=95,
+               adaptive_reason="stable_low", pause_hint="idle_overlap",
+               pause_score=60, active_floor=100,
+               activity_trail=legacy_home) == (
+        "app_home", "app_home_classified_learned_activity_trail", 3)
+    (d / "calibration-v5.csv").unlink()
+
+    # Type-D authority requires BOTH free-state labels. A same-context home
+    # sample with audio still active is a conflict, not permission to free time.
+    reset()
+    write_nonplaying_profile(home_audio=80)
+    assert run(1, 390, pkg=APP_A, activity=PLAYER_A, audio=0,
+               pps=300, shadow="playing", adaptive_state="active",
+               adaptive_score=100, adaptive_reason="clear_current",
+               pause_hint="none", pause_score=0,
+               active_floor=100) == (
+        "playing", "playing_confirmed_context_learned", 0)
+
     # Without strong playing-vs-paused audio separation, the model has no
     # authority and the conservative legacy path remains in force.
     reset()
@@ -120,6 +418,79 @@ with tempfile.TemporaryDirectory(prefix="tvguard-fusion-") as folder:
                pause_hint="none", pause_score=0,
                active_floor=100) == (
         "playing", "playing_confirmed_context_learned", 0)
+
+    # Human-labelled TVG4 structure profiles solve the same-context/same-audio
+    # case without trusting traffic volume. The observed real-device shape is
+    # A(play) -> B(pause overlay) -> A(resume). Two fresh pause matches are
+    # required; playback exits the free state immediately.
+    reset()
+    write_ui_profile()
+    assert run(1, 410, audio=1, pps=5, shadow="idle",
+               adaptive_state="idle", adaptive_reason="stable_low",
+               pause_hint="idle_overlap", pause_score=60,
+               ui_package=APP_A, ui_age_ms=1000, ui_fp=UI_PLAY_FP) == (
+        "playing", "playing_confirmed_learned_ui_context", 0)
+    assert run(2, 420, audio=1, pps=500, shadow="playing",
+               adaptive_state="active", adaptive_reason="clear_current",
+               pause_hint="none", pause_score=0,
+               ui_package=APP_A, ui_age_ms=1000, ui_fp=UI_PAUSE_FP) == (
+        "unknown", "paused_ui_profile_warming", 1)
+    assert run(3, 430, audio=1, pps=500, shadow="playing",
+               adaptive_state="active", adaptive_reason="clear_current",
+               pause_hint="none", pause_score=0,
+               ui_package=APP_A, ui_age_ms=1000, ui_fp=UI_PAUSE_FP) == (
+        "paused", "paused_confirmed_learned_ui_context", 2)
+    assert run(4, 440, audio=1, pps=0, shadow="idle",
+               adaptive_state="idle", adaptive_reason="stable_low",
+               pause_hint="idle_overlap", pause_score=60,
+               ui_package=APP_A, ui_age_ms=1000, ui_fp=UI_PLAY_FP) == (
+        "playing", "playing_confirmed_learned_ui_context", 0)
+
+    # A changed fingerprint with the same distinctive learned UI structure
+    # must still generalize. This models real hash drift plus the observed
+    # focused_count 0->1 transient while nodes/clickable/view-id stay stable.
+    reset()
+    write_ui_profile()
+    assert run(1, 445, audio=1, pps=500, shadow="playing",
+               adaptive_state="active", adaptive_reason="clear_current",
+               pause_hint="none", pause_score=0,
+               ui_package=APP_A, ui_age_ms=1000, ui_fp=UI_PAUSE_ALT_FP,
+               ui_nodes=26, ui_clickable=12, ui_focused=1, ui_ids=8) == (
+        "unknown", "paused_ui_structure_warming", 1)
+    assert run(2, 455, audio=1, pps=500, shadow="playing",
+               adaptive_state="active", adaptive_reason="clear_current",
+               pause_hint="none", pause_score=0,
+               ui_package=APP_A, ui_age_ms=1000, ui_fp=UI_PAUSE_ALT_FP,
+               ui_nodes=26, ui_clickable=12, ui_focused=1, ui_ids=8) == (
+        "paused", "paused_confirmed_learned_ui_structure", 2)
+
+    # A weak/intermediate structural resemblance remains unknown.
+    reset()
+    write_ui_profile()
+    assert run(1, 465, audio=1, pps=500, shadow="playing",
+               adaptive_state="active", adaptive_reason="clear_current",
+               pause_hint="none", pause_score=0,
+               ui_package=APP_A, ui_age_ms=1000,
+               ui_fp="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+               ui_nodes=15, ui_clickable=6, ui_focused=0, ui_ids=4) == (
+        "unknown", "learned_ui_context_unresolved", 0)
+
+    # A stale UI snapshot cannot preserve free time.
+    assert run(5, 450, audio=1, pps=500, shadow="playing",
+               adaptive_state="active", adaptive_reason="clear_current",
+               pause_hint="none", pause_score=0,
+               ui_package=APP_A, ui_age_ms=25000, ui_fp=UI_PAUSE_FP) == (
+        "unknown", "learned_ui_profile_unavailable", 0)
+
+    # If the same stable fingerprint was manually learned under conflicting
+    # labels, it has zero authority.
+    reset()
+    write_ui_profile(pause_fp=UI_PLAY_FP)
+    assert run(1, 460, audio=1, pps=500, shadow="playing",
+               adaptive_state="active", adaptive_reason="clear_current",
+               pause_hint="none", pause_score=0,
+               ui_package=APP_A, ui_age_ms=1000, ui_fp=UI_PLAY_FP) == (
+        "unknown", "learned_ui_context_unresolved", 0)
 
     # Return to the legacy no-profile scenario with a clean chronological
     # timeline; the profile-specific tests above must not leak state/model.
@@ -230,7 +601,7 @@ with tempfile.TemporaryDirectory(prefix="tvguard-fusion-") as folder:
                pause_hint="none", pause_score=0, active_floor=100) == (
         "unknown", "media_context_switch_play_warming", 0)
     state_fields = (d / "fusion.state").read_text().strip().split("|")
-    assert state_fields[0] == "4", state_fields
+    assert state_fields[0] == "5", state_fields
     assert state_fields[6] == APP_A, state_fields
     assert state_fields[7] == PLAYER_A, state_fields
     for seq, seen, pps in ((3, 620, 11), (4, 630, 9)):

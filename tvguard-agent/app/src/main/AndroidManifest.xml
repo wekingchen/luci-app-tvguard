@@ -3,6 +3,7 @@
     <uses-permission android:name="android.permission.PACKAGE_USAGE_STATS" />
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <uses-permission android:name="android.permission.WRITE_SECURE_SETTINGS" />
     <uses-feature android:name="android.hardware.touchscreen" android:required="false" />
     <uses-feature android:name="android.software.leanback" android:required="false" />
 
@@ -24,6 +25,18 @@
             </intent-filter>
         </activity>
         <service android:name=".MonitorService" android:exported="false" />
+        <service
+            android:name=".UiStructureAccessibilityService"
+            android:label="TVGuard UI 结构观察"
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.accessibilityservice.AccessibilityService" />
+            </intent-filter>
+            <meta-data
+                android:name="android.accessibilityservice"
+                android:resource="@xml/tvguard_accessibility_service" />
+        </service>
         <service
             android:name=".RecoveryJobService"
             android:permission="android.permission.BIND_JOB_SERVICE"

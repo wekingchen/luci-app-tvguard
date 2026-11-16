@@ -45,7 +45,7 @@ TV Guard 管理的是 **小米电视这台设备**，而不是腾讯、爱奇艺
 - `sleep` 不作为网络分类器的可靠标签；零流量可能来自电视绕过 N1、路由中断或长时间缓冲，仍由独立静默逻辑处理。
 - v0.1.13 中 `system_home` / `idle` 只有连续约 30 秒才会令 `billing_state=idle_verified` 并暂停 `USED_S`；`unknown` / `playing` 立即计时。
 
-**这些条件是保守的实验门槛，而非要求用户每个应用都做三轮采样。** 现有数据中，仅腾讯极光三种状态采集齐全，跨应用泛化尚未得到验证。当前显示 `unknown` 属于预期。
+**这些条件是保守的实验门槛，而非要求用户每个应用都做三轮采样。** 截至 2026-11-16，爱奇艺、腾讯极光、芒果 TV 已在真机完成不同识别路径的播放/暂停/恢复计费回归，且系统首页与芒果独立 App 首页已验证稳定免计。这里的“跨 App 真机回归通过”不等同于统计学意义上的 leave-one-app-out 泛化证明；对从未学习的新 App，`unknown` / charge 仍属于预期的安全退化。
 
 ## 如何验证真正的通用性
 
@@ -103,7 +103,7 @@ v5 同样由 `tvguard-data` 管理：持久分区不可用时只写 `/var/run/tv
 python3 scripts/evaluate-generalization.py calibration-v3.csv
 ```
 
-此工具会**留出整个播放器的所有样本**，只从其他应用学习，再测试从未进入训练集的播放器（leave-one-app-out）。只有至少 3 个具有完整播放/暂停/首页标注的独立视频 App 时才可能执行这种验证；目前不足时明确输出 `insufficient_cross_app_validation`，不会伪造准确率。
+此工具会**留出整个播放器的所有样本**，只从其他应用学习，再测试从未进入训练集的播放器（leave-one-app-out）。只有至少 3 个具有完整播放/暂停/首页标注的独立视频 App 数据集时才执行这种验证；数据不足时明确输出 `insufficient_cross_app_validation`，不会伪造准确率。真机运行时跨 App 回归与 leave-one-app-out 是两类不同证据，不能相互替代。
 
 另有 `scripts/evaluate-calibration.py` 用于检查单应用内的状态分离度，仅作辅助分析，不能证明泛化。
 
@@ -231,7 +231,7 @@ Shadow Soak 不产生新的模型权重，也不改变 paused/playing 分类边�
 
 
 
-## r11：高 B/P 必须视为重叠特征
+## 历史 Shadow Soak r11：高 B/P 必须视为重叠特征
 
 芒果 TV 576p 正常播放已经证明 high_ratio_pause 会在真实播放中长时间、多次触发，因此 Phase 2A 的“高流量暂停候选”语义过强。
 
@@ -313,3 +313,28 @@ r6 针对真机已确认的关键反例补齐最后一段学习链：同一个�
 r6 真机儿童模式已确认：正常播放 40 秒约 +43 秒，暂停确认后 40 秒 +0，恢复播放 40 秒约 +43 秒；但从按下暂停到正式免计仍多计约 32 秒。随后专门验证“静音但继续播放”：连续 5 个 Agent report 均保持 audio_active=1，Fusion 一直为 playing，未出现静音误判。
 
 因此 r7 只对**已经存在成对高可信 playing/paused Agent 画像的 exact package+Activity**收紧确认：第 1 个 fresh audio=0 report 继续 charge，第 2 个 fresh audio=0 report 才进入 `paused_confirmed_learned_audio_context`。这样保留一个完整抗抖窗口，同时把典型暂停确认延迟从约 30 秒降到约 20 秒。没有 learned-audio profile 的旧网络暂停路径仍要求 3 个 fresh report。
+
+
+## v0.1.15-r1：共享 exact context 的 generic nonplaying
+
+腾讯极光真机揭示了一类与芒果不同的结构：playing、paused、app_home 三态都可能共享同一个 package+Activity。此时 exact context 本身不能区分状态，audio=0 也不能诚实地被叫做 paused，因为 app_home 同样是 audio=0。
+
+2026-11-12 腾讯三轮 180 秒人工学习：
+
+- playing：17/17 fresh，joint=high，package/Activity 稳定 100%，audio=100%，PPS P10/P50/P90=100/120/168；
+- paused：17/17 fresh，joint=high，package/Activity 稳定 100%，audio=5%，PPS=37/49/73；
+- app_home：16/16 fresh，joint=high，package/Activity 稳定 100%，audio=0%，PPS=17/24/40；
+- 三态 exact context 相同：`com.ktcp.video / com.ktcp.video.activity.onepage.HomeSingleTaskActivity`；
+- 静音继续播放的 5 个 fresh report 均保持 audio_active=1。
+
+因此 r1 新增通用 Type-D profile，源码不使用上述真实包名。只有同一 exact context 同时拥有 completed+high+joint-high 的 playing、paused、app_home，且 playing 平均 audio>=70%、paused/app_home 均<=30%，playing 相对两者均至少分离 50 个百分点，才获得该画像。
+
+运行时：
+- audio=1 → `playing_confirmed_learned_nonplaying_profile`，即使 PPS 很低也继续计时；
+- 第 1 个 fresh audio=0 → `nonplaying_audio_profile_warming`，继续 charge；
+- 第 2 个 fresh audio=0 → `nonplaying_confirmed_learned_audio_context`，Fusion 输出诚实的 `nonplaying`，billing 返回 `free nonplaying`；
+- 网络 active/high PPS 不能单独否决已经由三态人工学习建立的 nonplaying；
+- audio 恢复为 1 立即回 playing/charge；
+- stale/package-only/Activity unknown/三态样本不齐/音频分离不足全部 fail-closed。
+
+网络 PPS 的 playing/paused/app_home 分层可以用于后续展示态细分，但当前**不参与 generic nonplaying 的免计授权**，避免把 App 专属网络阈值写死成计费规则。

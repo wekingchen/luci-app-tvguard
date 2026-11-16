@@ -186,6 +186,7 @@ public final class MonitorService extends Service {
         public void run() {
             if (!isEnabled(MonitorService.this)) return;
             try {
+                AccessibilityRecovery.reconcile(MonitorService.this);
                 Snapshot sample = latest;
                 long now = System.currentTimeMillis();
                 boolean fresh = HeartbeatState.isFresh(now, sample.sampledMs);
@@ -201,8 +202,41 @@ public final class MonitorService extends Service {
                         getSystemService(Context.POWER_SERVICE);
                 boolean activeAudio = audio != null && audio.isMusicActive();
                 boolean screenOn = power != null && power.isInteractive();
+                String activityTrail = fresh
+                        ? BridgeProtocol.activityTrail(sample.timeline, pkg) : "none";
+                UiStructureAccessibilityService.Snapshot ui =
+                        UiStructureAccessibilityService.snapshot();
+                long uiAgeMs = ui.sampledMs == 0L ? 0L :
+                        Math.max(0L, now - ui.sampledMs);
+                boolean usableUi = BridgeProtocol.usableUi(
+                        pkg, ui.packageName, uiAgeMs, ui.fingerprint);
+                String reportUiPackage = usableUi ? ui.packageName : "none";
+                long reportUiAgeMs = usableUi ? uiAgeMs : 0L;
+                int reportUiNodes = usableUi ? ui.nodeCount : 0;
+                int reportUiClickable = usableUi ? ui.clickableCount : 0;
+                int reportUiFocused = usableUi ? ui.focusedCount : 0;
+                int reportUiIds = usableUi ? ui.viewIdCount : 0;
+                String reportUiFingerprint = usableUi ? ui.fingerprint : "none";
+                UiStructureAccessibilityService.EventSnapshot event =
+                        UiStructureAccessibilityService.eventSnapshot();
+                long eventAgeMs = event.sampledMs == 0L ? 0L :
+                        Math.max(0L, now - event.sampledMs);
+                boolean usableEvent = BridgeProtocol.usableAccessibilityEvent(
+                        pkg, event.packageName, eventAgeMs, event.sequence, event.eventType);
+                String reportEventPackage = usableEvent ? event.packageName : "none";
+                String reportEventClass = usableEvent ? event.className : "unknown";
+                long reportEventSequence = usableEvent ? event.sequence : 0L;
+                int reportEventType = usableEvent ? event.eventType : 0;
+                int reportEventWindowId = usableEvent ? event.windowId : 0;
+                int reportEventContentChanges = usableEvent ? event.contentChangeTypes : 0;
+                long reportEventAgeMs = usableEvent ? eventAgeMs : 0L;
                 BridgeClient.maybeSend(MonitorService.this, pkg, cls,
-                        activeAudio, screenOn, now, sample.usageAccess, source, status);
+                        activeAudio, screenOn, now, sample.usageAccess, source, status,
+                        activityTrail, reportUiPackage, reportUiAgeMs, reportUiNodes,
+                        reportUiClickable, reportUiFocused, reportUiIds,
+                        reportUiFingerprint, reportEventPackage, reportEventClass,
+                        reportEventSequence, reportEventType, reportEventWindowId,
+                        reportEventContentChanges, reportEventAgeMs);
             } catch (RuntimeException e) {
                 BridgeClient.markUplinkError("本地上报异常：" +
                         e.getClass().getSimpleName());

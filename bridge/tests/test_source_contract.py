@@ -16,6 +16,9 @@ assert 'tvguard.main.ip' in cgi
 assert 'CONTENT_LENGTH' in cgi
 assert 'REQUEST_METHOD' in cgi and 'REMOTE_ADDR' in cgi
 assert 'agent-bridge.key' in cgi
+assert 'TVG3' in cgi and 'activity_trail' in cgi
+assert 'TVG4' in cgi and 'ui_fingerprint' in cgi
+assert 'TVG5' in cgi and 'event_class' in cgi and 'event_type' in cgi
 assert '>>' not in cgi
 assert 'USED_S' not in cgi and 'iptables' not in cgi
 
@@ -27,11 +30,22 @@ assert 'adaptive_pause_hint' in report
 assert 'adaptive_pause_score' in report
 assert 'combined_state=' in report
 assert 'fusion_pause_streak=' in report
+assert 'recent_activity_trail=' in report
+assert 'TVG1_TVG2_TVG3_TVG4' in report
+assert 'ui_structure_fingerprint=' in report
+assert 'accessibility_event_class=' in report
+assert 'accessibility_event_seq=' in report
+assert 'accessibility_event_type=' in report
+assert 'accessibility_event_age_ms=' in report
 assert 'soak-v3.csv' in report and 'soak-v3.csv' in soak
 assert 'repeated_report_not_new_evidence' in soak
 assert 'agent_process_restart_suspected' in soak
 assert 'agent_stale' in soak
 assert 'is_new_report' in report
+
+report_fusion_call = report[report.index('fusion="$("$FUSION"'):report.index('set -- $fusion')]
+assert 'ui_nodes' in report_fusion_call and 'ui_clickable' in report_fusion_call
+assert 'ui_focused' in report_fusion_call and 'ui_ids' in report_fusion_call
 
 assert 'cp -R "$ROOT/bridge/root/." "$WORK/data/"' in ipk
 assert 'Conflicts: tvguard-agent-bridge' in ipk
@@ -48,7 +62,7 @@ assert 'TOKEN1|' in cgi and 'PAIR1' in cgi
 assert 'REMOTE_ADDR' in cgi and 'pair-claim' in cgi
 assert 'USED_S' not in pair and 'iptables' not in pair
 
-# v0.2.9 fusion must be generic: real video-app package names and
+# Fusion must remain generic: real video-app package names and
 # brand-specific candidate labels are forbidden from the decision engine.
 for forbidden in (
     'com.gitvdemo.video',
@@ -73,8 +87,8 @@ assert 'burst_gap_max' in fusion and 'burst_hits' in fusion
 assert 'media_context_switch_play_warming' in fusion
 assert 'playing_confirmed_context_switched' in fusion
 assert 'switch_strong_hits' in fusion and 'switch_activity' in fusion
-assert "printf '4|%s|%s|%s" in fusion
-assert 'switch_last_strong_seen extra < "$STATE"' in fusion
+assert "printf '5|%s|%s|%s" in fusion
+assert 'type_d_last_play_seen type_d_last_play_trail type_d_class extra < "$STATE"' in fusion
 assert 'app_nonplaying_confirmed' in fusion
 assert 'unlearned_package_pause_hint_ignored' in fusion
 assert 'media_pkg' in fusion and 'media_activity' in fusion
@@ -83,9 +97,38 @@ assert 'learning-sessions.csv' in fusion
 assert 'playing_confirmed_learned_audio_profile' in fusion
 assert 'paused_confirmed_learned_audio_context' in fusion
 assert 'paused_audio_profile_warming' in fusion
+assert 'learned_nonplaying_profile' in fusion
+assert 'playing_confirmed_learned_nonplaying_profile' in fusion
+assert 'nonplaying_audio_profile_warming' in fusion
+assert 'nonplaying_confirmed_learned_audio_context' in fusion
 assert 'pause_streak" -ge 2' in fusion
 assert 'pause_streak" -ge 3' in fusion  # legacy network-pause path stays conservative
 assert '$19=="high"' in fusion and '$27+0' in fusion
+assert '$40=="high"' in fusion and '$34' in fusion and '$35+0>=75' in fusion
+assert 'activity_trail' in fusion
+assert 'event_class' not in fusion and 'accessibility_event' not in fusion
+assert 'learned_trail_profile' in fusion
+assert 'paused_classified_learned_activity_trail' in fusion
+assert 'app_home_classified_learned_activity_trail' in fusion
+assert 'paused_classified_recent_play_transition' in fusion
+assert 'type_d_last_play_seen' in fusion and 'type_d_last_play_trail' in fusion
+assert "printf '5|" in fusion
+assert 'prefix_score' in fusion
+assert 'qs>=60 && qs-hs>=20' in fusion
+assert 'hs>=60 && hs-qs>=20' in fusion
+assert 'calibration-v5.csv' in fusion
+assert 'learned_ui_profile' in fusion
+assert 'ui_fingerprint' in fusion
+assert 'ui_total_age_ms' in fusion and 'ui_total_age_ms" -le 20000' in fusion
+assert 'playing_confirmed_learned_ui_context' in fusion
+assert 'paused_confirmed_learned_ui_context' in fusion
+assert 'learned_ui_profile_unavailable' in fusion
+assert 'learned_ui_context_unresolved' in fusion
+assert 'learned_ui_match_mode' in fusion
+assert 'struct_score' in fusion
+assert 'best>=90 && best-second>=25' in fusion
+assert 'playing_confirmed_learned_ui_structure' in fusion
+assert 'paused_confirmed_learned_ui_structure' in fusion
 
 # Hard isolation from real billing/firewall remains mandatory.
 assert 'USED_S' not in fusion
@@ -94,7 +137,7 @@ assert 'iptables' not in fusion
 assert '/etc/' not in fusion
 assert '>>' not in fusion
 
-print('bridge v0.2.9 generic-context / learned-audio / isolation / freshness / pairing checks PASS')
+print('bridge generic-context / learned-audio / learned-UI / freshness / pairing checks PASS')
 
 
 # Formal billing bridge is deliberately narrow: it may only grant free time
@@ -102,6 +145,8 @@ print('bridge v0.2.9 generic-context / learned-audio / isolation / freshness / p
 assert 'free system_home' in billing
 assert 'free app_home' in billing
 assert 'free paused' in billing
+assert 'free nonplaying' in billing
+assert 'nonplaying_confirmed_learned_audio_context' in billing
 assert 'paused_confirmed_learned_context' in billing
 assert 'paused_confirmed_learned_audio_context' in billing
 assert 'playing|unknown' in billing
@@ -110,3 +155,13 @@ assert 'USED_S' not in billing
 assert 'BILLING_STATE' not in billing
 assert 'iptables' not in billing
 assert '/etc/' not in billing
+assert billing.count('ui_fingerprint') >= 3
+assert 'paused_confirmed_learned_ui_context' in billing
+assert 'paused_confirmed_learned_ui_structure' in billing
+assert 'paused_classified_learned_activity_trail' in billing
+assert 'paused_classified_recent_play_transition' in billing
+fusion_call = billing[billing.index('fusion="$("$FUSION"'):billing.index('set -- $fusion')]
+assert 'ui_fingerprint' in fusion_call and 'ui_age_ms' in fusion_call and 'ui_package' in fusion_call
+assert 'ui_nodes' in fusion_call and 'ui_clickable' in fusion_call
+assert 'ui_focused' in fusion_call and 'ui_ids' in fusion_call
+assert 'activity_trail' in fusion_call

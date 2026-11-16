@@ -1,9 +1,26 @@
 # TV Guard · 家庭电视时间管理
-## v0.1.14-r7 · Agent 联合学习 + 更快暂停确认（开发候选）
+## v0.1.15-r11 · 多 App 泛化与独立 App 首页画像（当前开发候选）
+
+- N1 主包：`luci-app-tvguard 0.1.15-11`，build-id：`v0.1.15-r11-standalone-app-home-profile`；Bridge/Fusion 已整合进主包，不再单独安装 Bridge IPK。
+- 电视 Agent：`0.3.7` / versionCode 20，沿用固定签名；Accessibility 自恢复、UI Structure、TVG5 诊断与 bounded-RAM 约束保持不变。
+- 真机已完成爱奇艺、腾讯极光、芒果 TV 三条不同识别路径的儿童模式回归：正常播放计时、稳定暂停不计时、恢复播放重新计时；未发现真实播放被误判为 free。
+- 系统首页已验证稳定不计时；r11 新增 standalone app-home profile 后，芒果独立 `ChannelHomeActivity` 首页经高可信人工 app_home 学习可稳定 `idle_verified/app_home`，首页停留 60 秒 `watch_seconds +0`。
+- r11 不按 App/Activity 名称猜首页：只有 exact package+Activity 的 completed/high/joint-high app_home 会话、无同 context playing/paused 冲突、学习音频活跃率低，并在运行时连续两个 fresh audio-off report 后才授予 app_home/free。
+- 当前仍保守 fail-closed：unknown、stale、上下文不完整或证据冲突继续 charge。暂停/首页从播放切换时存在约 10～22 秒确认延迟，暂不为了单次样本继续调参。
+
+## 历史：v0.1.15-r1 · 多 App 泛化：共享上下文 generic nonplaying
+
+- 新增 Type-D shared-context profile：只有同一 exact package+Activity 下同时存在 high/joint-high 的 playing + paused + app_home 三类人工会话，且 playing audio 高、paused/app_home audio 低并强分离时，才启用 generic nonplaying。
+- Type D 下 audio=1 直接确认 playing；audio=0 第 1 个 fresh report 继续 charge，第 2 个 fresh report 才确认 `nonplaying` 并正式免计。网络即使表现 active/high PPS 也不能单独覆盖这份三态人工真值。
+- `nonplaying` 是诚实的计费语义：系统知道“当前不是播放”，但不伪造 paused 或 app_home。UI 显示“已确认非播放 · 已暂停计时”。
+- 腾讯极光真机已完成三态 180 秒学习：三态均为 `com.ktcp.video / HomeSingleTaskActivity`、上下文稳定 100%、joint=high；playing audio=100%，paused=5%，app_home=0%。静音继续播放连续 5 个 fresh report 仍 audio=1。
+- r7 的芒果 Type-A playing/paused profile 保持不变；Type-D 只在同 exact context 存在高可信 app_home 冲突时启用，不用品牌/App 白名单。
+
+## v0.1.14-r7 · Agent 联合学习 + 更快暂停确认（稳定基线）
 
 - N1 只安装 `luci-app-tvguard_0.1.14-7_all.ipk`，已包含 CGI、Fusion、billing hint、配对、观察报告和 bridge 服务；电视继续使用同一签名的 0.2.9 Agent APK（versionCode 12）。
 - r6 把 r4 已采集的 Agent 联合特征真正写入可复用学习模型：在原 18 列 `learning-sessions.csv` 后追加 joint quality、Agent 覆盖率、dominant package/Activity、audio/screen 比例和前台切换次数；旧 18 列历史行继续兼容，但不会获得新的 Agent 暂停授权。
-- 只有人工标注的 playing 与 paused 会话在**同一 exact package+Activity** 下均为高可信联合样本，且音频活跃率存在强分离（playing 高、paused 低）时，Fusion 才启用 learned-audio profile。此时 audio=0 需连续 3 个新 Agent 心跳才确认 paused；网络即使突然升到高 PPS 也不能覆盖该人工学习出的暂停证据。audio=1 则立即恢复 playing，并保护 576p/720p 低码率播放不因低 PPS 漏计。
+- 只有人工标注的 playing 与 paused 会话在**同一 exact package+Activity** 下均为高可信联合样本，且音频活跃率存在强分离（playing 高、paused 低）时，Fusion 才启用 learned-audio profile。此时 audio=0 需连续 2 个新 Agent 心跳才确认 paused；网络即使突然升到高 PPS 也不能覆盖该人工学习出的暂停证据。audio=1 则立即恢复 playing，并保护 576p/720p 低码率播放不因低 PPS 漏计。
 - app_home / system_home 仍要求 fresh + full_context；package-only / unknown Activity 永远不能授予首页或暂停免计时。没有成对高可信 Agent 样本时，继续走原有保守网络/Fusion 路径，不把 audio=0 写死成暂停。
 - 2026-11-12 小米电视 + 芒果 TV 真机已确认四态上下文：播放/暂停同为 `com.hunantv.license / com.mgtv.tv.vod.activity.VodDynamicActivity`，区别为 audio 1/0；App 首页为 `com.mgtv.tv.launcher.ChannelHomeActivity`；系统首页为 `com.mitv.tvhome / com.mitv.tvhome.NewMyAppActivity`。r6 用这些现象验证“学习特征设计”，代码本身不包含芒果包名或 Activity 白名单。
 - r5 的 Bridge clean-stop 修复与 r4 的 TVG2 前台诊断全部保留。
@@ -26,7 +43,7 @@
 
 面向 OpenWrt/LEDE 的电视使用时间管理。当前优先适配 **Phicomm N1 / LEDE R26.11.3 / fw3 / iptables-legacy** 的单网口旁路由环境。
 
-> **状态：v0.1.14-r7 整合候选。** 当前 LuCI 顶部页签为“概览 / 设置”；N1 主包已整合 Bridge，首次从 v0.1.13-r21 + 独立 Bridge 升级到单主包的真机迁移已通过。 v0.1.1 已通过 N1 的基础安装、LuCI、RAW 出站计数验证；v0.1.5 完成代理隔离硬化，v0.1.6 完成 LuCI 信息架构重构，v0.1.7 将家长模式明确为持续模式，并把孩子临时多看的需求统一归入奖励时间。 v0.1.8 根据 iPhone 深色主题实机截图重新收紧移动端响应式布局：顶部状态固定 2×2、模式/奖励按钮规则化、卡片改为深浅主题兼容的透明层级，并去掉 Argon 下过重的嵌套标题块。v0.1.9 进一步把 LuCI 顶部导航改成明确的“概览 / 时间规则”双 tab，去掉单独悬着的“时间规则”导航块。v0.1.10 收口移动端文案与视觉：顶部改为“儿童剩余”，家长模式摘要压缩，观察/家长状态提示改为轻量边框样式，减少深色主题中的高饱和色块。 v0.1.11 仅收口操作记录：奖励撤销日志记录具体分钟数，并兼容隐藏旧版本内部事件编号。2026-11-09 用户确认 v0.1.11 在 N1 完成日志、手机端界面与代理兼容检查的真机验收；同日第一轮正式锁定实测也通过：`TVG_GATE=DROP` 时电视实际断网，而手机、电脑保持正常联网。正式锁定测试结束后的安全收尾也已验证：恢复为 `enforce=0 / armed=0 / gate=allowed`，且 `tvguard-compat-check` 再次 `PASS`、`proxy_rules_unchanged=1`。v0.1.12 又完成了正式控制完整手动链路真机验证：`locked` 时 `TVG_GATE=DROP` 且电视断网，不关闭 enforce 直接切换 `parent` 后 gate 原位恢复为 `RETURN`、电视恢复联网；最终退出正式控制后兼容检查仍 `PASS`。儿童额度自动控制也已真机通过：额度耗尽自动 `DROP`，+15 分钟奖励立即恢复 `RETURN`，撤销奖励再次 `DROP`，家长模式可随时放行；最终兼容检查仍 `PASS`。TV Guard 自身 service reload 也已真机通过：daemon PID 不变，locked 时继续 `DROP`，parent 时继续 `RETURN`，最终兼容检查仍 `PASS`。全局 fw3/firewall reload 也已真机通过：fw3 清空并重建 raw 表后，TV Guard include 能按当前持久状态恢复目标电视 hook，locked 继续 `DROP`、parent 继续 `RETURN`，daemon PID 不变，最终兼容检查仍 `PASS`。N1 整机重启持久恢复也已真机通过：parent 模式跨重启恢复 `RETURN`，locked 模式跨重启恢复 `DROP`，已用额度保持不变，开机自启和代理兼容检查均正常。至此 v0.1.12 的**控制执行层**（模式、额度封禁、奖励恢复、reload/reboot、代理隔离）已完成真机闭环并作为稳定基线发布；但它仍按网络活动扣儿童时间，尚未完成最初要求的“系统首页/App 首页/明确暂停不计时”。v0.1.13 开始把经过保守验证的闲置识别正式接入儿童计时。实验性回程观测仍默认关闭。正式恢复链路复测时又暴露 N1 BusyBox `sleep` 不接受 `0.1` 的锁竞争兼容问题；v0.1.12 将锁等待改为整数秒重试并新增回归测试。默认 `enforce=0`、`allow_enforcement=0`、`observe_reply=0`。
+> **状态：v0.1.15-r11 多 App 泛化开发候选，已完成三款视频 App 的核心真机计费回归。** 当前 LuCI 顶部页签为“概览 / 设置”；N1 主包已整合 Bridge，首次从 v0.1.13-r21 + 独立 Bridge 升级到单主包的真机迁移已通过。 v0.1.1 已通过 N1 的基础安装、LuCI、RAW 出站计数验证；v0.1.5 完成代理隔离硬化，v0.1.6 完成 LuCI 信息架构重构，v0.1.7 将家长模式明确为持续模式，并把孩子临时多看的需求统一归入奖励时间。 v0.1.8 根据 iPhone 深色主题实机截图重新收紧移动端响应式布局：顶部状态固定 2×2、模式/奖励按钮规则化、卡片改为深浅主题兼容的透明层级，并去掉 Argon 下过重的嵌套标题块。v0.1.9 进一步把 LuCI 顶部导航改成明确的“概览 / 时间规则”双 tab，去掉单独悬着的“时间规则”导航块。v0.1.10 收口移动端文案与视觉：顶部改为“儿童剩余”，家长模式摘要压缩，观察/家长状态提示改为轻量边框样式，减少深色主题中的高饱和色块。 v0.1.11 仅收口操作记录：奖励撤销日志记录具体分钟数，并兼容隐藏旧版本内部事件编号。2026-11-09 用户确认 v0.1.11 在 N1 完成日志、手机端界面与代理兼容检查的真机验收；同日第一轮正式锁定实测也通过：`TVG_GATE=DROP` 时电视实际断网，而手机、电脑保持正常联网。正式锁定测试结束后的安全收尾也已验证：恢复为 `enforce=0 / armed=0 / gate=allowed`，且 `tvguard-compat-check` 再次 `PASS`、`proxy_rules_unchanged=1`。v0.1.12 又完成了正式控制完整手动链路真机验证：`locked` 时 `TVG_GATE=DROP` 且电视断网，不关闭 enforce 直接切换 `parent` 后 gate 原位恢复为 `RETURN`、电视恢复联网；最终退出正式控制后兼容检查仍 `PASS`。儿童额度自动控制也已真机通过：额度耗尽自动 `DROP`，+15 分钟奖励立即恢复 `RETURN`，撤销奖励再次 `DROP`，家长模式可随时放行；最终兼容检查仍 `PASS`。TV Guard 自身 service reload 也已真机通过：daemon PID 不变，locked 时继续 `DROP`，parent 时继续 `RETURN`，最终兼容检查仍 `PASS`。全局 fw3/firewall reload 也已真机通过：fw3 清空并重建 raw 表后，TV Guard include 能按当前持久状态恢复目标电视 hook，locked 继续 `DROP`、parent 继续 `RETURN`，daemon PID 不变，最终兼容检查仍 `PASS`。N1 整机重启持久恢复也已真机通过：parent 模式跨重启恢复 `RETURN`，locked 模式跨重启恢复 `DROP`，已用额度保持不变，开机自启和代理兼容检查均正常。至此 v0.1.12 的**控制执行层**（模式、额度封禁、奖励恢复、reload/reboot、代理隔离）已完成真机闭环并作为稳定基线发布；但它仍按网络活动扣儿童时间，尚未完成最初要求的“系统首页/App 首页/明确暂停不计时”。v0.1.13 开始把经过保守验证的闲置识别正式接入儿童计时。实验性回程观测仍默认关闭。正式恢复链路复测时又暴露 N1 BusyBox `sleep` 不接受 `0.1` 的锁竞争兼容问题；v0.1.12 将锁等待改为整数秒重试并新增回归测试。默认 `enforce=0`、`allow_enforcement=0`、`observe_reply=0`。
 
 ## 已实现的基础能力
 
@@ -43,19 +60,19 @@
 
 ## 默认智能平衡策略：设计目标与现状
 
-**当前正式规则（v0.1.14-r7，Bridge 已并入主包）**：正常播放计时；明确识别为电视系统首页或视频 App 首页时不计时；暂停免计时仅接受当前明确确认的 `paused_confirmed_learned_context` 或成对人工学习产生的 `paused_confirmed_learned_audio_context`；`paused_temporal_hold`、普通 pause hint、`stable_low/idle_overlap`、unknown/ambiguous、Agent 失联/过期均继续计时。网络真正静默仍沿用 `idle_silent` 免计时。家长模式不扣儿童额度。
+**当前正式规则（v0.1.15-r11，Bridge 已并入主包）**：正常播放计时；fresh/full-context Fusion 明确确认的系统首页、已学习 App 首页、严格 paused/nonplaying 画像可以免计。暂停可来自 learned-audio、Type-D recent-play transition 或高可信 learned-UI 结构画像；独立 App 首页可来自 standalone app-home profile。`unknown`、Agent stale/invalid、上下文不完整、UI/学习证据冲突均继续 fail-closed 为 charge。网络低流量本身不授予暂停或首页免计权限；家长模式不扣儿童额度。
 
 **v0.1.12 稳定版现状**：控制执行层已真机闭环，但儿童计时仍主要依据网络活动，所以电视停留系统首页也可能持续消耗额度。这是已确认的功能缺口，不应把“断网控制稳定”误认为“智能计时完成”。
 
-**v0.1.14-r7 正式计时规则（继续沿用严格免计时门槛）：**
+**v0.1.15-r11 正式计时规则（继续沿用严格免计时门槛）：**
 - fresh Agent + Fusion 明确 `system_home` → `idle_verified/system_home`，不扣儿童时间；
 - fresh Agent + Fusion 明确 `app_home` → `idle_verified/app_home`，不扣儿童时间；
-- Fusion 当前明确 `paused_confirmed_learned_context`，或 exact context 的成对高可信人工 playing/paused 会话学出 audio profile 后连续 3 个新心跳得到 `paused_confirmed_learned_audio_context` → `idle_verified/paused`，不扣儿童时间；
+- Fusion 当前明确 `paused_confirmed_learned_context`，或 exact context 的成对高可信人工 playing/paused 会话学出 audio profile 后连续 2 个新心跳得到 `paused_confirmed_learned_audio_context` → `idle_verified/paused`，不扣儿童时间；
 - `paused_temporal_hold`、普通 pause hint、`stable_low/idle_overlap`、`playing / unknown / ambiguous` → 有网络活动时继续 `charge`；
 - Agent missing/stale/invalid 或 bridge 异常 → fail-closed，继续计时；
 - Bridge/Fusion 继续防止 App 首页加载突发覆盖已学习的播放器 Activity；新 Activity 必须连续 3 次 strong-play 才能晋升为播放上下文；package-only/unknown Activity 永远不能产生首页或暂停免计时；
 - 网络静默继续沿用既有 `idle_silent`；主动封禁产生的零流量不会被当作可用额度恢复依据；
-- 2026-11-12 N1 + 小米电视真机已验证：0.2.9 可取得 full_context；芒果播放、暂停、App 首页、系统首页四态的真实 package/Activity/audio 已完整采到。r6 的 learned-audio pause 仍需新一轮人工 playing+paused 学习后做正式儿童计时实机验收。
+- 2026-11-16 N1 + 小米电视真机已验证：Agent 0.3.7 可稳定取得 full_context；爱奇艺 learned-UI structural、腾讯 Type-D/recent-play transition、芒果 learned-audio 三条路径均完成儿童模式播放→暂停→恢复计时回归，稳定暂停 60 秒均为 `watch_seconds +0`。芒果独立 App 首页经 r11 standalone app-home 学习后同样稳定 `+0`，小米系统首页也已验证 `+0`。
 
 ### r4 · Agent-assisted Learning + Foreground diagnostics
 
