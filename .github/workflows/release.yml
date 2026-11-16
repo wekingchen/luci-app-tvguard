@@ -141,19 +141,24 @@ jobs:
           - N1 路由器：luci-app-tvguard_${VERSION}-${RELEASE}_all.ipk
           - 小米 Android 6 电视：tvguard-agent_${AGENT_VERSION}-release-signed.apk
 
-          v0.1.14-r7 已完成小米电视真机验收：UsageEvents/full-context、系统首页与 App 首页免计时、
-          人工 playing/paused 联合学习、低码率播放继续计时、暂停两次 fresh Agent 心跳后免计时、
-          静音播放不误判暂停、play → pause → play 儿童模式计时闭环，以及 Agent 进程被 kill 后自动恢复。
+          v0.1.15-r11 已完成小米电视真机多 App 验收：爱奇艺 learned-UI structural、
+          腾讯 Type-D / recent-play transition、芒果 learned-audio 三条路径均完成儿童模式
+          播放 → 暂停 → 恢复闭环；稳定暂停 60 秒均不增加 watch_seconds，未发现真实播放误放为 free。
+
+          系统首页已验证稳定免计；r11 新增 standalone app-home profile 后，芒果独立 App 首页
+          通过 completed/high/joint-high 人工 app_home 画像确认，稳定首页 60 秒 watch_seconds +0。
+          首页 → 播放会立即恢复 charge；播放 → 首页经过保守确认后恢复 idle_verified/app_home。
 
           N1 只需安装主 IPK；CGI、Fusion、billing hint、配对与 Bridge 服务均已包含。
           旧独立 tvguard-agent-bridge 会由 opkg Conflicts/Replaces 正规迁移，配对密钥、UCI 和持久观看数据保留。
 
-          正式计时仍保持 fail-closed：Agent stale/package-only/unknown Activity、普通网络 pause hint、
-          unknown/ambiguous 均不会获得暂停免计时权限。learned-audio 暂停只对同一 exact package+Activity
-          的成对高可信 playing/paused 人工画像生效。
+          正式计时继续 fail-closed：Agent stale/package-only/unknown Activity、普通网络 pause hint、
+          unknown/ambiguous、学习证据冲突均不会获得免费时间。低流量本身不授权 paused/app_home；
+          standalone app-home 也必须满足 exact context 高可信人工画像、无 playing/paused 冲突、
+          runtime audio=0 与连续 fresh report。
 
-          电视 APK 使用固定签名证书，可覆盖升级而不清除应用数据。
-          腾讯、爱奇艺等其它视频 App 的逐 App 画像与跨 App 泛化验证属于后续阶段，不影响本次 r7 已验收能力。
+          已知限制：播放切换到暂停或 App 首页的保守确认阶段可能多计约 10～22 秒，本版本不为
+          单次样本继续放宽安全门槛。电视 APK 使用固定签名证书，可覆盖升级而不清除应用数据。
           EOF
 
           if gh release view "$TAG" >/dev/null 2>&1; then
@@ -191,7 +196,8 @@ jobs:
             feat/v0.1.13-agent-integration \
             feat/v0.1.13-smart-billing \
             feat/v0.1.14-integrated-agent-bridge \
-            chore/v0.1.14-release-refresh; do
+            chore/v0.1.14-release-refresh \
+            feat/v0.1.15-multi-app-generalization; do
             encoded="${branch//\//%2F}"
             # Best-effort cleanup only; release success must not depend on an
             # already-deleted development branch.
