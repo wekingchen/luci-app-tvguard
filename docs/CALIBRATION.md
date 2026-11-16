@@ -231,7 +231,7 @@ Shadow Soak 不产生新的模型权重，也不改变 paused/playing 分类边�
 
 
 
-## r11：高 B/P 必须视为重叠特征
+## 历史 Shadow Soak r11：高 B/P 必须视为重叠特征
 
 芒果 TV 576p 正常播放已经证明 high_ratio_pause 会在真实播放中长时间、多次触发，因此 Phase 2A 的“高流量暂停候选”语义过强。
 
