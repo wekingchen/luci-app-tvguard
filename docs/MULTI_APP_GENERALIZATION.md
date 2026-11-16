@@ -235,3 +235,19 @@ r8 暂不改变四状态和计费决策，只扩展电视 Agent 诊断信号：
 - TVG1–TVG4 保持向后兼容。
 
 目标不是立即判定 app_home，而是先在真机对比 paused 与“返回 App 首页”时事件 type/class/seq/window/content-change 是否形成稳定、可泛化的差异。
+
+## r9：UI 结构画像泛化
+
+r8 真机继续验证了 UI Structure 的价值与 exact fingerprint 的边界：同一视频 App、同一播放器 Activity 的暂停界面可以长期稳定保持相同的节点结构（例如 node/clickable/focused/view-id 计数），但 32 位 structure fingerprint 在重新进入播放器、控件树细节变化或 App 演进后可能改变。把 hash 当成长期唯一身份会把真实暂停退回 unknown。
+
+r9 保留 exact fingerprint 作为最高置信证据，同时增加保守的结构画像回退：
+
+- Billing 将 Agent 已经上报的 node_count、clickable_count、focused_count、view_id_count 一并传给 Fusion；电视端 Agent 与 TVG5 协议不需要变化；
+- learned UI 仍只读取 completed + network-high + joint-high + UI-high 的人工学习会话，并继续以 exact package+Activity 为边界；
+- exact fingerprint 唯一命中时沿用原路径；同一 fingerprint 若曾出现在多个人工标签下，仍直接冲突并 fail-closed，结构相似度不得覆盖该冲突；
+- fingerprint 未命中时，把运行时四项结构计数与各高可信 playing/paused/app_home 会话的结构原型比较；
+- 单项相似度按相对差异计算，四项取平均；只有最佳标签 ≥90/100 且至少领先第二名 25 分才允许结构匹配，否则保持 unknown；
+- playing 的结构匹配可立即确认，因为它只会保持 charge；paused/app_home 仍沿用两个 fresh report 的确认门槛后才可能获得 free authority；
+- PPS/BPS、App 名称和 Activity 名称关键词仍不参与 learned UI 结构分类。
+
+真实爱奇艺样本验证了该需求：人工 playing 画像为 4/0/0/1，paused 画像为 26/12/0/8；后续暂停 fingerprint 从已学习值变化为新 hash，但结构连续 60 秒仍保持 26/12/0/8。r9 的目标是把这种明显属于同一 UI 结构簇的 fingerprint 漂移正确泛化为 paused，而不是不断要求用户为每个新 hash 重做 180 秒学习。

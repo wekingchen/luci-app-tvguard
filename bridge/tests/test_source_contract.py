@@ -43,6 +43,10 @@ assert 'agent_process_restart_suspected' in soak
 assert 'agent_stale' in soak
 assert 'is_new_report' in report
 
+report_fusion_call = report[report.index('fusion="$("$FUSION"'):report.index('set -- $fusion')]
+assert 'ui_nodes' in report_fusion_call and 'ui_clickable' in report_fusion_call
+assert 'ui_focused' in report_fusion_call and 'ui_ids' in report_fusion_call
+
 assert 'cp -R "$ROOT/bridge/root/." "$WORK/data/"' in ipk
 assert 'Conflicts: tvguard-agent-bridge' in ipk
 assert 'Replaces: tvguard-agent-bridge' in ipk
@@ -120,6 +124,11 @@ assert 'playing_confirmed_learned_ui_context' in fusion
 assert 'paused_confirmed_learned_ui_context' in fusion
 assert 'learned_ui_profile_unavailable' in fusion
 assert 'learned_ui_context_unresolved' in fusion
+assert 'learned_ui_match_mode' in fusion
+assert 'struct_score' in fusion
+assert 'best>=90 && best-second>=25' in fusion
+assert 'playing_confirmed_learned_ui_structure' in fusion
+assert 'paused_confirmed_learned_ui_structure' in fusion
 
 # Hard isolation from real billing/firewall remains mandatory.
 assert 'USED_S' not in fusion
@@ -148,8 +157,11 @@ assert 'iptables' not in billing
 assert '/etc/' not in billing
 assert billing.count('ui_fingerprint') >= 3
 assert 'paused_confirmed_learned_ui_context' in billing
+assert 'paused_confirmed_learned_ui_structure' in billing
 assert 'paused_classified_learned_activity_trail' in billing
 assert 'paused_classified_recent_play_transition' in billing
 fusion_call = billing[billing.index('fusion="$("$FUSION"'):billing.index('set -- $fusion')]
 assert 'ui_fingerprint' in fusion_call and 'ui_age_ms' in fusion_call and 'ui_package' in fusion_call
+assert 'ui_nodes' in fusion_call and 'ui_clickable' in fusion_call
+assert 'ui_focused' in fusion_call and 'ui_ids' in fusion_call
 assert 'activity_trail' in fusion_call

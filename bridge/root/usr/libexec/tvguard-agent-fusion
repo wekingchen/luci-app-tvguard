@@ -1,5 +1,5 @@
 #!/bin/sh
-# TVGuard v0.3.0 generic Agent/N1 temporal + learned UI fusion.
+# TVGuard v0.3.1 generic Agent/N1 temporal + learned UI fusion.
 # No video-app package names or per-app decision branches are allowed here.
 # RAM-only observer: never edits quota, billing state, firewall or persistent data.
 set -eu
@@ -13,7 +13,7 @@ LOCK="$RAM/fusion.lock"
 
 argc="$#"
 case "$argc" in
-    15|18|19) : ;;
+    15|18|19|22|23) : ;;
     *) echo "unknown invalid_arguments 0"; exit 0 ;;
 esac
 
@@ -36,17 +36,29 @@ active_floor="$6"
 ui_package=none
 ui_age_ms=0
 ui_fingerprint=none
+ui_nodes=0
+ui_clickable=0
+ui_focused=0
+ui_ids=0
 activity_trail=none
 if [ "$argc" -ge 18 ]; then
     ui_package="$7"
     ui_age_ms="$8"
     ui_fingerprint="$9"
 fi
+if [ "$argc" -ge 22 ]; then
+    ui_nodes="${10}"
+    ui_clickable="${11}"
+    ui_focused="${12}"
+    ui_ids="${13}"
+fi
 if [ "$argc" -eq 19 ]; then
     activity_trail="${10}"
+elif [ "$argc" -eq 23 ]; then
+    activity_trail="${14}"
 fi
 
-for n in "$now" "$seen" "$seq" "$audio" "$screen" "$pps" "$adaptive_score" "$pause_score" "$active_floor" "$ui_age_ms"; do
+for n in "$now" "$seen" "$seq" "$audio" "$screen" "$pps" "$adaptive_score" "$pause_score" "$active_floor" "$ui_age_ms" "$ui_nodes" "$ui_clickable" "$ui_focused" "$ui_ids"; do
     case "$n" in ''|*[!0-9]*) echo "unknown invalid_numeric 0"; exit 0 ;; esac
 done
 case "$audio:$screen" in 0:0|0:1|1:0|1:1) : ;; *) echo "unknown invalid_bits 0"; exit 0 ;; esac
@@ -385,41 +397,111 @@ if [ "$learned_nonplaying_profile" -eq 1 ] &&
     fi
 fi
 
-# UI profile authority is learned only from completed high-quality manual
-# sessions that have stable exact package+Activity and stable TVG4 structure
-# fingerprints. The runtime fingerprint must be unique to one learned label;
-# any conflict or unknown structure fails closed.
+# UI authority comes only from completed high-quality manual sessions in the
+# same exact package+Activity. Exact fingerprints remain the strongest signal,
+# but a hash miss may fall back to a conservative structural profile built from
+# node/clickable/focused/view-id counts already stored by the learning center.
+#
+# Structural matching is deliberately strict: the best learned label must score
+# at least 90/100 and lead the runner-up by at least 25 points. A fingerprint
+# learned under conflicting labels remains a hard conflict and structural
+# similarity may never override it.
 learned_ui_profile=0
 learned_ui_match=unmatched
+learned_ui_match_mode=none
 if [ "$full_context" -eq 1 ] && [ -x "$DATA" ]; then
     data_root="$("$DATA" root 2>/dev/null || :)"
     model="$data_root/learning-sessions.csv"
     if [ -n "$data_root" ] && [ -s "$model" ]; then
-        ui_profile="$(awk -F, -v pkg="$pkg" -v activity="$activity" -v fp="$ui_fingerprint" '
+        ui_profile="$(awk -F, -v pkg="$pkg" -v activity="$activity" -v fp="$ui_fingerprint" \
+            -v rn="$ui_nodes" -v rc="$ui_clickable" -v rf="$ui_focused" -v ri="$ui_ids" '
+        function sim(a,b,   hi,d,s) {
+            a+=0; b+=0
+            if (a==b) return 100
+            hi=(a>b ? a : b)
+            if (hi<=0) return 100
+            d=(a>b ? a-b : b-a)
+            s=100-int(d*100/hi)
+            return (s>0 ? s : 0)
+        }
+        function struct_score(n,c,f,i,pn,pc,pf,pi) {
+            return int((sim(n,pn)+sim(c,pc)+sim(f,pf)+sim(i,pi))/4)
+        }
         NF>=40 && $6=="completed" && $18=="high" && $19=="high" &&
         $23==pkg && $25==activity && $24+0>=75 && $26+0>=75 &&
         $31+0>=75 && $32==pkg && $33+0>=90 &&
         length($34)==32 && $34 !~ /[^0-9a-f]/ && $35+0>=75 && $40=="high" {
-            if ($3=="playing") { pn++; play[$34]++ }
-            else if ($3=="paused") { qn++; pause[$34]++ }
-            else if ($3=="app_home") { hn++; home[$34]++ }
+            label=$3
+            if (label=="playing") { pn++; play[$34]++ }
+            else if (label=="paused") { qn++; pause[$34]++ }
+            else if (label=="app_home") { hn++; home[$34]++ }
+            else next
+
+            if ((rn+rc+rf+ri)>0 &&
+                $36~/^[0-9]+$/ && $37~/^[0-9]+$/ &&
+                $38~/^[0-9]+$/ && $39~/^[0-9]+$/ &&
+                ($36+$37+$38+$39)>0) {
+                s=struct_score(rn,rc,rf,ri,$36,$37,$38,$39)
+                if (label=="playing" && s>pbest) pbest=s
+                else if (label=="paused" && s>qbest) qbest=s
+                else if (label=="app_home" && s>hbest) hbest=s
+            }
         }
         END {
             profile=(pn>=1 && qn>=1)
             pm=(fp!="" && fp!="none" && play[fp]>0)
             qm=(fp!="" && fp!="none" && pause[fp]>0)
             hm=(fp!="" && fp!="none" && home[fp]>0)
+            exact=pm+qm+hm
             kind="unmatched"
-            if (pm && !qm && !hm) kind="playing"
-            else if (qm && !pm && !hm) kind="paused"
-            else if (hm && !pm && !qm) kind="app_home"
-            else if (pm || qm || hm) kind="conflict"
-            printf "%d %s\n", profile, kind
-        }' "$model" 2>/dev/null || echo '0 unmatched')"
+            mode="none"
+
+            if (exact>1) {
+                kind="conflict"
+                mode="exact"
+            } else if (pm) {
+                kind="playing"
+                mode="exact"
+            } else if (qm) {
+                kind="paused"
+                mode="exact"
+            } else if (hm) {
+                kind="app_home"
+                mode="exact"
+            } else if (profile && (rn+rc+rf+ri)>0) {
+                best=0
+                second=0
+                skind="unmatched"
+                if (pn>0) {
+                    best=pbest
+                    skind="playing"
+                }
+                if (qn>0) {
+                    if (qbest>best) {
+                        second=best
+                        best=qbest
+                        skind="paused"
+                    } else if (qbest>second) second=qbest
+                }
+                if (hn>0) {
+                    if (hbest>best) {
+                        second=best
+                        best=hbest
+                        skind="app_home"
+                    } else if (hbest>second) second=hbest
+                }
+                if (best>=90 && best-second>=25) {
+                    kind=skind
+                    mode="structure"
+                }
+            }
+            printf "%d %s %s\n", profile, kind, mode
+        }' "$model" 2>/dev/null || echo '0 unmatched none')"
         set -- $ui_profile
-        if [ "$#" -eq 2 ]; then
+        if [ "$#" -eq 3 ]; then
             case "$1" in 0|1) learned_ui_profile="$1" ;; *) learned_ui_profile=0 ;; esac
             case "$2" in playing|paused|app_home|conflict|unmatched) learned_ui_match="$2" ;; *) learned_ui_match=unmatched ;; esac
+            case "$3" in exact|structure|none) learned_ui_match_mode="$3" ;; *) learned_ui_match_mode=none ;; esac
         fi
     fi
 fi
@@ -656,10 +738,10 @@ elif [ "$learned_audio_profile" -eq 1 ]; then
     fi
 
 elif [ "$learned_ui_profile" -eq 1 ]; then
-    # Generic learned UI profile: this is the narrow path for apps where
-    # playing and paused share package+Activity and audio cannot separate them.
-    # UI is authoritative only after manual high-confidence learning and only
-    # while the structure snapshot is fresh and belongs to this foreground app.
+    # Learned UI remains a generic same-context path for apps where audio alone
+    # cannot separate playing from paused. Exact fingerprints win immediately;
+    # structural matches are allowed only after the conservative unique-match
+    # gate in the profile builder above.
     media_pkg="$pkg"
     media_activity="$activity"
     known_media_package=1
@@ -677,7 +759,11 @@ elif [ "$learned_ui_profile" -eq 1 ]; then
         latched=none
     elif [ "$learned_ui_match" = playing ]; then
         combined=playing
-        candidate=playing_confirmed_learned_ui_context
+        if [ "$learned_ui_match_mode" = structure ]; then
+            candidate=playing_confirmed_learned_ui_structure
+        else
+            candidate=playing_confirmed_learned_ui_context
+        fi
         pause_streak=0
         pause_miss=0
         latched=none
@@ -690,10 +776,18 @@ elif [ "$learned_ui_profile" -eq 1 ]; then
         if [ "$latched" = paused ] || [ "$pause_streak" -ge 2 ]; then
             latched=paused
             combined=paused
-            candidate=paused_confirmed_learned_ui_context
+            if [ "$learned_ui_match_mode" = structure ]; then
+                candidate=paused_confirmed_learned_ui_structure
+            else
+                candidate=paused_confirmed_learned_ui_context
+            fi
         else
             combined=unknown
-            candidate=paused_ui_profile_warming
+            if [ "$learned_ui_match_mode" = structure ]; then
+                candidate=paused_ui_structure_warming
+            else
+                candidate=paused_ui_profile_warming
+            fi
         fi
     elif [ "$learned_ui_match" = app_home ]; then
         pause_streak=0
@@ -702,10 +796,18 @@ elif [ "$learned_ui_profile" -eq 1 ]; then
         if [ "$fresh" -eq 1 ]; then home_streak=$((home_streak + 1)); fi
         if [ "$home_streak" -ge 2 ]; then
             combined=app_home
-            candidate=app_home_confirmed_learned_ui_context
+            if [ "$learned_ui_match_mode" = structure ]; then
+                candidate=app_home_confirmed_learned_ui_structure
+            else
+                candidate=app_home_confirmed_learned_ui_context
+            fi
         else
             combined=unknown
-            candidate=app_home_ui_profile_warming
+            if [ "$learned_ui_match_mode" = structure ]; then
+                candidate=app_home_ui_structure_warming
+            else
+                candidate=app_home_ui_profile_warming
+            fi
         fi
     else
         combined=unknown

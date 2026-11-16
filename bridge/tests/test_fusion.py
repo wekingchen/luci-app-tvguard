@@ -14,6 +14,7 @@ APP_B = "com.example.videob"
 PLAYER_B = "com.example.videob.ui.WatchScreen"
 UI_PLAY_FP = "99c131952ab0cc27edde65954ed12645"
 UI_PAUSE_FP = "40ed2fe6f6de308287179befd4eabc20"
+UI_PAUSE_ALT_FP = "21859656743a5cb437d2ca4aee6a7f70"
 
 with tempfile.TemporaryDirectory(prefix="tvguard-fusion-") as folder:
     d = Path(folder)
@@ -104,6 +105,7 @@ with tempfile.TemporaryDirectory(prefix="tvguard-fusion-") as folder:
             adaptive_score=50, adaptive_reason="overlap",
             pause_hint="bursty_pause", pause_score=75, active_floor=100,
             ui_package=None, ui_age_ms=0, ui_fp="none",
+            ui_nodes=None, ui_clickable=None, ui_focused=None, ui_ids=None,
             activity_trail=None):
         args = [
             "dash", str(target),
@@ -112,7 +114,16 @@ with tempfile.TemporaryDirectory(prefix="tvguard-fusion-") as folder:
             adaptive_state, str(adaptive_score), adaptive_reason,
             pause_hint, str(pause_score), str(active_floor),
         ]
-        if activity_trail is not None:
+        ui_shape = any(v is not None for v in (
+            ui_nodes, ui_clickable, ui_focused, ui_ids))
+        if ui_shape:
+            args += [
+                ui_package or "none", str(ui_age_ms), ui_fp,
+                str(ui_nodes or 0), str(ui_clickable or 0),
+                str(ui_focused or 0), str(ui_ids or 0),
+                activity_trail or "none",
+            ]
+        elif activity_trail is not None:
             args += [ui_package or "none", str(ui_age_ms), ui_fp, activity_trail]
         elif ui_package is not None:
             args += [ui_package, str(ui_age_ms), ui_fp]
@@ -387,6 +398,34 @@ with tempfile.TemporaryDirectory(prefix="tvguard-fusion-") as folder:
                pause_hint="idle_overlap", pause_score=60,
                ui_package=APP_A, ui_age_ms=1000, ui_fp=UI_PLAY_FP) == (
         "playing", "playing_confirmed_learned_ui_context", 0)
+
+    # A changed fingerprint with the same distinctive learned UI structure
+    # must still generalize. This models real hash drift while the shape stays.
+    reset()
+    write_ui_profile()
+    assert run(1, 445, audio=1, pps=500, shadow="playing",
+               adaptive_state="active", adaptive_reason="clear_current",
+               pause_hint="none", pause_score=0,
+               ui_package=APP_A, ui_age_ms=1000, ui_fp=UI_PAUSE_ALT_FP,
+               ui_nodes=26, ui_clickable=12, ui_focused=0, ui_ids=8) == (
+        "unknown", "paused_ui_structure_warming", 1)
+    assert run(2, 455, audio=1, pps=500, shadow="playing",
+               adaptive_state="active", adaptive_reason="clear_current",
+               pause_hint="none", pause_score=0,
+               ui_package=APP_A, ui_age_ms=1000, ui_fp=UI_PAUSE_ALT_FP,
+               ui_nodes=26, ui_clickable=12, ui_focused=0, ui_ids=8) == (
+        "paused", "paused_confirmed_learned_ui_structure", 2)
+
+    # A weak/intermediate structural resemblance remains unknown.
+    reset()
+    write_ui_profile()
+    assert run(1, 465, audio=1, pps=500, shadow="playing",
+               adaptive_state="active", adaptive_reason="clear_current",
+               pause_hint="none", pause_score=0,
+               ui_package=APP_A, ui_age_ms=1000,
+               ui_fp="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+               ui_nodes=15, ui_clickable=6, ui_focused=0, ui_ids=4) == (
+        "unknown", "learned_ui_context_unresolved", 0)
 
     # A stale UI snapshot cannot preserve free time.
     assert run(5, 450, audio=1, pps=500, shadow="playing",

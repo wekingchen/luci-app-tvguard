@@ -45,8 +45,12 @@ IFS='|' read -r seen pkg activity audio screen client_ms seq usage_access foregr
 activity_trail="${activity_trail:-none}"
 ui_package="${ui_package:-none}"
 ui_age_ms="${ui_age_ms:-0}"
+ui_nodes="${ui_nodes:-0}"
+ui_clickable="${ui_clickable:-0}"
+ui_focused="${ui_focused:-0}"
+ui_ids="${ui_ids:-0}"
 ui_fingerprint="${ui_fingerprint:-none}"
-for n in "${seen:-}" "${seq:-}" "${audio:-}" "${screen:-}"; do
+for n in "${seen:-}" "${seq:-}" "${audio:-}" "${screen:-}" "$ui_age_ms" "$ui_nodes" "$ui_clickable" "$ui_focused" "$ui_ids"; do
     case "$n" in ''|*[!0-9]*) echo "charge unknown"; exit 0 ;; esac
 done
 case "$audio:$screen" in 0:0|0:1|1:0|1:1) : ;; *) echo "charge unknown"; exit 0 ;; esac
@@ -70,7 +74,8 @@ fi
 
 fusion="$("$FUSION" "$now" "$seen" "$seq" "$pkg" "$activity" "$audio" "$screen" \
     "$pps" "$shadow" "$adaptive_state" "$adaptive_score" "$adaptive_reason" \
-    "$pause_hint" "$pause_score" "$active_floor" "$ui_package" "$ui_age_ms" "$ui_fingerprint" "$activity_trail" \
+    "$pause_hint" "$pause_score" "$active_floor" "$ui_package" "$ui_age_ms" "$ui_fingerprint" \
+    "$ui_nodes" "$ui_clickable" "$ui_focused" "$ui_ids" "$activity_trail" \
     2>/dev/null || echo 'unknown fusion_error 0')"
 set -- $fusion
 [ "$#" -eq 3 ] || {
@@ -111,7 +116,7 @@ case "$1" in
         # temporal hold is deliberately still chargeable so an uncertain
         # transition back to playback cannot inherit free time.
         case "$2" in
-            paused_confirmed_learned_context|paused_confirmed_learned_audio_context|paused_confirmed_learned_ui_context|paused_classified_learned_activity_trail|paused_classified_recent_play_transition)
+            paused_confirmed_learned_context|paused_confirmed_learned_audio_context|paused_confirmed_learned_ui_context|paused_confirmed_learned_ui_structure|paused_classified_learned_activity_trail|paused_classified_recent_play_transition)
                 echo "free paused"
                 ;;
             *)

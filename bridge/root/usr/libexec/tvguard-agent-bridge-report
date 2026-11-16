@@ -218,7 +218,8 @@ if [ "$age" -gt 20 ]; then
 elif [ -x "$FUSION" ]; then
     fusion="$("$FUSION" "$now" "$seen" "$seq" "$pkg" "$activity" "$audio" "$screen" \
         "${network_pps:-0}" "$shadow" "$adaptive_state" "$adaptive_score" "$adaptive_reason" \
-        "$pause_hint" "$pause_score" "$active_floor" "$ui_package" "$ui_age_ms" "$ui_fingerprint" "$activity_trail" \
+        "$pause_hint" "$pause_score" "$active_floor" "$ui_package" "$ui_age_ms" "$ui_fingerprint" \
+        "$ui_nodes" "$ui_clickable" "$ui_focused" "$ui_ids" "$activity_trail" \
         2>/dev/null || echo 'unknown fusion_error 0')"
     set -- $fusion
     if [ "$#" -eq 3 ]; then

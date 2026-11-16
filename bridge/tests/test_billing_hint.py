@@ -13,6 +13,7 @@ PLAYER = "com.example.media.RootTask"
 BROWSE = "com.example.media.Browse"
 UI_PLAY_FP = "99c131952ab0cc27edde65954ed12645"
 UI_PAUSE_FP = "40ed2fe6f6de308287179befd4eabc20"
+UI_PAUSE_ALT_FP = "21859656743a5cb437d2ca4aee6a7f70"
 
 with tempfile.TemporaryDirectory(prefix="tvguard-billing-hint-") as folder:
     d = Path(folder)
@@ -277,11 +278,24 @@ with tempfile.TemporaryDirectory(prefix="tvguard-billing-hint-") as folder:
                adaptive_score=95, adaptive_reason="stable_low") == (
         "charge", "playing")
 
+    # Fingerprint drift may grant paused/free only when the fresh runtime
+    # structure uniquely matches the manually learned paused profile.
+    put(24, 440, PKG, PLAYER, audio=1, ui_package=PKG, ui_age_ms=1000,
+        ui_fp=UI_PAUSE_ALT_FP, ui_nodes=26, ui_clickable=12, ui_ids=8)
+    assert run(440, pps=500, shadow="playing", adaptive_state="active",
+               adaptive_score=100, adaptive_reason="clear_current") == (
+        "charge", "unknown")
+    put(25, 450, PKG, PLAYER, audio=1, ui_package=PKG, ui_age_ms=1000,
+        ui_fp=UI_PAUSE_ALT_FP, ui_nodes=26, ui_clickable=12, ui_ids=8)
+    assert run(450, pps=500, shadow="playing", adaptive_state="active",
+               adaptive_score=100, adaptive_reason="clear_current") == (
+        "free", "paused")
+
     # Old/stale UI cannot preserve free time even if the fingerprint itself is
     # a learned paused fingerprint.
-    put(24, 440, PKG, PLAYER, audio=1, ui_package=PKG, ui_age_ms=25000,
+    put(26, 460, PKG, PLAYER, audio=1, ui_package=PKG, ui_age_ms=25000,
         ui_fp=UI_PAUSE_FP, ui_nodes=26, ui_clickable=12, ui_ids=8)
-    assert run(440, pps=500, shadow="playing", adaptive_state="active",
+    assert run(460, pps=500, shadow="playing", adaptive_state="active",
                adaptive_score=100, adaptive_reason="clear_current") == (
         "charge", "unknown")
     (d / "learning-sessions.csv").unlink()
