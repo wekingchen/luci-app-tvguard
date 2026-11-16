@@ -45,7 +45,7 @@ TV Guard 管理的是 **小米电视这台设备**，而不是腾讯、爱奇艺
 - `sleep` 不作为网络分类器的可靠标签；零流量可能来自电视绕过 N1、路由中断或长时间缓冲，仍由独立静默逻辑处理。
 - v0.1.13 中 `system_home` / `idle` 只有连续约 30 秒才会令 `billing_state=idle_verified` 并暂停 `USED_S`；`unknown` / `playing` 立即计时。
 
-**这些条件是保守的实验门槛，而非要求用户每个应用都做三轮采样。** 现有数据中，仅腾讯极光三种状态采集齐全，跨应用泛化尚未得到验证。当前显示 `unknown` 属于预期。
+**这些条件是保守的实验门槛，而非要求用户每个应用都做三轮采样。** 截至 2026-11-16，爱奇艺、腾讯极光、芒果 TV 已在真机完成不同识别路径的播放/暂停/恢复计费回归，且系统首页与芒果独立 App 首页已验证稳定免计。这里的“跨 App 真机回归通过”不等同于统计学意义上的 leave-one-app-out 泛化证明；对从未学习的新 App，`unknown` / charge 仍属于预期的安全退化。
 
 ## 如何验证真正的通用性
 
@@ -103,7 +103,7 @@ v5 同样由 `tvguard-data` 管理：持久分区不可用时只写 `/var/run/tv
 python3 scripts/evaluate-generalization.py calibration-v3.csv
 ```
 
-此工具会**留出整个播放器的所有样本**，只从其他应用学习，再测试从未进入训练集的播放器（leave-one-app-out）。只有至少 3 个具有完整播放/暂停/首页标注的独立视频 App 时才可能执行这种验证；目前不足时明确输出 `insufficient_cross_app_validation`，不会伪造准确率。
+此工具会**留出整个播放器的所有样本**，只从其他应用学习，再测试从未进入训练集的播放器（leave-one-app-out）。只有至少 3 个具有完整播放/暂停/首页标注的独立视频 App 数据集时才执行这种验证；数据不足时明确输出 `insufficient_cross_app_validation`，不会伪造准确率。真机运行时跨 App 回归与 leave-one-app-out 是两类不同证据，不能相互替代。
 
 另有 `scripts/evaluate-calibration.py` 用于检查单应用内的状态分离度，仅作辅助分析，不能证明泛化。
 
