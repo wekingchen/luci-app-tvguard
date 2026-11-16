@@ -76,6 +76,21 @@ with tempfile.TemporaryDirectory(prefix="tvguard-fusion-") as folder:
         )
         return pause_trail, home_trail
 
+    def write_standalone_home_profile(pkg=APP_A, activity=BROWSE_A,
+                                      audio=0, conflict_label=None):
+        def row(sid, label, audio_ratio):
+            return ",".join(map(str, [
+                1000, sid, label, "general", 180, "completed", 17, 179,
+                94, 20, 50, 120, 1, 45, 90000, 150000, "variable", "high",
+                "high", 100, 100, 100, pkg, 100, activity, 100,
+                audio_ratio, 100, 0,
+            ]))
+        rows = [row("41-home", "app_home", audio)]
+        if conflict_label:
+            rows.append(row("42-conflict", conflict_label,
+                            100 if conflict_label == "playing" else 0))
+        (d / "learning-sessions.csv").write_text("\n".join(rows) + "\n")
+
     def write_ui_profile(pkg=APP_A, activity=PLAYER_A,
                          play_fp=UI_PLAY_FP, pause_fp=UI_PAUSE_FP):
         def row(sid, label, fp, nodes, clickable, ids):
@@ -148,6 +163,38 @@ with tempfile.TemporaryDirectory(prefix="tvguard-fusion-") as folder:
                pause_hint="none", pause_score=0,
                active_floor=100) == (
         "playing", "playing_confirmed_context_learned", 0)
+
+    # A dedicated app-home Activity can be learned independently from the
+    # player Activity. Network/shadow may remain unresolved; two fresh exact
+    # context + audio-off reports are required before app_home/free semantics.
+    reset()
+    write_standalone_home_profile()
+    assert run(1, 240, pkg=APP_A, activity=BROWSE_A, audio=0,
+               pps=92, shadow="unknown", adaptive_state="unready",
+               adaptive_score=0, adaptive_reason="overlap_model",
+               pause_hint="none", pause_score=0, active_floor=100) == (
+        "unknown", "app_home_learned_context_warming", 0)
+    assert run(2, 250, pkg=APP_A, activity=BROWSE_A, audio=0,
+               pps=6, shadow="unknown", adaptive_state="unready",
+               adaptive_score=0, adaptive_reason="overlap_model",
+               pause_hint="none", pause_score=0, active_floor=100) == (
+        "app_home", "app_home_confirmed_learned_context", 0)
+    # Audio-on in the learned browse Activity fails closed.
+    assert run(3, 260, pkg=APP_A, activity=BROWSE_A, audio=1,
+               pps=100, shadow="playing", adaptive_state="active",
+               adaptive_score=100, adaptive_reason="clear_current",
+               pause_hint="none", pause_score=0, active_floor=100) == (
+        "unknown", "learned_app_home_context_audio_on", 0)
+
+    # A playing/paused conflict in the same exact context disables standalone
+    # home authority completely.
+    reset()
+    write_standalone_home_profile(conflict_label="playing")
+    assert run(1, 270, pkg=APP_A, activity=BROWSE_A, audio=0,
+               pps=6, shadow="unknown", adaptive_state="unready",
+               adaptive_score=0, adaptive_reason="overlap_model",
+               pause_hint="none", pause_score=0, active_floor=100) == (
+        "unknown", "unlearned_foreground_context", 0)
 
     # Human-labelled paired sessions teach exact-context audio semantics.
     # Low-bitrate audio-active playback must charge/play even below the network

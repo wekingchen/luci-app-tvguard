@@ -254,6 +254,39 @@ fi
 case "$learned_audio_profile" in 0|1) : ;; *) learned_audio_profile=0 ;; esac
 case "$learned_nonplaying_profile" in 0|1) : ;; *) learned_nonplaying_profile=0 ;; esac
 
+# A manually learned app_home may live in a DIFFERENT Activity from playback.
+# This is common for TV apps with a dedicated browse/home Activity. Such a
+# standalone home context is authoritative only when the exact package+Activity
+# has at least one completed high-quality app_home session, no completed
+# high-quality playing/paused conflict in that same exact context, and the
+# learned home context is predominantly audio-off. Network traffic is not part
+# of this authority: home pages may load artwork while still being non-playing.
+learned_standalone_home_profile=0
+if [ "$full_context" -eq 1 ] && [ -x "$DATA" ]; then
+    data_root="$("$DATA" root 2>/dev/null || :)"
+    model="$data_root/learning-sessions.csv"
+    if [ -n "$data_root" ] && [ -s "$model" ]; then
+        standalone_home="$(awk -F, -v pkg="$pkg" -v activity="$activity" '
+        NF>=29 && $6=="completed" && $18=="high" && $19=="high" &&
+        $23==pkg && $25==activity && $24+0>=75 && $26+0>=75 && $28+0>=90 {
+            if ($3=="app_home") {
+                hn++
+                ha += $27+0
+            } else if ($3=="playing") {
+                pn++
+            } else if ($3=="paused") {
+                qn++
+            }
+        }
+        END {
+            h=(hn>0 ? int(ha/hn) : 100)
+            ok=(hn>=1 && pn==0 && qn==0 && h<=30)
+            printf "%d\n", ok
+        }' "$model" 2>/dev/null || echo 0)"
+        case "$standalone_home" in 0|1) learned_standalone_home_profile="$standalone_home" ;; *) learned_standalone_home_profile=0 ;; esac
+    fi
+fi
+
 # Activity trail is a classification-only refinement for Type-D profiles.
 # Runtime matching uses conservative newest-first prefix similarity so stale
 # tail history cannot defeat a strong learned page transition pattern.
@@ -620,6 +653,29 @@ elif [ "$is_launcher" -eq 1 ] && [ "$full_context" -eq 1 ]; then
     pause_miss=0
     home_streak=0
     latched=none
+
+elif [ "$learned_standalone_home_profile" -eq 1 ]; then
+    # A dedicated, manually learned app-home Activity is different from the
+    # player context. Two fresh audio-off reports are still required before
+    # granting free time. Audio-on fails closed because the same Activity may
+    # gain new playback behavior after an app update.
+    pause_streak=0
+    pause_miss=0
+    latched=none
+    if [ "$audio" -eq 0 ]; then
+        if [ "$fresh" -eq 1 ]; then home_streak=$((home_streak + 1)); fi
+        if [ "$home_streak" -ge 2 ]; then
+            combined=app_home
+            candidate=app_home_confirmed_learned_context
+        else
+            combined=unknown
+            candidate=app_home_learned_context_warming
+        fi
+    else
+        home_streak=0
+        combined=unknown
+        candidate=learned_app_home_context_audio_on
+    fi
 
 elif [ "$learned_nonplaying_profile" -eq 1 ]; then
     # Type-D shared-context profile: human-labelled playing, paused and app_home

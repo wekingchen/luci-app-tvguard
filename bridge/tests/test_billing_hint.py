@@ -78,6 +78,21 @@ with tempfile.TemporaryDirectory(prefix="tvguard-billing-hint-") as folder:
         )
         return pause_trail, home_trail
 
+    def write_standalone_home_profile(pkg=PKG, activity=BROWSE,
+                                      audio=0, conflict_label=None):
+        def row(sid, label, audio_ratio):
+            return ",".join(map(str, [
+                1000, sid, label, "general", 180, "completed", 17, 179,
+                94, 20, 50, 120, 1, 45, 90000, 150000, "variable", "high",
+                "high", 100, 100, 100, pkg, 100, activity, 100,
+                audio_ratio, 100, 0,
+            ]))
+        rows = [row("41-home", "app_home", audio)]
+        if conflict_label:
+            rows.append(row("42-conflict", conflict_label,
+                            100 if conflict_label == "playing" else 0))
+        (d / "learning-sessions.csv").write_text("\n".join(rows) + "\n")
+
     def write_ui_profile(pkg=PKG, activity=PLAYER,
                          play_fp=UI_PLAY_FP, pause_fp=UI_PAUSE_FP):
         def row(sid, label, fp, nodes, clickable, ids):
@@ -143,6 +158,24 @@ with tempfile.TemporaryDirectory(prefix="tvguard-billing-hint-") as folder:
                adaptive_score=95, adaptive_reason="stable_low",
                pause_hint="high_ratio_pause", pause_score=95) == (
         "charge", "unknown")
+
+    # A dedicated manually learned app-home Activity does not depend on
+    # shadow/Adaptive low-traffic classification. The first fresh report stays
+    # charged; the second exact-context audio-off report grants app_home/free.
+    write_standalone_home_profile()
+    put(3, 210, PKG, BROWSE, audio=0)
+    assert run(210, pps=92, shadow="unknown", adaptive_state="unready",
+               adaptive_score=0, adaptive_reason="overlap_model") == (
+        "charge", "unknown")
+    put(4, 220, PKG, BROWSE, audio=0)
+    assert run(220, pps=6, shadow="unknown", adaptive_state="unready",
+               adaptive_score=0, adaptive_reason="overlap_model") == (
+        "free", "app_home")
+    put(5, 230, PKG, BROWSE, audio=1)
+    assert run(230, pps=100, shadow="playing", adaptive_state="active",
+               adaptive_score=100, adaptive_reason="clear_current") == (
+        "charge", "unknown")
+    (d / "learning-sessions.csv").unlink()
 
     # Strong playback learns a generic media context, but playback itself charges.
     put(10, 300, PKG, PLAYER, audio=1)

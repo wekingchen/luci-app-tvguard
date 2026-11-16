@@ -273,3 +273,19 @@ focused_count 保留为弱证据，因为它表示当前焦点状态，可能随
 - fingerprint 同时从已学习值漂移到新值
 
 该场景的结构分数正好为 90，仍需两个 fresh report 才能得到 paused/free；如果核心结构本身发生明显变化，或与其他 learned label 的领先不足 25 分，仍然 fail-closed 为 unknown。
+
+
+## r11：独立 Activity 的 App 首页学习画像
+
+r10 真机四状态验收发现，芒果播放器使用 `VodDynamicActivity`，而 App 首页使用独立的 `ChannelHomeActivity`。播放与暂停学习画像均只存在于播放器 Activity；首页虽然 `audio_active=0`，但 Shadow/Adaptive 可能保持 unknown，因此旧的“已知媒体 App + 不同 Activity + low_nonplaying”路径无法获得 app_home/free，儿童模式首页会错误计时。
+
+r11 增加通用的 standalone app-home profile，不包含真实 App 包名或 Activity 名称规则：
+
+- 只读取人工标注的 `app_home` completed + network-high + joint-high 会话；
+- exact package+Activity 覆盖率均需 ≥75%，screen/context 稳定度需 ≥90%；
+- 同一个 exact package+Activity 如果存在高可信 playing 或 paused 会话，standalone home authority 立即禁用；
+- learned app_home 的平均 audio-active 必须 ≤30%；
+- 运行时 exact package+Activity + audio=0 仍需连续两个 fresh report 才确认 `app_home` 并获得 free；
+- runtime audio=1 立即 fail-closed 为 unknown/charge；
+- PPS/BPS、Activity 名称中的 Home/Launcher 等关键词均不参与授权；
+- 该路径用于“首页与播放器是不同 Activity”的 App，不改变 Type-D 共享 Activity、learned-audio、learned-UI 或 system-home 路径。
