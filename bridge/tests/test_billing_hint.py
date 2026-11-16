@@ -278,15 +278,18 @@ with tempfile.TemporaryDirectory(prefix="tvguard-billing-hint-") as folder:
                adaptive_score=95, adaptive_reason="stable_low") == (
         "charge", "playing")
 
-    # Fingerprint drift may grant paused/free only when the fresh runtime
-    # structure uniquely matches the manually learned paused profile.
+    # Fingerprint drift plus a transient focused_count 0->1 may grant
+    # paused/free only when the durable structure still uniquely matches the
+    # manually learned paused profile.
     put(24, 440, PKG, PLAYER, audio=1, ui_package=PKG, ui_age_ms=1000,
-        ui_fp=UI_PAUSE_ALT_FP, ui_nodes=26, ui_clickable=12, ui_ids=8)
+        ui_fp=UI_PAUSE_ALT_FP, ui_nodes=26, ui_clickable=12,
+        ui_focused=1, ui_ids=8)
     assert run(440, pps=500, shadow="playing", adaptive_state="active",
                adaptive_score=100, adaptive_reason="clear_current") == (
         "charge", "unknown")
     put(25, 450, PKG, PLAYER, audio=1, ui_package=PKG, ui_age_ms=1000,
-        ui_fp=UI_PAUSE_ALT_FP, ui_nodes=26, ui_clickable=12, ui_ids=8)
+        ui_fp=UI_PAUSE_ALT_FP, ui_nodes=26, ui_clickable=12,
+        ui_focused=1, ui_ids=8)
     assert run(450, pps=500, shadow="playing", adaptive_state="active",
                adaptive_score=100, adaptive_reason="clear_current") == (
         "free", "paused")

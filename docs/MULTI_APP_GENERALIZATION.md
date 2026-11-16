@@ -251,3 +251,25 @@ r9 保留 exact fingerprint 作为最高置信证据，同时增加保守的结�
 - PPS/BPS、App 名称和 Activity 名称关键词仍不参与 learned UI 结构分类。
 
 真实爱奇艺样本验证了该需求：人工 playing 画像为 4/0/0/1，paused 画像为 26/12/0/8；后续暂停 fingerprint 从已学习值变化为新 hash，但结构连续 60 秒仍保持 26/12/0/8。r9 的目标是把这种明显属于同一 UI 结构簇的 fingerprint 漂移正确泛化为 paused，而不是不断要求用户为每个新 hash 重做 180 秒学习。
+
+
+## r10：UI 结构画像的焦点瞬态容忍
+
+r9 真机验证发现，paused 的 durable UI 结构仍保持 26 nodes / 12 clickable / 8 view IDs，但 focused_count 会在同一暂停界面中从学习时的 0 变为运行时的 1。r9 将四项结构等权平均，导致 focused_count 单项从 0→1 就把整体相似度从 100 拉低到 75，错误退回 unknown。
+
+r10 不放宽 exact package+Activity、UI freshness、人工学习质量、≥90 分和领先 ≥25 分这些安全门槛，只调整结构特征权重：
+
+- node_count：30%
+- clickable_count：30%
+- focused_count：10%
+- view_id_count：30%
+
+focused_count 保留为弱证据，因为它表示当前焦点状态，可能随遥控焦点、控制层刷新或 Accessibility 更新产生 0/1 瞬态；node/clickable/view-id 数量继续承担主要结构身份。
+
+真实回归场景固定为：
+
+- learned paused：26 / 12 / 0 / 8
+- runtime paused：26 / 12 / 1 / 8
+- fingerprint 同时从已学习值漂移到新值
+
+该场景的结构分数正好为 90，仍需两个 fresh report 才能得到 paused/free；如果核心结构本身发生明显变化，或与其他 learned label 的领先不足 25 分，仍然 fail-closed 为 unknown。

@@ -425,7 +425,10 @@ if [ "$full_context" -eq 1 ] && [ -x "$DATA" ]; then
             return (s>0 ? s : 0)
         }
         function struct_score(n,c,f,i,pn,pc,pf,pi) {
-            return int((sim(n,pn)+sim(c,pc)+sim(f,pf)+sim(i,pi))/4)
+            # focused_count is a transient focus signal and may flip 0/1 while
+            # the same overlay remains on screen. Keep it as weak evidence;
+            # nodes/clickable/view-id counts carry the structural identity.
+            return int((sim(n,pn)*3 + sim(c,pc)*3 + sim(f,pf) + sim(i,pi)*3) / 10)
         }
         NF>=40 && $6=="completed" && $18=="high" && $19=="high" &&
         $23==pkg && $25==activity && $24+0>=75 && $26+0>=75 &&

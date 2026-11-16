@@ -400,20 +400,21 @@ with tempfile.TemporaryDirectory(prefix="tvguard-fusion-") as folder:
         "playing", "playing_confirmed_learned_ui_context", 0)
 
     # A changed fingerprint with the same distinctive learned UI structure
-    # must still generalize. This models real hash drift while the shape stays.
+    # must still generalize. This models real hash drift plus the observed
+    # focused_count 0->1 transient while nodes/clickable/view-id stay stable.
     reset()
     write_ui_profile()
     assert run(1, 445, audio=1, pps=500, shadow="playing",
                adaptive_state="active", adaptive_reason="clear_current",
                pause_hint="none", pause_score=0,
                ui_package=APP_A, ui_age_ms=1000, ui_fp=UI_PAUSE_ALT_FP,
-               ui_nodes=26, ui_clickable=12, ui_focused=0, ui_ids=8) == (
+               ui_nodes=26, ui_clickable=12, ui_focused=1, ui_ids=8) == (
         "unknown", "paused_ui_structure_warming", 1)
     assert run(2, 455, audio=1, pps=500, shadow="playing",
                adaptive_state="active", adaptive_reason="clear_current",
                pause_hint="none", pause_score=0,
                ui_package=APP_A, ui_age_ms=1000, ui_fp=UI_PAUSE_ALT_FP,
-               ui_nodes=26, ui_clickable=12, ui_focused=0, ui_ids=8) == (
+               ui_nodes=26, ui_clickable=12, ui_focused=1, ui_ids=8) == (
         "paused", "paused_confirmed_learned_ui_structure", 2)
 
     # A weak/intermediate structural resemblance remains unknown.
