@@ -289,3 +289,18 @@ r11 增加通用的 standalone app-home profile，不包含真实 App 包名或 
 - runtime audio=1 立即 fail-closed 为 unknown/charge；
 - PPS/BPS、Activity 名称中的 Home/Launcher 等关键词均不参与授权；
 - 该路径用于“首页与播放器是不同 Activity”的 App，不改变 Type-D 共享 Activity、learned-audio、learned-UI 或 system-home 路径。
+
+
+## 2026-11-16：r11 三 App 真机收口验收
+
+在冻结 r10/r11 参数、不为每个新样本继续调权重的前提下，完成了儿童模式真实计费回归：
+
+- 爱奇艺：learned UI structural 路径。不同视频与不同 fingerprint 的盲测中，播放保持 charge；暂停结构在 fingerprint 漂移及 focused_count 瞬态变化后仍可确认 paused。稳定暂停 60 秒 watch_seconds +0，恢复播放重新增长。
+- 腾讯极光：Type-D / recent-play transition 路径。播放 60 秒正常增长；暂停确认后稳定 60 秒 +0；恢复播放重新增长。UI Structure 不可用时仍保持原有路径。
+- 芒果 TV：learned-audio 路径。播放 / 暂停 / 恢复闭环通过，稳定暂停 60 秒 +0。
+- 系统首页：`com.mitv.tvhome` 由 launcher/full-context 路径确认 system_home，稳定 60 秒 +0。
+- 芒果独立 App 首页：r10 暴露 `ChannelHomeActivity` 在 Shadow/Adaptive unknown 时仍持续 charge；r11 增加 standalone app-home profile 后，人工 `app_home 180` 会话得到 completed/high/joint-high、exact package+Activity 100%、audio-on 0%。运行时连续得到 `app_home_confirmed_learned_context`，稳定首页 60 秒 watch_seconds +0。
+- 首页 → 播放：切到 `VodDynamicActivity` + audio=1 后立即回到 `playing_confirmed_learned_audio_profile` / charge，free 状态不会黏住。
+- 播放 → 首页：经过保守确认窗口后回到 `idle_verified/app_home`；稳定首页继续 +0。
+
+当前接受的限制：状态切换确认阶段可能多计约 10～22 秒；这是 fail-closed 的保守方向。没有观察到“真实播放 → free”的危险误判，因此本轮不再为单次切换延迟继续调参。
