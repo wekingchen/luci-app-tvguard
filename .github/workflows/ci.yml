@@ -48,6 +48,8 @@ jobs:
         run: dash tests/test-daily-report.sh
       - name: Validate LuCI settings hierarchy and safety
         run: node tests/test-settings-ui.js
+      - name: Validate Cloudflare Tunnel management permissions
+        run: python3 tests/test-tunnel-safety.py
       - name: Validate LuCI overview/settings tab structure
         run: node tests/test-menu-ui.js
       - name: Verify LuCI read wrapper command allowlist
