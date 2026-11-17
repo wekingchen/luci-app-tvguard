@@ -3,15 +3,32 @@
     "description": "TV Guard status, configuration and explicitly authorized actions",
     "read": {
       "file": {
-        "/usr/libexec/tvguard-status": ["exec"]
+        "/usr/libexec/tvguard-status": [
+          "exec"
+        ],
+        "/usr/libexec/tvguard-tunnel-read": [
+          "exec"
+        ]
       },
-      "uci": ["tvguard"]
+      "uci": [
+        "tvguard"
+      ]
     },
     "write": {
       "file": {
-        "/usr/libexec/tvguardctl": ["exec"]
+        "/usr/libexec/tvguardctl": [
+          "exec"
+        ],
+        "/usr/libexec/tvguard-tunnel-manage": [
+          "exec"
+        ],
+        "/var/run/tvguard-tunnel/token.pending": [
+          "write"
+        ]
       },
-      "uci": ["tvguard"]
+      "uci": [
+        "tvguard"
+      ]
     }
   }
 }

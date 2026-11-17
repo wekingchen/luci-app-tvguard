@@ -69,6 +69,9 @@ for name in (
     "usr/libexec/tvguard-soak",
     "usr/libexec/tvguard-soak-report",
     "usr/libexec/tvguard-daily-report",
+    "usr/libexec/tvguard-tunnel",
+    "usr/libexec/tvguard-tunnel-read",
+    "usr/libexec/tvguard-tunnel-manage",
     "etc/init.d/tvguard-agent-bridge",
     "usr/libexec/tvguard-agent-bridge-setup",
     "usr/libexec/tvguard-agent-billing-hint",
@@ -79,6 +82,7 @@ for name in (
     "www/cgi-bin/tvguard-agent",
     "usr/share/tvguard/default-config",
     "www/luci-static/resources/view/tvguard/overview.js",
+    "www/luci-static/resources/view/tvguard/tunnel.js",
 ):
     if name not in data:
         raise SystemExit(f"FAIL: missing installed file {name}")
