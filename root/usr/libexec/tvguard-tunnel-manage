@@ -1,0 +1,6 @@
+#!/bin/sh
+# 仅供持有 TVGuard 写入 ACL 的 LuCI 管理员调用。
+case "${1:-}" in
+    prepare|save-token|start|stop|restart) exec /usr/libexec/tvguard-tunnel "$1" ;;
+    *) exit 2 ;;
+esac

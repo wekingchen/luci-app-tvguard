@@ -1,0 +1,6 @@
+#!/bin/sh
+# 只读 RPC 入口，拒绝 Docker 变更操作。
+case "${1:-}" in
+    status|logs) exec /usr/libexec/tvguard-tunnel "$1" ;;
+    *) exit 2 ;;
+esac
