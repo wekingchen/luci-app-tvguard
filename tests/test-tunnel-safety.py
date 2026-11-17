@@ -18,7 +18,7 @@ assert 'prepare|save-token|start|stop|restart)' in writer
 assert permissions["read"]["file"]["/usr/libexec/tvguard-tunnel-read"] == ["exec"]
 assert "/usr/libexec/tvguard-tunnel-manage" not in permissions["read"]["file"]
 assert permissions["write"]["file"]["/usr/libexec/tvguard-tunnel-manage"] == ["exec"]
-assert permissions["write"]["file"]["/var/run/tvguard-tunnel/token.pending"] == ["write"]
+assert permissions["write"]["file"]["/tmp/tvguard-tunnel/token.pending"] == ["write"]
 assert "/usr/libexec/tvguard-tunnel" not in permissions["read"]["file"]
 assert "/usr/libexec/tvguard-tunnel" not in permissions["write"]["file"]
 assert "org.tvguard.owner=luci-app-tvguard" in src
@@ -32,6 +32,10 @@ assert "image inspect" in src and "docker pull" not in src
 assert "storage_ready" in src and '"/mnt/mmcblk2p4"' in src
 assert 'chmod 600 "$tmp"' in src and 'chmod 700 "$DATA"' in src
 assert "fs.write(PENDING, value)" in page
+assert 'PENDING_DIR=/tmp/tvguard-tunnel' in src
+assert "var PENDING = '/tmp/tvguard-tunnel/token.pending'" in page
+assert '/var/run/tvguard-tunnel' not in (src + page + str(permissions))
+assert 'rpcd 文件 ACL' in page
 assert "exec(MANAGE, ['prepare'])" in page
 assert "exec(MANAGE, ['save-token'])" in page
 assert "uci.set" not in page

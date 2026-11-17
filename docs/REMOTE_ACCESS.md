@@ -1,4 +1,4 @@
-# TVGuard Cloudflare Tunnel 管理 · v0.1.16-r1 候选
+# TVGuard Cloudflare Tunnel 管理 · v0.1.16-r2 候选
 
 该模块只负责 TVGuard 专用的 Docker Tunnel 容器管理。独立家长控制 PWA、Cloudflare Access 策略、专用控制 API 尚未实现；**不要向公网发布 LuCI、RPCD 或其他路由管理服务。**
 
@@ -6,7 +6,7 @@
 
 1. 在 Cloudflare Zero Trust → Networking → Tunnels 创建独立 remotely-managed Tunnel，建议取名 tvguard-n1，并复制 Cloudflare 提供的 Tunnel Token。
 2. N1 必须有正在运行的 Docker、已下载的 cloudflare/cloudflared:latest 镜像和可写挂载的 /mnt/mmcblk2p4 XFS 分区。镜像中的 cloudflared 必须至少为 2025.4.0。
-3. LuCI → TV Guard → 远程访问 → 粘贴 Token → 保存 / 更换 Token。浏览器先通过固定路径把 Token 传到 /var/run/tvguard-tunnel/token.pending（RAM），后端将 Token 原子保存在 /mnt/mmcblk2p4/tvguard-cloudflared/token。
+3. LuCI → TV Guard → 远程访问 → 粘贴 Token → 保存 / 更换 Token。浏览器先通过固定路径把 Token 传到 /tmp/tvguard-tunnel/token.pending（RAM），后端将 Token 原子保存在 /mnt/mmcblk2p4/tvguard-cloudflared/token。
 4. 点击 创建并启动 / 启动，刷新状态、查看日志，并在 Cloudflare 后台核实连接状态。**容器运行中不代表 Tunnel 已经连通。**
 5. 日后可以在同一页启动、停止、重启和查看专用日志。升级 TVGuard 不自动删除或重建容器。
 
@@ -21,6 +21,10 @@
 - Docker 日志每文件不超过 2 MiB，最多 3 个；页面读取最后 60 行与最多 16 KiB。日志中疑似包含凭据的行会被过滤。
 - TVGuard 原有计时、Agent、RAW 防火墙与代理规则不因这项功能改变。Tunnel 断开也不会让本地电视控制失效。
 - Docker 重启策略为 unless-stopped。**应保证 XFS 分区在 Docker 守护进程启动前挂载**，否则 Docker 开机尝试恢复容器时仍可能遇到路径问题；本功能的操作按钮会自行检查 XFS 挂载。
+
+## r1 保存 Token 权限故障修复
+
+r1 的临时文件路径使用 /var/run 软链接，但 rpcd 可能在 ACL 检查时进一步验证 /tmp/run 的真实路径，导致写入被拒绝。r2 统一改用 /tmp/tvguard-tunnel/token.pending，避免路径重定向，同时页面区分三个步骤的失败信息。升级后建议重新登录 LuCI，使 ACL 重新载入。**请勿把 Tunnel Token 发到聊天或日志。**
 
 ## 公网开放前尚需完成
 

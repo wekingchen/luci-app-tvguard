@@ -22,7 +22,7 @@
         "/usr/libexec/tvguard-tunnel-manage": [
           "exec"
         ],
-        "/var/run/tvguard-tunnel/token.pending": [
+        "/tmp/tvguard-tunnel/token.pending": [
           "write"
         ]
       },

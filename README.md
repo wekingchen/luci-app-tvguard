@@ -1,7 +1,8 @@
 # TV Guard · 家庭电视时间管理
 
-## v0.1.16-r1 · Cloudflare Tunnel LuCI 管理（未真机验收候选）
+## v0.1.16-r2 · Cloudflare Tunnel LuCI 管理（未真机验收候选）
 
+- r2 修复 rpcd 真实路径复核导致临时 Token 写入权限失败，改为 /tmp 固定路径并增加阶段性错误提示。
 - 新增「远程访问」LuCI 页：Token 保存、专用 Docker 容器启动/停止/重启、状态和限量日志查看，不接管既有 Vaultwarden/ntfy 容器。
 - 仅复用已下载的 cloudflare/cloudflared 镜像；XFS 分区挂载、安全标签和 cloudflared 版本均需通过验证，Token 不进入 UCI/环境变量/启动命令行。
 - 这仅是 Tunnel 管理，不表示家长 PWA、外网 Access 已完成，也未经过 N1 实机验收。详见 [Cloudflare Tunnel 管理](docs/REMOTE_ACCESS.md)。

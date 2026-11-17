@@ -9,7 +9,7 @@ IMAGE=cloudflare/cloudflared:latest
 MOUNT=/mnt/mmcblk2p4
 DATA="$MOUNT/tvguard-cloudflared"
 SECRET="$DATA/token"
-PENDING_DIR=/var/run/tvguard-tunnel
+PENDING_DIR=/tmp/tvguard-tunnel
 PENDING="$PENDING_DIR/token.pending"
 
 die() { echo "$*" >&2; exit 1; }

@@ -6,7 +6,7 @@
 // 敏感 Token 只在本地 LuCI 管理会话中提交，绝不写入 UCI 或调用参数。
 var READ = '/usr/libexec/tvguard-tunnel-read';
 var MANAGE = '/usr/libexec/tvguard-tunnel-manage';
-var PENDING = '/var/run/tvguard-tunnel/token.pending';
+var PENDING = '/tmp/tvguard-tunnel/token.pending';
 
 function exec(script, args) {
     return fs.exec(script, args).then(function(r) {
@@ -124,10 +124,16 @@ return view.extend({
             if (!window.confirm('保存或更换 Token？若容器正在运行，将自动重启该容器。'))
                 return;
             lockUI(true);
-            return exec(MANAGE, ['prepare']).then(function() {
-                return fs.write(PENDING, value);
+            return exec(MANAGE, ['prepare']).catch(function(err) {
+                throw new Error('准备临时目录失败：' + String(err.message || err));
             }).then(function() {
-                return exec(MANAGE, ['save-token']);
+                return fs.write(PENDING, value).catch(function(err) {
+                    throw new Error('写入临时 Token 失败（rpcd 文件 ACL）：' + String(err.message || err));
+                });
+            }).then(function() {
+                return exec(MANAGE, ['save-token']).catch(function(err) {
+                    throw new Error('保存到持久分区失败：' + String(err.message || err));
+                });
             }).then(function(msg) {
                 input.value = '';
                 value = '';
