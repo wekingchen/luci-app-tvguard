@@ -14,7 +14,7 @@ conf = (root / "root/etc/config/tvguard").read_text()
 permissions = acl["luci-app-tvguard"]
 
 assert 'status|logs)' in reader and 'start)' not in reader
-assert 'prepare|save-token|start|stop|restart|rebuild)' in writer
+assert 'prepare|save-token|start|stop|restart)' in writer
 assert permissions["read"]["file"]["/usr/libexec/tvguard-tunnel-read"] == ["exec"]
 assert "/usr/libexec/tvguard-tunnel-manage" not in permissions["read"]["file"]
 assert permissions["write"]["file"]["/usr/libexec/tvguard-tunnel-manage"] == ["exec"]
@@ -27,11 +27,11 @@ assert "container_exists" in src
 assert "--token-file /etc/tvguard/token" in src
 assert '--mount "type=bind,src=$DATA,dst=/etc/tvguard,readonly"' in src
 assert "--metrics 127.0.0.1:20241" in src
-assert 'docker rename' in src
-assert 'Registered tunnel connection' in src
-assert '127.0.0.1:20241/metrics' in src
-assert 'rebuild.lock' in src
-assert "runAction('rebuild'" in page
+assert "rebuild)" not in src
+assert "docker rm" not in src
+assert "docker rename" not in src
+assert "rebuild" not in writer
+assert "安全重建" not in page
 assert "--cap-drop ALL" in src
 assert "no-new-privileges:true" in src
 assert "image inspect" in src and "docker pull" not in src
@@ -47,9 +47,6 @@ assert "exec(MANAGE, ['save-token'])" in page
 assert "uci.set" not in page
 assert "tunnel_token" not in conf
 assert menu["admin/services/tvguard/tunnel"]["action"]["path"] == "tvguard/tunnel"
-assert 'docker rm "$backup"' in src
-assert 'docker rm -f "$NAME"' in src
-assert 'backup=tvguard-cloudflared-rebuild-backup' in src
 for unsafe in ("iptables ", "nft ", "uci set", "/etc/init.d/firewall", "docker pull"):
     assert unsafe not in src, f"unexpected privileged operation: {unsafe}"
 print("PASS: Tunnel ACL separation, fixed container ownership, secret file and firewall isolation")

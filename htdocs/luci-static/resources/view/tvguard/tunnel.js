@@ -80,7 +80,7 @@ return view.extend({
                 '　·　持久分区：' + (s.storage_ready ? '正常' : '未挂载 / 只读') +
                 '　·　Docker：' + (s.docker_ready ? '正常' : '不可用') +
                 '　·　镜像：' + (s.image_present ? '已安装' : '未安装') +
-                '　·　Metrics：' + (s.metrics_local ? '仅本机监听' : '需安全重建');
+                '　·　Metrics：' + (s.metrics_local ? '仅本机监听' : '配置需核查');
         }
         function refresh() {
             return exec(READ, ['status']).then(function(text) {
@@ -157,15 +157,12 @@ return view.extend({
         var restart = actionButton('重启', 'normal', function() {
             return runAction('restart');
         });
-        var rebuild = actionButton('安全重建（限制 Metrics）', 'normal', function() {
-            return runAction('rebuild', '重建 TVGuard Tunnel 会短暂断开连接，失败时尝试恢复旧容器。确认继续？');
-        });
         var stop = actionButton('停止', 'danger', function() {
             return runAction('stop', '停止 TVGuard Tunnel 后，外网访问将中断。继续吗？');
         });
         var update = actionButton('刷新状态', 'normal', refresh);
         var logButton = actionButton('刷新日志', 'normal', refreshLogs);
-        buttons = [save, start, restart, rebuild, stop, update, logButton];
+        buttons = [save, start, restart, stop, update, logButton];
 
         var root = E('div', {'style':'max-width:930px;margin:0 auto;padding-bottom:18px'}, [
             E('h2', {}, 'TV Guard · 远程访问'),
@@ -188,7 +185,7 @@ return view.extend({
                 E('h3', {}, '容器状态与操作'),
                 E('div', {'style':'margin-bottom:10px'}, [summary, details]),
                 E('div', {'style':'display:flex;gap:9px;flex-wrap:wrap;align-items:center'}, [
-                    start, restart, rebuild, stop, update
+                    start, restart, stop, update
                 ]),
                 E('p', {'class':'description','style':'margin-top:10px;line-height:1.6'},
                     '使用固定容器名 tvguard-cloudflared；只有本模块创建并带有专属标签的容器可被操作。容器运行中不代表 Cloudflare 已连通，请查看日志及 Cloudflare 后台确认。')

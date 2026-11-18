@@ -1,4 +1,4 @@
-# TVGuard Cloudflare Tunnel 管理 · v0.1.16-r3 候选
+# TVGuard Cloudflare Tunnel 管理 · v0.1.16-r6 候选
 
 该模块只负责 TVGuard 专用的 Docker Tunnel 容器管理。独立家长控制 PWA、Cloudflare Access 策略、专用控制 API 尚未实现；**不要向公网发布 LuCI、RPCD 或其他路由管理服务。**
 
@@ -26,9 +26,11 @@
 
 r1 的临时文件路径使用 /var/run 软链接，但 rpcd 可能在 ACL 检查时进一步验证 /tmp/run 的真实路径，导致写入被拒绝。r2 统一改用 /tmp/tvguard-tunnel/token.pending，避免路径重定向，同时页面区分三个步骤的失败信息。升级后建议重新登录 LuCI，使 ACL 重新载入。**请勿把 Tunnel Token 发到聊天或日志。**
 
-## Metrics 安全收敛
+## Metrics 默认限制与迁移记录
 
-v0.1.16-r3 新创建的专用容器统一使用 `--metrics 127.0.0.1:20241`。原有 r2 容器不会因重启自动修改 Docker 的命令行，请在 LuCI 「远程访问」页点击「安全重建（限制 Metrics）」。脚本只处理 tvguard-cloudflared，先停机并重命名原容器为临时备份；新容器未运行时尝试恢复原容器。重建会短暂中断 Tunnel，成功后请在 Cloudflare 后台确认 Healthy，并确认页面显示「Metrics：仅本机监听」。备份仅在成功后删除；遇故障时请检查，避免自行删除备份。
+所有新创建的 TVGuard 专用容器默认带有 `--metrics 127.0.0.1:20241`，监控接口仅绑定本机回环地址。已有容器的启动参数由 Docker 保存，启动和重启不会修改；请通过 LuCI「远程访问」的 Metrics 状态核对，或以 Docker inspect 读取现有配置。
+
+v0.1.16-r3 至 r5 曾提供一次性的「安全重建（限制 Metrics）」迁移按钮，N1 真机已完成迁移并确认 Cloudflare Tunnel Healthy。v0.1.16-r6 起从 LuCI 与 RPC 白名单移除这一高权限重建入口，同时保留监控地址校验和新建容器的强制回环参数。确需迁移历史未修复容器或升级镜像的场景，应另行设计经审计的维护流程，不要通过普通的「重启」按钮期望修改现有容器参数。
 
 ## 公网开放前尚需完成
 
