@@ -1,19 +1,20 @@
 # TV Guard · 家庭电视时间管理
 
-## 开发候选 · v0.1.16-r17（iPhone 主屏 Web App 修复）
+## 当前稳定版 · v0.1.16-r17（iPhone 主屏 Web App 优化）
 
-- iPhone「添加到主屏幕」后标题落在 iOS 状态栏后方，现已加入独立模式安全区留白，修正顶部标题与连接标签显示。
-- 同步调整卡片密度、当前模式选中状态、奖励按钮与儿童观看进度，家长模式不再展示无意义的进度条。
-- 不改 TVGuard 后台控制/配对、正式控制规则、Agent 或 Cloudflare Tunnel。
-- r17 的 IPK 需先完成 CI 和 iPhone 真机主屏视觉验收，**稳定版继续是 r16**，不提前更新 Release。
+- **N1 主包**：`luci-app-tvguard_0.1.16-17_all.ipk`；电视 Agent 0.3.7 不变，已安装者无需重复安装。
+- iPhone 主屏独立模式恢复标题、副标题及在线状态；用户于 2026-11-18 提供 r17 真机截图确认顶部不再遮挡。
+- 在线标签精简为「远程连接正常」，避免 Cloudflare Tunnel 技术名称在窄屏折行；此标签微调通过代码测试，不能替代新版真机复测。
+- 同步改善卡片密度、模式选中态与儿童观看进度；家长模式隐藏无意义进度条。
+- 不修改后台计时、正式断网控制、Agent、配对与 Tunnel Token。
 - [iOS Web App 布局修复与验收](docs/PWA_IOS_LAYOUT.md)
 
-## 当前稳定版 · v0.1.16-r16
+## 上一稳定版 · v0.1.16-r16
 
 - **N1 主包**：luci-app-tvguard_0.1.16-16_all.ipk；原有 Android 6 电视 Agent 0.3.7 保持固定签名，已安装则无需重复安装。
 - **真实验收**：儿童模式与正式控制、Adaptive 低码率计时和高可信暂停/首页免计时、Bark 日报、LuCI 两页桌面/手机 UI、家长配对与设备管理、家中直连和 tv.rqqr.de 外网 Tunnel 均已验证；用户于 2026-11-18 确认 N1 重启后功能正常。
 - **外网**：https://tv.rqqr.de（无需家庭公网 IP），当前未配置 Cloudflare Access；操作仍须 TVGuard 配对授权。不要发布 LuCI、RPCD、SSH、Docker Socket。
-- **iPhone 入口**：建议在 Safari 将 https://tv.rqqr.de 添加到主屏幕。该用户侧操作不需要 N1 软件新功能，尚未提供单独的桌面图标验收证据。
+- **iPhone 入口**：建议在 Safari 将 https://tv.rqqr.de 添加到主屏幕。该用户侧操作不需要 N1 软件新功能，r17 已提供主屏真机截图证明标题与基本布局可见。
 - **维护**：以后以 Bug 修复与 OpenWrt/Agent 兼容为主；不再为优化单次样本放宽计时安全门槛。
 - [正式 Release 说明](docs/RELEASE_0.1.16.md) · [家长遥控](docs/PARENT_REMOTE.md) · [远程访问](docs/REMOTE_ACCESS.md) · [稳定性验收记录](docs/FINAL_STABILITY_REVIEW.md)
 
