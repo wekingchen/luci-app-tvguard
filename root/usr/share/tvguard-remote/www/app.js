@@ -6,7 +6,7 @@ function connectionPath() {
     const host = String(window.location.hostname || '').toLowerCase();
     if (/^(10\.|192\.168\.|127\.|172\.(1[6-9]|2[0-9]|3[01])\.)/.test(host) || host === 'localhost')
         return '内网直连';
-    if (window.location.protocol === 'https:') return '外网 HTTPS';
+    if (window.location.protocol === 'https:') return 'Cloudflare Tunnel';
     return '连接来源未知';
 }
 function connectionState(state) { $('network').textContent = connectionPath() + ' · ' + state; }
