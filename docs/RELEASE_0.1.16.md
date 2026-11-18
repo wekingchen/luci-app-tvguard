@@ -1,11 +1,19 @@
-# TVGuard v0.1.16-r20 · 交付与验收记录
+# TVGuard v0.1.16-r21 · 交付与验收记录
 
 ## 交付内容
 
-- **N1**：`luci-app-tvguard_0.1.16-20_all.ipk`，Build ID `v0.1.16-r20-overview-ui-unification`。
+- **N1**：`luci-app-tvguard_0.1.16-21_all.ipk`，Build ID `v0.1.16-r21-pwa-overview-polish`。
 - **小米电视 Agent**：保持固定签名 `0.3.7`（versionCode 20）；原先已装同版本且权限正常，无需重复安装。
 - **GitHub Release**：正式版标签 `v0.1.16`，同时提供 N1 主 IPK 与已验证固定签名的 Agent APK；Bridge/Fusion 已包含在 N1 主包。
 - **受控的数据与服务**：家长设备授权/备注、TVGuard 计时和学习数据、Bark 设置、Cloudflare Tunnel Token 均在 N1 保留；软件升级不要求重新配对或重建 Docker 容器。
+
+## r21 · 独立家长遥控 Web App 精修（待 iPhone 实机视觉验收）
+
+- 延续 LuCI「概览」视觉基准，将 Web App 的标题、卡片、统计块、按钮、灰阶信息和状态提示统一，改为透明面板、细边框与紧凑布局。
+- 保留已验收的 iOS 主屏安全区 88px 回退、Home Indicator 留白、独立 Web App 和快捷指令内外网分流；按钮最小触控目标 44px。
+- 保持 r18 的「远程连接正常」短文案、家长模式进度隐藏、危险操作二次确认、失败后防重复奖励、Cookie 和配对原有逻辑。
+- 调整 `style.css`、HTML 资源版本 `?v=0.1.16-r21`，不动 `app.js` 核心功能代码；新增 PWA 与 LuCI 概览设计 Token、深浅色文字对比度、触控目标及 IPK 实物检查。
+- 仅作布局和视觉统一，尚未拿到 r21 iPhone 真机截图，不能宣称主屏/深色像素级视觉已验收。
 
 ## r20 · 以概览为基准的四页统一（待真机视觉验收）
 
