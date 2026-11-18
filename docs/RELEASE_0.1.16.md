@@ -1,11 +1,19 @@
-# TVGuard v0.1.16-r18 · 交付与验收记录
+# TVGuard v0.1.16-r19 · 交付与验收记录
 
 ## 交付内容
 
-- **N1**：`luci-app-tvguard_0.1.16-18_all.ipk`，Build ID `v0.1.16-r18-iphone-pwa-cache-bust`。
+- **N1**：`luci-app-tvguard_0.1.16-19_all.ipk`，Build ID `v0.1.16-r19-dark-console-contrast`。
 - **小米电视 Agent**：保持固定签名 `0.3.7`（versionCode 20）；原先已装同版本且权限正常，无需重复安装。
 - **GitHub Release**：正式版标签 `v0.1.16`，同时提供 N1 主 IPK 与已验证固定签名的 Agent APK；Bridge/Fusion 已包含在 N1 主包。
 - **受控的数据与服务**：家长设备授权/备注、TVGuard 计时和学习数据、Bark 设置、Cloudflare Tunnel Token 均在 N1 保留；软件升级不要求重新配对或重建 Docker 容器。
+
+## r19 · LuCI 深色模式可读性修复
+
+- 用户 2026-11-18 iPhone Chrome 截图显示 LuCI 家长设备配对页面配对码文字与深色背景严重混淆，说明文字偏暗，标题被渲染为大块深灰背景。属于浏览器内 LuCI 页面问题，与独立家长遥控 Web App 不同。
+- 在 LuCI 两页共享的 `panel.css` 中对 `code.tvg-code` 单独设置高对比文字与背景，显式覆盖主题对原生 code 标签的颜色；提高辅助文字及详情标题对比度。
+- 卡片标题改用带 `role=heading` 的 div，避开 LuCI 主题对原生 h3 的背景与内边距规则；保留语义可访问性。
+- 两页均升级样式缓存键至 `?v=0.1.16-r19`。CI 增加高对比度及安装包内容检查，避免只更新源码而打包/加载旧 CSS。
+- 不涉及正式控制、计时、配对授权、Agent、Bark 或 Tunnel Token。**本次修复尚待实际 iPhone 深色模式验收，自动化通过不等于像素级验证。**
 
 ## r18 缓存键修正
 
