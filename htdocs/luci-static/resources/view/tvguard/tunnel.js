@@ -127,7 +127,11 @@ return view.extend({
             };
             var state = labels[s.container] || '状态未知';
             connected.value.textContent = state;
-            connected.detail.textContent = '容器：tvguard-cloudflared';
+            // Shows the configured connector transport, not a claim of live
+            // Cloudflare reachability (verify actual edge registration in logs).
+            connected.detail.textContent = '容器：tvguard-cloudflared' +
+                (s.transport === 'http2' ? ' · HTTP/2（TCP 7844）' :
+                 s.transport === 'auto' ? ' · 自动协议（旧容器）' : '');
             tokenInfo.value.textContent = s.configured ? '已保存' : '未配置';
             tokenInfo.detail.textContent = s.configured ? '凭据仅保留在 N1 持久分区' : '需要先填写 Tunnel Token';
             metrics.value.textContent = s.metrics_local ? '仅本机' : '需检查';
@@ -290,6 +294,7 @@ return view.extend({
                         E('div', { 'class': 'tvg-details-body' }, [
                             E('dl', { 'class': 'tvg-data' }, [
                                 E('dt', {}, '容器名'), E('dd', {}, 'tvguard-cloudflared'),
+                                E('dt', {}, '出站协议'), E('dd', {}, 'HTTP/2（TCP 7844）'),
                                 E('dt', {}, 'Metrics'), E('dd', {}, '127.0.0.1:20241（仅本机）'),
                                 E('dt', {}, '回源'), E('dd', {}, 'http://localhost:18765'),
                                 E('dt', {}, '容器安全'), E('dd', {}, '专属标签、最小权限、独立日志轮转')
