@@ -64,6 +64,8 @@ jobs:
         run: sh tests/test-remote-random.sh
       - name: Exercise iPhone parent PWA control and offline behavior
         run: node tests/test-remote-pwa.js
+      - name: Exercise parent service lifecycle and failed startup rollback
+        run: python3 tests/test-remote-lifecycle.py
       - name: Validate remote admin issue and revocation lifecycle
         run: python3 tests/test-remote-admin-e2e.py
       - name: Validate minimized remote status schema
