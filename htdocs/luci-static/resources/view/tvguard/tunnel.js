@@ -60,11 +60,12 @@ return view.extend({
         });
         var logs = E('pre', { 'class': 'tvg-log', 'aria-live': 'polite' },
             '展开后点击“读取日志”，仅显示 TVGuard 专用容器的最近日志。');
+        var logActions = E('div', { 'class': 'tvg-controls' }, []);
         var logPanel = E('details', { 'class': 'tvg-details' }, [
             E('summary', {}, '查看最近运行日志'),
             E('p', { 'class': 'tvg-card-desc', 'style': 'margin-top:12px' },
                 '只读取专用容器的最后 60 行日志，最多显示 16 KiB；不会操作其他 Docker 服务。'),
-            logs
+            logActions, logs
         ]);
         var address = E('a', {
             'href': PUBLIC_URL, 'class': 'tvg-url',
@@ -225,6 +226,7 @@ return view.extend({
         }, 'is-danger');
         refreshBtn = button('刷新状态', refresh);
         logButton = button('读取日志', refreshLogs, 'is-small');
+        logActions.appendChild(logButton);
         save = button('保存 / 更换 Token', saveToken, 'is-primary');
         buttons = [start, restart, stop, refreshBtn, logButton, save];
 
@@ -304,10 +306,7 @@ return view.extend({
                     E('p', { 'class': 'tvg-card-desc' },
                         '正常使用无需操作。遇到 Tunnel 连接问题时查看日志；仅在凭据变更时编辑 Token。'),
                     tokenPanel,
-                    E('div', { 'class': 'tvg-details' }, [
-                        logPanel,
-                        E('div', { 'class': 'tvg-controls' }, [logButton])
-                    ])
+                    logPanel
                 ])
             ]),
             inline,
