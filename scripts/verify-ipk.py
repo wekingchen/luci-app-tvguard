@@ -108,8 +108,17 @@ for name in (
 # app.js query key, so iOS could continue displaying old Cloudflare Tunnel text.
 index_html = data["usr/share/tvguard-remote/www/index.html"][1].decode("utf-8")
 app_js = data["usr/share/tvguard-remote/www/app.js"][1].decode("utf-8")
+# Integration tests deliberately build current source with a historical package
+# metadata version (0.1.15-11). Asset URLs must follow the actual source
+# revision from Makefile, not the test's synthetic package control version.
+import re
+makefile = (Path(__file__).resolve().parents[1] / "Makefile").read_text()
+source_version = re.search(r"^PKG_VERSION:=(\S+)$", makefile, re.M)
+source_release = re.search(r"^PKG_RELEASE:=(\d+)$", makefile, re.M)
+assert source_version and source_release, "source package revision missing"
+asset_version = f"{source_version.group(1)}-r{source_release.group(1)}"
 for asset in ("style.css", "app.js"):
-    expected_url = f"/{asset}?v={version}-r{release}"
+    expected_url = f"/{asset}?v={asset_version}"
     assert expected_url in index_html, f"stale PWA asset key: expected {expected_url}"
 assert "远程连接正常" in app_js, "short iPhone remote-connection status missing"
 assert "etc/tvguard/agent-bridge.key" not in data, "key must never be packaged"
