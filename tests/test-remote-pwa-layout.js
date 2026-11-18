@@ -37,7 +37,8 @@ assert(css.includes('@media (prefers-reduced-motion: reduce)'), 'reduced-motion 
 assert(js.includes("window.navigator.standalone === true"), 'iOS legacy standalone marker missing');
 assert(js.includes("progress.classList[unlimited ? 'add' : 'remove']"), 'child vs parent progress behavior missing');
 assert(js.includes("a.startsWith('mode-')"), 'accessible mode toggles missing');
-assert(js.includes("state === '在线' ? '远程连接正常'"), 'short remote online label missing');
+assert(js.includes("const label = path === 'Cloudflare Tunnel' ? '远程连接' : path;"), 'remote label must be consistent');
+assert(js.includes("label + ' · ' + state"), 'all connection statuses must use path separator');
 assert.strictEqual(manifest.display,'standalone');
 assert.strictEqual(manifest.theme_color,'#f4f6fa');
 console.log('PASS: iPhone PWA top safe area, header, responsiveness, semantics, and status styling');
