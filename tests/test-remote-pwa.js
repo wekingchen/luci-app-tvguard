@@ -70,7 +70,7 @@ const nextTick = () => new Promise(resolve => setImmediate(resolve));
   assert.strictEqual(calls.at(-1).url,'/cgi-bin/tvg?action=bonus-15');
   assert.strictEqual(calls.at(-1).opts.method,'POST');
   assert.strictEqual(calls.at(-1).opts.credentials,'same-origin');
-  assert.strictEqual(els.bonus.textContent,'今日已奖励 15 分钟 / 120 分钟');
+  assert.strictEqual(els.bonus.textContent,'今日已奖励 15 分钟 / 2 小时 0 分钟');
   assert(!controls.find(c => c.dataset.action === 'bonus-undo').disabled);
 
   queue.push({error:'network interrupted'});
