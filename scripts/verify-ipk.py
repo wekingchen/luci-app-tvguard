@@ -80,6 +80,7 @@ for name in (
     "usr/share/tvguard-remote/www/index.html",
     "usr/share/tvguard-remote/www/app.js",
     "www/luci-static/resources/view/tvguard/remote.js",
+    "www/luci-static/resources/view/tvguard/panel.css",
     "usr/libexec/tvguard-tunnel",
     "usr/libexec/tvguard-tunnel-read",
     "usr/libexec/tvguard-tunnel-manage",

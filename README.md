@@ -1,28 +1,23 @@
 # TV Guard · 家庭电视时间管理
 
-## v0.1.16-r14 · 独立家长遥控预览（未真机验收）
+## v0.1.16-r15 · 家长遥控与远程访问 UI 产品化候选
 
-- 默认关闭的 localhost-only uhttpd 服务、5 分钟一次性配对、30 天可撤销会话、家长 PWA 和白名单 API。
-- LuCI 新增「家长遥控」页，支持启停、配对和全部授权撤销；计时、Agent 与 RAW 规则不变。
-- 家中 Wi-Fi HTTPS 入口与 Cloudflare Access 入口尚未完成，不得公开 LuCI。详见 [家长遥控器](docs/PARENT_REMOTE.md)。
+- **已真机验收的功能基线（r14）**：N1 家中 HTTP 直连及 iPhone 配对/模式/奖励、Cloudflare Tunnel 公网 HTTPS `https://tv.rqqr.de` 均正常使用；当前方案不启用 Cloudflare Access，公网操作继续依赖 TVGuard 自身配对授权。
+- **r15 主要变化仅涉及 LuCI UI**：家长遥控与远程访问两页共享响应式视觉体系；桌面端卡片与摘要、手机端单栏/可点击的大按钮；状态、访问信息、配对设备、Token/日志维护合理分区。
+- 家长遥控页新增清晰的三项状态、局域网入口与复制提示、5 分钟配对码倒计时、设备空状态与每台设备单独撤销；有危险性的操作保留确认。
+- 远程访问页将外网入口、专用 Docker 容器状态和维护操作分层；高级 Token/诊断信息默认折叠，容器运行不被误报为 Cloudflare 连接 Healthy；直接展示既有外网域名。
+- **核心计时、Adaptive 识别、RAW/正式控制、电视 Agent、Cloudflare Token、Docker 命令及 RPC 权限均未改动**。r15 需新一轮 LuCI 桌面/手机实际视觉验收，不能将源码/CI 测试等同于真机像素级验收。
+- 后续阶段才推进 iPhone 单一主屏入口和最终全链路长期稳定性复查。详见 [家长遥控](docs/PARENT_REMOTE.md)、[远程访问](docs/REMOTE_ACCESS.md)。
 
+## v0.1.16-r14 · 已真机验收的功能历史
 
-## v0.1.16-r3 · Cloudflare Tunnel LuCI 管理（未真机验收候选）
-
-- r14：手机家长遥控显示内网直连/外网 HTTPS 来源；配对响应异常时只读确认，避免误报和重复提交；LuCI 展示已配对设备类型/识别码/配对时间，支持单台撤销；服务端授权长期有效，浏览器 Cookie 一年滚动续期；升级迁移旧有效会话且不会复活过期会话。外网 Access 尚未开放。
-- r13：修复 N1 实机家长配对 `storage_unavailable`：CGI XFS `awk index()` 写法错误，而此前端到端测试替换了真实 `storage_ok`，造成漏检。补真实 BusyBox awk 的 XFS rw/ro、代际文件异常测试；修正配对临时文件进程号。
-- r12：限制手机配对 Cookie 仅发送至 /cgi-bin/tvg，避免与 N1 同主机其他端口的 LuCI 路径共享；修复 Access 登录过期时的整页重登提示，并加严 CSP、缓存版本标记和手机交互测试。
-- r11：审核配对/撤销代际竞争、API 401 就绪门禁、手机断网操作锁定、jsonfilter 显式依赖与 Cloudflare Access 双层验证清单；新增功能测试，仍需真机验收。
-- r10：收紧家长 API 状态为固定九个字段，避免暴露 Agent/网络诊断；修正配对领取临时路径必须包含进程号，并补白名单功能测试。
-- r9：修复手机配对报 `origin_rejected`：OpenWrt uhttpd 的 CGI 不转发自定义 `X-TVGuard-Action` 请求头；改为严格的同源 Origin/Referer、局域网 Host 地址匹配，并修复公网 HTTPS Cookie Secure 标记判断；新增真实 shell 运行的同源回归用例。
-- r8：修复 N1 精简 BusyBox 缺少 `od` 导致配对码和会话令牌生成失败；统一采用 `/dev/urandom`、长度验证和 `sha256sum`，不新增依赖。
-- r7：新增家中 HTTP 直连开关，限定 br-lan 私有 IPv4:18765 并保留本机回环 127.0.0.1:18765；保留家长配对权限，公网 HTTPS + Access 后续再配置。HTTP 明文有 Cookie 窃听风险。
-- r6：已完成旧容器的 Metrics 限制迁移，撤下 LuCI 一次性「安全重建」按钮及其后台操作权限；新建容器始终默认采用 `--metrics 127.0.0.1:20241`，保留状态校验。
-- r3 至 r5 曾提供一次性重建以迁移旧容器；N1 验收通过后不再对普通家长暴露此操作。
-- r2 修复 rpcd 真实路径复核导致临时 Token 写入权限失败，改为 /tmp 固定路径并增加阶段性错误提示。
-- 新增「远程访问」LuCI 页：Token 保存、专用 Docker 容器启动/停止/重启、状态和限量日志查看，不接管既有 Vaultwarden/ntfy 容器。
-- 仅复用已下载的 cloudflare/cloudflared 镜像；XFS 分区挂载、安全标签和 cloudflared 版本均需通过验证，Token 不进入 UCI/环境变量/启动命令行。
-- 这仅是 Tunnel 管理，不表示家长 PWA、外网 Access 已完成，也未经过 N1 实机验收。详见 [Cloudflare Tunnel 管理](docs/REMOTE_ACCESS.md)。
+- r14：手机端按访问地址区分「内网直连」/「Cloudflare Tunnel」；配对响应格式异常时通过只读状态确认；LuCI 管理长期授权设备列表及单独撤销。
+- r13：修复 N1 实机 CGI XFS awk 存储检查错误，改为真实 BusyBox awk 与生产函数回归测试。
+- r12：配对 Cookie 限定到 CGI 路径、完善 CSRF 和错误恢复。
+- r11：状态字段最小化及会话撤销代际保护。
+- r10-r7：逐步完善白名单 API、OpenWrt/uhttpd 兼容、HTTP 直连与安全约束。
+- r6：Metrics 强制为 127.0.0.1:20241，并移除真机已迁移完成的一次性安全重建入口。
+- 此前 r3-r5 Cloudflare Tunnel 管理与容器隔离演进记录保留在历史提交中；家长控制的具体使用与安全边界以当前文档为准。
 
 ## v0.1.15-r11 · 多 App 泛化与独立 App 首页画像（当前开发候选）
 
