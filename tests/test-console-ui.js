@@ -58,6 +58,7 @@ function nodeWithClass(root, name) {
 (async () => {
     const css = fs.readFileSync('htdocs/luci-static/resources/view/tvguard/panel.css','utf8');
     assert(css.includes('.tvg-console') && css.includes('.tvg-status-grid'));
+    assert(css.includes('.tvg-page-heading') && css.includes('background: transparent'), 'isolated heading styling is missing');
     assert(css.includes('grid-template-columns: repeat(2, minmax(0,1fr))'), 'desktop two columns missing');
     assert(css.includes('@media (max-width: 850px)') && css.includes('@media (max-width: 560px)'));
     assert(css.includes('.tvg-device { flex-direction: column'), 'mobile device controls need vertical layout');
@@ -86,6 +87,8 @@ function nodeWithClass(root, name) {
     assert(nodeWithClass(p.tree,'tvg-stat').length === 3);
     assert(nodeWithClass(p.tree,'tvg-card').length === 4);
     assert(find(p.tree,'link').attrs.href.includes('panel.css'));
+    assert(all(p.tree,x=>x.tag==='header'||x.tag==='h2').length===0,'theme global selectors must not cover page title');
+    assert(all(p.tree,x=>x.className==='tvg-page-heading'&&strings(x).includes('家长遥控')).length===1);
     assert(strings(p.tree).includes('192.168.101.99:18765'));
     assert(strings(p.tree).includes('iPhone Chrome'));
     assert(strings(p.tree).includes('长期有效'));
@@ -109,6 +112,8 @@ function nodeWithClass(root, name) {
         return 'ok';
     });
     assert(nodeWithClass(t.tree,'tvg-console').length === 1);
+    assert(all(t.tree,x=>x.tag==='header'||x.tag==='h2').length===0,'tunnel title must avoid LuCI global header selectors');
+    assert(all(t.tree,x=>x.className==='tvg-page-heading'&&strings(x).includes('远程访问')).length===1);
     assert(nodeWithClass(t.tree,'tvg-stat').length === 3);
     assert(nodeWithClass(t.tree,'tvg-card').length === 3);
     assert(strings(t.tree).includes('tv.rqqr.de'));

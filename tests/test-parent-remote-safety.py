@@ -81,3 +81,10 @@ assert "until_at=0" in cgi
 assert 'REVOKED="$ROOT/revoked"' in cgi and '[ ! -e "$REVOKED/$hash" ]' in cgi
 assert 'set_auth_cookie "$token"' in cgi
 assert 'renderDevices(s.devices)' in (p/"htdocs/luci-static/resources/view/tvguard/remote.js").read_text()
+
+assert 'rename-device)' in admin and 'rename_device()' in admin
+assert 'NAMES_DIR="$ROOT/device-names"' in admin
+assert '"label":' not in admin or 'label' in admin
+assert 'rename-device' in manage
+assert 'tvg-page-heading' in (p/"htdocs/luci-static/resources/view/tvguard/remote.js").read_text()
+assert 'tvg-page-heading' in (p/"htdocs/luci-static/resources/view/tvguard/tunnel.js").read_text()

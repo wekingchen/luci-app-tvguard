@@ -43,6 +43,7 @@ with tempfile.TemporaryDirectory(prefix="tvg-storage-test-") as temp:
             script="\n".join([
                 "ROOT="+shlex.quote(str(data)),
                 "SESSIONS="+shlex.quote(str(sessions)),
+                "NAMES_DIR="+shlex.quote(str(data/"device-names")),
                 "GENERATION="+shlex.quote(str(generation)),
                 body,
                 ("storage_ok" if name=="cgi-storage" else "require_storage"),
