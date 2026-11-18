@@ -1,11 +1,21 @@
-# TVGuard v0.1.16-r19 · 交付与验收记录
+# TVGuard v0.1.16-r20 · 交付与验收记录
 
 ## 交付内容
 
-- **N1**：`luci-app-tvguard_0.1.16-19_all.ipk`，Build ID `v0.1.16-r19-dark-console-contrast`。
+- **N1**：`luci-app-tvguard_0.1.16-20_all.ipk`，Build ID `v0.1.16-r20-overview-ui-unification`。
 - **小米电视 Agent**：保持固定签名 `0.3.7`（versionCode 20）；原先已装同版本且权限正常，无需重复安装。
 - **GitHub Release**：正式版标签 `v0.1.16`，同时提供 N1 主 IPK 与已验证固定签名的 Agent APK；Bridge/Fusion 已包含在 N1 主包。
 - **受控的数据与服务**：家长设备授权/备注、TVGuard 计时和学习数据、Bark 设置、Cloudflare Tunnel Token 均在 N1 保留；软件升级不要求重新配对或重建 Docker 容器。
+
+## r20 · 以概览为基准的四页统一（待真机视觉验收）
+
+- 原本概览采用 980px 居中、透明 12px 卡片、灰阶统计块与原生 LuCI 按钮；设置由 form.Map 自行布局，家长遥控和远程访问各使用固定蓝色厚卡片，桌面与手机切页风格差异明显。
+- 保留概览原始布局不动，统一设置、家长遥控和远程访问的标题、间距、卡片、指标、按钮和深浅色。移除英文眉题，后两页操作按钮改用概览的 LuCI 原生风格。
+- 设置仅包装 LuCI 原生表单，不改变 UCI 表单结构、字段验证、保存应用或 Bark 测试回调。
+- 家长遥控/远程访问/设置统一采用 `panel.css?v=0.1.16-r20`，保留 r19 配对码高对比度和主题隔离。
+- 新增四页视觉一致性、页面 DOM、深色对比度和 IPK 打包回归；见 `docs/LUCI_UI_STANDARD.md`。
+- 仅调整界面，不修改观看时长、Adaptive/Agent、Bark 推送、Firewall/正式控制、家长授权、Tunnel Token 或任何 N1 持久数据。
+- 实际 LuCI 浏览器视觉仍需用户真机验收；不能仅凭 CI 宣称最终效果通过。
 
 ## r19 · LuCI 深色模式可读性修复
 
