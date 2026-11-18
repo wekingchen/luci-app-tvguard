@@ -45,7 +45,8 @@ if not args:
 elif args[0] == "info":
     pass
 elif args[:2] == ["image", "inspect"]:
-    success = True
+    if "-f" in args:
+        output = state["latest_image_id"]
 elif args[:2] == ["container", "inspect"]:
     success = container(args[2]) is not None
 elif args[0] == "inspect":
@@ -62,6 +63,8 @@ elif args[0] == "inspect":
             output = "running" if c["running"] else "exited"
         elif ".Config.Cmd" in fmt:
             output = json.dumps(c["cmd"], separators=(",", ":"))
+        elif ".Image" in fmt:
+            output = c.get("image_id", "sha256:old")
         elif "org.tvguard.owner" in fmt:
             output = c["owner"]
         else:
@@ -81,7 +84,8 @@ elif args[0] == "run":
                 cmd = args[image_pos + 1:]
                 state["containers"][dest] = {
                     "owner": "luci-app-tvguard", "running": True,
-                    "cmd": cmd, "image": args[image_pos]
+                    "cmd": cmd, "image": args[image_pos],
+                    "image_id": state["latest_image_id"]
                 }
                 record({"op":"run","dest":dest,"args":args})
 elif args[0] == "logs":
@@ -127,10 +131,10 @@ def old_container(owner="luci-app-tvguard", running=True):
         "cmd": ["tunnel", "--no-autoupdate", "--metrics",
                 "127.0.0.1:20241", "run", "--token-file",
                 "/etc/tvguard/token"],
-        "image": IMAGE,
+        "image": IMAGE, "image_id": "sha256:old",
     }
 
-def run_scenario(name, containers, edge_ok, verb="start"):
+def run_scenario(name, containers, edge_ok, verb="start", latest_image_id="sha256:new"):
     with tempfile.TemporaryDirectory(prefix="tvg-http2-") as tmp:
         root = Path(tmp)
         bindir = root / "bin"
@@ -160,6 +164,7 @@ def run_scenario(name, containers, edge_ok, verb="start"):
         state_file.write_text(json.dumps({
             "containers": containers,
             "edge_ok": edge_ok,
+            "latest_image_id": latest_image_id,
             "actions": []
         }))
         env = dict(os.environ, TVG_FAKE_DOCKER=str(state_file))
@@ -244,4 +249,69 @@ result, state = run_scenario("restart-http2", {NAME: http2}, True, "restart")
 assert result.returncode == 0, result.stderr
 assert state["actions"] == [{"op":"restart","dest":NAME}], state["actions"]
 
-print("PASS: TVGuard-only HTTP/2 create, backed-up migration, handshake rollback, ownership and idempotence")
+# Portainer has already pulled latest; only immutable local image IDs
+# determine whether a TVGuard-only recreate is necessary.
+IMAGE_BACKUP = "tvguard-cloudflared-before-local-image"
+old_http2 = old_container()
+old_http2["cmd"][2:2] = ["--protocol", "http2"]
+
+result, state = run_scenario("image-status-old", {NAME: old_http2}, True, "status")
+assert result.returncode == 0, result.stderr
+status = json.loads(result.stdout)
+assert status["image_update"] == "available", status
+assert status["transport"] == "http2", status
+assert state["actions"] == []
+
+result, state = run_scenario("apply-local-image", {
+    NAME: old_http2, "vaultwarden-cloudflared": unrelated,
+    "ntfy_cloudflared": unrelated
+}, True, "apply-image")
+assert result.returncode == 0, result.stderr
+assert state["containers"][NAME]["image_id"] == "sha256:new", state
+assert_http2(state["containers"][NAME])
+assert IMAGE_BACKUP not in state["containers"]
+assert state["containers"]["vaultwarden-cloudflared"] == unrelated
+assert state["containers"]["ntfy_cloudflared"] == unrelated
+assert [x["op"] for x in state["actions"]] == [
+    "stop", "rename", "run", "rm"
+], state["actions"]
+assert state["actions"][1]["new"] == IMAGE_BACKUP
+
+# No action if local latest already matches the running image.
+current = dict(old_http2, image_id="sha256:new")
+result, state = run_scenario("same-image", {NAME: current}, True, "apply-image")
+assert result.returncode == 0 and "无须重建" in result.stdout
+assert state["actions"] == [], state["actions"]
+assert state["containers"][NAME] == current
+result, state = run_scenario("image-status-current", {NAME: current}, True, "status")
+assert json.loads(result.stdout)["image_update"] == "current"
+
+# Edge registration must be confirmed or the original image and running state
+# are restored, including unchanged Token contents.
+result, state = run_scenario("image-rollback", {NAME: old_http2}, False, "apply-image")
+assert result.returncode != 0, result
+assert state["containers"][NAME] == old_http2
+assert IMAGE_BACKUP not in state["containers"]
+assert [x["op"] for x in state["actions"]] == [
+    "stop", "rename", "run", "stop", "rm", "rename", "start"
+], state["actions"]
+
+# Never apply images to a deliberately stopped tunnel.
+stopped = dict(old_http2, running=False)
+result, state = run_scenario("image-stopped", {NAME: stopped}, True, "apply-image")
+assert result.returncode != 0
+assert state["actions"] == []
+assert state["containers"][NAME] == stopped
+
+# Unknown or foreign containers and pre-existing image backups are immutable.
+foreign_http2 = dict(old_http2, owner="some-other-app")
+result, state = run_scenario("image-foreign", {NAME: foreign_http2}, True, "apply-image")
+assert result.returncode != 0
+assert state["actions"] == []
+result, state = run_scenario("image-backup-collision", {
+    NAME: old_http2, IMAGE_BACKUP: old_container(running=False)
+}, True, "apply-image")
+assert result.returncode != 0
+assert state["actions"] == []
+
+print("PASS: TVGuard-only HTTP/2 and Portainer-prepulled image update with rollback, isolation and no-op detection")
