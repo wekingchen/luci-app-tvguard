@@ -60,7 +60,7 @@ const nextTick = () => new Promise(resolve => setImmediate(resolve));
   assert(els.main.classList.contains('hidden') === false);
   assert(els.pair.classList.contains('hidden'));
   assert.strictEqual(els.watched.textContent,'0 分钟');
-  assert.strictEqual(els.remaining.textContent,'60 分钟');
+  assert.strictEqual(els.remaining.textContent,'1 小时 0 分钟');
   assert.strictEqual(els.network.textContent,'已连接');
   assert(controls.find(c => c.dataset.action === 'mode-child').disabled,'current mode must be disabled');
   assert(controls.find(c => c.dataset.action === 'bonus-undo').disabled,'undo with zero should be disabled');
