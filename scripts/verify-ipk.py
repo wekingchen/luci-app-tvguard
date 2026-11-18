@@ -148,6 +148,20 @@ for view_source in (luci_remote, luci_tunnel, luci_settings):
 for view_source in (luci_remote, luci_tunnel):
     assert "'role': 'heading', 'aria-level': '2'" in view_source, "accessible card headings missing"
 
+# HTTP/2 transport must be present in the actual package and must not
+# silently reuse a legacy QUIC connector on N1 after opkg upgrade.
+tunnel_script = data["usr/libexec/tvguard-tunnel"][1].decode("utf-8")
+postinst_script = control["postinst"][1].decode("utf-8")
+assert "--protocol http2" in tunnel_script, "Tunnel connector must use HTTP/2"
+assert 'docker rename "$NAME" "$ROLLBACK"' in tunnel_script, "Tunnel migration backup missing"
+assert "wait_for_http2_edge" in tunnel_script, "HTTP/2 handshake gate missing"
+assert "restore_previous" in tunnel_script, "old tunnel rollback missing"
+assert '"transport":"%s"' in tunnel_script, "Tunnel transport must be reported"
+assert "docker container inspect tvguard-cloudflared" in postinst_script, "upgrade transport migration missing"
+assert "org.tvguard.owner" in postinst_script, "upgrade migration ownership check missing"
+luci_tunnel_expected = data["www/luci-static/resources/view/tvguard/tunnel.js"][1].decode("utf-8")
+assert "HTTP/2（TCP 7844）" in luci_tunnel_expected, "configured transport indicator missing from LuCI"
+
 assert "etc/tvguard/agent-bridge.key" not in data, "key must never be packaged"
 assert "conffiles" in control and b"agent-bridge.key" not in control["conffiles"][1]
 print(f"PASS: OpenWrt gzip-tar IPK, root ownership, package metadata, control and payload ({len(raw)} bytes)")
