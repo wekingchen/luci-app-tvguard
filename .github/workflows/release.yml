@@ -148,6 +148,7 @@ jobs:
           - 家长遥控：本地 HTTP、Cloudflare Tunnel 外网 HTTPS，独立配对、长期授权、单设备撤销、设备自定义备注。
           - LuCI 家长遥控及远程访问桌面/移动界面、配对码倒计时、精简状态、Token/Metrics 保护与诊断。
           - iPhone 独立 Web App 安全区修复、模式与奖励卡片微调、远程在线标签简化为「远程连接正常」；r18 更换静态 JS/CSS 版本地址，防止 r17 脚本缓存复用；未更改后台计时/控制/配对。
+          - r19 修复 LuCI 家长遥控与远程访问的深色模式：配对码及辅助文字高对比、卡片标题隔离主题样式、两页共用 CSS 缓存版本更新；不涉及控制逻辑。
 
           ## 真机与发布验证
           - 用户已确认 N1 上正式控制、计时、局域网家长遥控及 https://tv.rqqr.de 外网访问正常。
@@ -217,7 +218,8 @@ jobs:
             feat/v0.1.16-tunnel-ui \
             fix/v0.1.16-r17-iphone-pwa \
             fix/v0.1.16-r17-release-asset-hygiene \
-            fix/v0.1.16-r18-pwa-cache-bust; do
+            fix/v0.1.16-r18-pwa-cache-bust \
+            fix/v0.1.16-r19-dark-console-contrast; do
             encoded="${branch//\//%2F}"
             # Best-effort cleanup only; release success must not depend on an
             # already-deleted development branch.

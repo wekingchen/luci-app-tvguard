@@ -86,7 +86,9 @@ jobs:
       - name: Exercise LuCI paired-device list and scoped revocation
         run: node tests/test-remote-luci.js
       - name: Verify responsive parent and tunnel LuCI product UI
-        run: node tests/test-console-ui.js
+        run: |
+          node tests/test-console-ui.js
+          python3 tests/test-console-dark-contrast.py
       - name: Validate standalone parent remote safety
         run: python3 tests/test-parent-remote-safety.py
       - name: Validate Cloudflare Tunnel management permissions
@@ -225,17 +227,17 @@ jobs:
       - name: Build and validate OpenWrt-compatible development IPK
         run: |
           set -eu
-          sh scripts/build-ipk.sh 0.1.16 18
-          PKG=dist/luci-app-tvguard_0.1.16-18_all.ipk
+          sh scripts/build-ipk.sh 0.1.16 19
+          PKG=dist/luci-app-tvguard_0.1.16-19_all.ipk
           test -f "$PKG"
           # OpenWrt ipkg-build uses gzip-compressed tar, not Debian ar.
           test "$(od -An -tx1 -N2 "$PKG" | tr -d ' \n')" = 1f8b
           tar -tzf "$PKG" | grep -q './control.tar.gz'
-          python3 scripts/verify-ipk.py "$PKG" 0.1.16 18
+          python3 scripts/verify-ipk.py "$PKG" 0.1.16 19
           sha256sum "$PKG"
       - name: Upload development IPK
         uses: actions/upload-artifact@v4
         with:
-          name: tvguard-v0.1.16-r18-iphone-pwa-cache-bust-ipk
+          name: tvguard-v0.1.16-r19-dark-console-contrast-ipk
           path: dist/*.ipk
           if-no-files-found: error
