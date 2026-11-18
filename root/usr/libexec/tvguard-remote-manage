@@ -1,0 +1,27 @@
+#!/bin/sh
+# RPCD 仅能执行固定的家长设备管理动作；拒绝任意命令与额外参数。
+case "$#" in
+    1)
+        case "$1" in
+            enable|disable|enable-lan|disable-lan|pair|revoke-all)
+                exec /usr/libexec/tvguard-remote-admin "$1" ;;
+        esac
+        ;;
+    2)
+        if [ "$1" = revoke-device ]; then
+            id="$2"
+            [ "${#id}" -eq 16 ] || exit 2
+            case "$id" in *[!0-9a-f]*) exit 2 ;; esac
+            exec /usr/libexec/tvguard-remote-admin revoke-device "$id"
+        fi
+        ;;
+    3)
+        if [ "$1" = rename-device ]; then
+            id="$2"
+            [ "${#id}" -eq 16 ] || exit 2
+            case "$id" in *[!0-9a-f]*) exit 2 ;; esac
+            exec /usr/libexec/tvguard-remote-admin rename-device "$id" "$3"
+        fi
+        ;;
+esac
+exit 2

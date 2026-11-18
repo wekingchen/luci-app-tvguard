@@ -1,0 +1,5 @@
+#!/bin/sh
+case "$*" in
+    status) exec /usr/libexec/tvguard-remote-admin status ;;
+    *) exit 2 ;;
+esac

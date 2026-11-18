@@ -3,6 +3,7 @@ name: TV Guard static checks
 on:
   push:
     branches: [main]
+  pull_request:
   workflow_call:
   workflow_dispatch:
 
@@ -21,6 +22,16 @@ jobs:
             sh -n "$file"
             dash -n "$file"
           done
+      - name: Validate read-only N1 preflight script syntax
+        run: |
+          sh -n tools/tvguard-remote-preflight.sh
+          dash -n tools/tvguard-remote-preflight.sh
+      - name: Validate standalone CGI and LAN helper syntax
+        run: |
+          sh -n root/usr/share/tvguard-remote/www/cgi-bin/tvg
+          sh -n root/usr/libexec/tvguard-remote-status
+          sh -n root/usr/libexec/tvguard-remote-lan-ip
+          sh -n root/usr/libexec/tvguard-random-hex
       - name: Validate LuCI JSON and JavaScript syntax
         shell: bash
         run: |
@@ -35,7 +46,10 @@ jobs:
           node - <<'JS'
           const fs = require('fs');
           for (const p of ['htdocs/luci-static/resources/view/tvguard/overview.js',
-                           'htdocs/luci-static/resources/view/tvguard/settings.js']) {
+                           'htdocs/luci-static/resources/view/tvguard/settings.js',
+                           'htdocs/luci-static/resources/view/tvguard/tunnel.js',
+                           'htdocs/luci-static/resources/view/tvguard/remote.js',
+                           'root/usr/share/tvguard-remote/www/app.js']) {
               new Function(fs.readFileSync(p, 'utf8'));
               console.log('JS syntax OK:', p);
           }
@@ -46,6 +60,35 @@ jobs:
         run: dash tests/test-daily-report.sh
       - name: Validate LuCI settings hierarchy and safety
         run: node tests/test-settings-ui.js
+      - name: Verify random generation without od/hexdump/xxd
+        run: sh tests/test-remote-random.sh
+      - name: Exercise iPhone parent PWA control and offline behavior
+        run: node tests/test-remote-pwa.js
+      - name: Exercise parent service lifecycle and failed startup rollback
+        run: python3 tests/test-remote-lifecycle.py
+      - name: Validate remote admin issue and revocation lifecycle
+        run: python3 tests/test-remote-admin-e2e.py
+      - name: Validate minimized remote status schema
+        run: python3 tests/test-remote-status.py
+      - name: Exercise actual XFS storage gates with BusyBox awk
+        run: |
+          command -v busybox >/dev/null 2>&1 || {
+            sudo apt-get update -qq
+            sudo apt-get install -y busybox
+          }
+          python3 tests/test-remote-storage.py
+      - name: Validate parent remote CGI end-to-end contract
+        run: python3 tests/test-remote-cgi-e2e.py
+      - name: Validate uhttpd CGI same-origin behavior
+        run: python3 tests/test-remote-origin.py
+      - name: Exercise LuCI paired-device list and scoped revocation
+        run: node tests/test-remote-luci.js
+      - name: Verify responsive parent and tunnel LuCI product UI
+        run: node tests/test-console-ui.js
+      - name: Validate standalone parent remote safety
+        run: python3 tests/test-parent-remote-safety.py
+      - name: Validate Cloudflare Tunnel management permissions
+        run: python3 tests/test-tunnel-safety.py
       - name: Validate LuCI overview/settings tab structure
         run: node tests/test-menu-ui.js
       - name: Verify LuCI read wrapper command allowlist
@@ -180,17 +223,17 @@ jobs:
       - name: Build and validate OpenWrt-compatible development IPK
         run: |
           set -eu
-          sh scripts/build-ipk.sh 0.1.15 11
-          PKG=dist/luci-app-tvguard_0.1.15-11_all.ipk
+          sh scripts/build-ipk.sh 0.1.16 16
+          PKG=dist/luci-app-tvguard_0.1.16-16_all.ipk
           test -f "$PKG"
           # OpenWrt ipkg-build uses gzip-compressed tar, not Debian ar.
           test "$(od -An -tx1 -N2 "$PKG" | tr -d ' \n')" = 1f8b
           tar -tzf "$PKG" | grep -q './control.tar.gz'
-          python3 scripts/verify-ipk.py "$PKG" 0.1.15 11
+          python3 scripts/verify-ipk.py "$PKG" 0.1.16 16
           sha256sum "$PKG"
       - name: Upload development IPK
         uses: actions/upload-artifact@v4
         with:
-          name: tvguard-v0.1.15-r11-standalone-app-home-profile-ipk
+          name: tvguard-v0.1.16-r16-luci-title-device-labels-ipk
           path: dist/*.ipk
           if-no-files-found: error

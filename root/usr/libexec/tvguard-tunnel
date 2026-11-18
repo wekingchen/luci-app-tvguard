@@ -1,0 +1,186 @@
+#!/bin/sh
+# TVGuard 专用 cloudflared 容器控制器；绝不接触其他容器。
+set -eu
+umask 077
+PATH=/usr/sbin:/usr/bin:/sbin:/bin
+export PATH
+NAME=tvguard-cloudflared
+IMAGE=cloudflare/cloudflared:latest
+MOUNT=/mnt/mmcblk2p4
+DATA="$MOUNT/tvguard-cloudflared"
+SECRET="$DATA/token"
+PENDING_DIR=/tmp/tvguard-tunnel
+PENDING="$PENDING_DIR/token.pending"
+
+die() { echo "$*" >&2; exit 1; }
+storage_ready() {
+    awk '$2 == "/mnt/mmcblk2p4" && $3 == "xfs" && index("," $4 ",", ",rw,") { found=1 } END { exit !found }' /proc/mounts
+}
+require_storage() {
+    storage_ready || die "持久 XFS 分区 /mnt/mmcblk2p4 未以可写模式挂载，拒绝操作"
+    [ ! -L "$DATA" ] || die "持久配置目录是符号链接，拒绝操作"
+}
+require_docker() {
+    command -v docker >/dev/null 2>&1 || die "未检测到 Docker CLI"
+    docker info >/dev/null 2>&1 || die "Docker 服务暂不可用"
+}
+container_exists() { docker container inspect "$NAME" >/dev/null 2>&1; }
+managed() {
+    [ "$(docker inspect -f '{{index .Config.Labels "org.tvguard.owner"}}' "$NAME" 2>/dev/null || :)" = luci-app-tvguard ]
+}
+guard_container() {
+    if container_exists; then
+        managed || die "同名容器不属于 TVGuard，拒绝接管或修改"
+    fi
+}
+require_token() {
+    [ -f "$SECRET" ] && [ ! -L "$SECRET" ] && [ -s "$SECRET" ] ||
+        die "请先在 LuCI 保存 Tunnel Token"
+}
+require_image() {
+    docker image inspect "$IMAGE" >/dev/null 2>&1 ||
+        die "本机没有 cloudflare/cloudflared:latest 镜像，未自动下载"
+    # 官方 --token-file 参数要求 cloudflared >=2025.4.0
+    ver="$(docker run --rm --network none "$IMAGE" --version 2>/dev/null |
+        sed -n 's/.*version \([0-9][0-9]*\)\.\([0-9][0-9]*\)\..*/\1 \2/p' | head -n 1)"
+    [ -n "$ver" ] || die "无法读取 cloudflared 版本"
+    printf '%s\n' "$ver" | awk '{ if ($1 > 2025 || ($1 == 2025 && $2 >= 4)) exit 0; exit 1 }' ||
+        die "cloudflared 低于 2025.4.0，不支持 --token-file"
+}
+prepare() {
+    mkdir -p "$PENDING_DIR"
+    chmod 700 "$PENDING_DIR"
+    [ ! -L "$PENDING" ] || die "临时凭据路径异常"
+    : > "$PENDING"
+    chmod 600 "$PENDING"
+    echo "已准备临时凭据缓冲区"
+}
+save_token() {
+    require_storage
+    [ -f "$PENDING" ] && [ ! -L "$PENDING" ] || die "临时 Token 不存在"
+    value="$(cat "$PENDING")"
+    bytes="$(wc -c < "$PENDING" | tr -d ' ')"
+    # 禁止换行、空格、命令片段以及二进制字节；不输出 Token。
+    [ "$bytes" -eq "${#value}" ] || die "Token 包含换行或非法字节"
+    [ "${#value}" -ge 64 ] && [ "${#value}" -le 8192 ] || die "Token 长度不符合要求"
+    case "$value" in *[!A-Za-z0-9_./+=-]*|'') die "Token 含非法字符";; esac
+    mkdir -p "$DATA"
+    chmod 700 "$DATA"
+    [ ! -L "$SECRET" ] || die "Token 文件路径异常"
+    tmp="$DATA/token.$$"
+    ( umask 077; printf '%s' "$value" > "$tmp" )
+    chmod 600 "$tmp"
+    mv -f "$tmp" "$SECRET"
+    : > "$PENDING"
+    unset value
+    # 运行中的容器重新读取 Token；已停止的容器保持停止。
+    if command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; then
+        guard_container
+        if container_exists &&
+           [ "$(docker inspect -f '{{.State.Running}}' "$NAME")" = true ]; then
+            docker restart "$NAME" >/dev/null ||
+                die "Token 已保存，但容器重启失败，请检查日志"
+        fi
+    fi
+    echo "Tunnel Token 已保存"
+}
+status() {
+    storage=false; configured=false; dockerd=false; image=false; state=missing
+    storage_ready && storage=true
+    if [ "$storage" = true ] && [ -f "$SECRET" ] && [ ! -L "$SECRET" ] && [ -s "$SECRET" ]; then
+        configured=true
+    fi
+    if command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; then
+        dockerd=true
+        docker image inspect "$IMAGE" >/dev/null 2>&1 && image=true
+        if container_exists; then
+            if managed; then
+                state="$(docker inspect -f '{{.State.Status}}' "$NAME" 2>/dev/null || echo unknown)"
+                case "$state" in running|exited|created|restarting|paused|dead) :;; *) state=unknown;; esac
+            else
+                state=foreign
+            fi
+        fi
+    else
+        state=unavailable
+    fi
+    metrics_local=false
+    if [ "$dockerd" = true ] && container_exists && managed &&
+       docker inspect -f '{{json .Config.Cmd}}' "$NAME" 2>/dev/null | grep -Fq '127.0.0.1:20241'; then
+        metrics_local=true
+    fi
+    printf '{"storage_ready":%s,"configured":%s,"docker_ready":%s,"image_present":%s,"container":"%s","metrics_local":%s}\n' \
+        "$storage" "$configured" "$dockerd" "$image" "$state" "$metrics_local"
+}
+logs() {
+    require_docker
+    guard_container
+    container_exists || die "尚未创建 TVGuard Tunnel 容器"
+    # 固定容器最多 60 行、16KiB；丢弃可能包含 Token 的行。
+    docker logs --timestamps --tail 60 "$NAME" 2>&1 |
+        grep -Ev 'TUNNEL_TOKEN|--token[ =]|eyJ[A-Za-z0-9_./+=-]{20}' |
+        tail -c 16384 || :
+}
+create_container() {
+    docker run -d \
+        --name "$NAME" \
+        --label org.tvguard.owner=luci-app-tvguard \
+        --restart unless-stopped \
+        --network host \
+        --user 0:0 \
+        --cap-drop ALL \
+        --security-opt no-new-privileges:true \
+        --log-opt max-size=2m \
+        --log-opt max-file=3 \
+        --mount "type=bind,src=$DATA,dst=/etc/tvguard,readonly" \
+        "$IMAGE" tunnel --no-autoupdate --metrics 127.0.0.1:20241 run --token-file /etc/tvguard/token >/dev/null
+}
+start() {
+    require_storage
+    require_token
+    require_docker
+    guard_container
+    if container_exists; then
+        if [ "$(docker inspect -f '{{.State.Running}}' "$NAME")" = true ]; then
+            echo "TVGuard Tunnel 已经运行"
+        else
+            docker start "$NAME" >/dev/null
+            echo "TVGuard Tunnel 已启动"
+        fi
+        return
+    fi
+    require_image
+    create_container || die "Docker 创建 TVGuard Tunnel 容器失败"
+    echo "TVGuard Tunnel 已创建并启动；连通性请查看日志及 Cloudflare 后台"
+}
+
+stop() {
+    require_docker
+    guard_container
+    container_exists || die "容器尚未创建"
+    docker stop "$NAME" >/dev/null
+    echo "TVGuard Tunnel 已停止"
+}
+restart() {
+    require_storage
+    require_token
+    require_docker
+    guard_container
+    container_exists || die "容器尚未创建，请先创建并启动"
+    if [ "$(docker inspect -f '{{.State.Running}}' "$NAME")" = true ]; then
+        docker restart "$NAME" >/dev/null
+    else
+        docker start "$NAME" >/dev/null
+    fi
+    echo "TVGuard Tunnel 已重新启动"
+}
+case "${1:-}" in
+    prepare) prepare ;;
+    save-token) save_token ;;
+    status) status ;;
+    logs) logs ;;
+    start) start ;;
+    stop) stop ;;
+    restart) restart ;;
+    *) exit 2 ;;
+esac

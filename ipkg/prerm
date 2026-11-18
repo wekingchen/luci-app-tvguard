@@ -4,9 +4,18 @@
 # Upgrades must not change enforcement, remove firewall hooks or reset
 # counters. The new postinst will restart both services.
 if [ "${1:-remove}" = upgrade ]; then
+    # 先停止独立家长 HTTP，避免旧 CGI 在会话迁移期间改写同一授权文件。
+    # postinst 会按 remote-enabled 原值恢复服务，不改变电视控制策略。
+    /etc/init.d/tvguard-remote stop 2>/dev/null || :
     /etc/init.d/tvguard-agent-bridge stop 2>/dev/null || :
     /etc/init.d/tvguard stop 2>/dev/null || :
     exit 0
+fi
+
+# 卸载时停止独立遥控服务；升级不删除授权记录和后台配置。
+if [ "${1:-remove}" != upgrade ]; then
+    /etc/init.d/tvguard-remote stop 2>/dev/null || :
+    /etc/init.d/tvguard-remote disable 2>/dev/null || :
 fi
 
 # Stop integrated Bridge before removing/replacing its executable.

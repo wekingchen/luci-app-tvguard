@@ -1,0 +1,89 @@
+# TVGuard 家长遥控 / Cloudflare 全链路审计
+
+审计日期：2026-11-18  
+审计基线：开发 PR #13（尚未合并）。  
+范围：LuCI → 家中 HTTP → uhttpd/CGI → 配对会话 → TVGuard 控制器 → Cloudflare Tunnel/Access → iPhone 主屏入口、系统重启与 OTA。
+
+**目前只确认用户的 Tunnel 连接已 Healthy、metrics 重建已完成。r9 手机配对与其后新增修复仍未真实验收，不能因 CI 通过就声称可正式使用。**
+
+## 已发现问题
+
+| 优先级 | 具体问题 | 状态 |
+| --- | --- | --- |
+| P0 | N1 精简系统没有 od：配对和会话令牌生成失败 | 已修复，补无 od 的随机生成测试 |
+| P0 | uhttpd CGI 不转发自定义 X-TVGuard-Action 头：iPhone 配对触发 origin_rejected | r9 使用严格 Origin / Referer / Host，待真实 iPhone 验证 |
+| P0 | 过去只做静态测试：编译成功不代表配对/控制成功 | 补真实 CGI 模拟运行测试，覆盖完整认证和操作 |
+| P0 | 配对锁目录被强杀后可能残留，导致新配对永久卡住 | 已改为同目录原子领取，失败可重发码；并发最多成功一次 |
+| P1 | 四台设备已满时，先消耗有效配对码再报错 | 已调整上限检查顺序 |
+| P1 | 远程 API 把全部 Agent/网络诊断状态交给手机，而不是最小必要数据 | 已用独立 helper 白名单限制为 9 字段；真机仍待验收 |
+| P1 | uhttpd/分区/Docker 在重启、OTA、网络变更后的自动恢复还没有实测闭环 | 待真机回归 |
+| 风险 | 家庭 HTTP 传输明文，Wi-Fi 内监听者可能截获登录 Cookie | 用户选择 HTTP；需隔离访客网络，禁止公网端口映射，不能宣称加密安全 |
+| 阻断 | 独立外网域名、Cloudflare Access 策略和 Tunnel 的 Protect with Access 尚未部署 | 未完成前不得创建公网应用路由 |
+| 体验 | 本地 HTTP 与外网 HTTPS 不是同一 Origin，iOS 主屏 Web App 可能有独立 Cookie 容器 | 不承诺自动共用登录；统一图标需单独实测快捷指令 |
+
+## 发布强制门禁（不可跳过）
+
+### 1. N1 / OpenWrt
+
+- shell、CLI 和 package 必须适配真实 BusyBox，不能偷偷引入 od、hexdump、xxd、bash 等未声明依赖。
+- 本机 uhttpd 默认只监听 127.0.0.1:18765；家中 HTTP 由 LuCI 手动启用，只绑定 br-lan 私有 IPv4:18765。
+- XFS 未挂载时严格拒绝存储授权；Docker、Cloudflared、ZeroTier 或 TVGuard 计时不能被此模块异常连带修改。
+- 新 IPK 必须保留 UCI 控制配置、计时数据、Agent 密钥、Bark、Tunnel Token，并保持正式控制状态。升级不擅自开启独立家长遥控器。
+- 升级、停机、重启、OTA 后，对比 mode、watch_seconds、enforce、armed、blocked、Agent 状态和隔离审计。
+
+### 2. 配对 / 会话 / API
+
+- 未认证只允许加载静态网页；GET 状态为 401，不能执行任何控制。
+- 5 分钟一次性码，错误尝试不得消耗；并发仅成功一次；已满 4 台不消耗码。
+- 30 天令牌服务端只存摘要，撤销和过期立即失效；不得出现在日志、URL 或明文持久数据。
+- POST 严格验证标准 CGI Origin/Referer/Host，恶意 Origin、null、伪造 Referer 前缀和 DNS 重绑定拒绝。
+- CGI 白名单只含 mode child/parent/locked 和 bonus 15/30/60/undo，不允许 enforce、UCI、rpcd、任意 shell、Docker 控制。
+- 控制失败必须真实报告；不使用虚假的“成功”响应。公网数据最小化，只输出手机 UI 需要的状态。
+- 本地 HTTP 的 Cookie/配对码有固有窃听风险，不能被 HttpOnly/SameSite 误称为已加密。
+
+### 3. Cloudflare（P0 阻断）
+
+1. **先建 Access Self-hosted Application**，精确匹配 TVGuard 子域名，Allow policy 仅准许家长身份，不用 Everyone/Bypass。
+2. 再为同一 Tunnel 的 Published Application Route 开启 **Protect with Access**（cloudflared 验证对应 Access JWT/AUD）。只在边缘看到登录页仍不够。
+3. 路由 Service URL 只指向 http://127.0.0.1:18765；绝不能指向 LuCI、RPCD、SSH、Docker socket 等管理服务。
+4. 蜂窝网未授权账户必须被 Access 拒绝；已通过 Access 但未配对必须返回 401；完全授权后才能操作。
+5. Cloudflare 故障不能影响 LAN 控制；Tunnel 容器仅操作 tvguard-cloudflared，metrics 固定 127.0.0.1:20241。
+6. 公网不开放 18765 端口，也不调整 N1 对其他业务的代理和防火墙规则。
+
+### 4. iPhone / 长稳体验
+
+- 在家庭 Wi-Fi 真机完成首次配对、今日统计、三种模式、奖励/撤销。
+- 在蜂窝网络完成 Access 登录、可能需要单独配对、授权失效重登和错误提示。
+- Safari 与添加到主屏幕后的 App 可能隔离 Cookie；必须真实检查，不能用纯 JS 模拟来声称支持。
+- 同一桌面图标拟采用快捷指令按网络选择 HTTP LAN 或 HTTPS 外网 URL；两种协议不能靠 Split DNS 无缝合并成同一 URL。
+- 恢复网络、后台返回、Cloudflare 重连时只刷新状态，不重放有副作用的奖励/模式指令。
+- 完成开机、OTA、XFS 挂载延迟、Docker 重启、Agent 保活与正式控制状态保持的联动回归。
+
+## r11 代码审计补强
+
+- 独立手机状态 API 固定只输出 mode、watch_seconds、remaining_seconds、quota_seconds、bonus_seconds、bonus_limit_seconds、bonus_undo_available、enforce、blocked 九个字段，jsonfilter 被声明为运行依赖。缺失或非法字段时不回退泄漏原始 TVGuard JSON。
+- 配对会话采用持久授权代际校验，LuCI 撤销全部设备先轮换代际；即使在途配对随后写回旧会话也无法重新授权。之前的两字段开发版会话不兼容，升级预览版后需要重新配对。
+- 独立 uhttpd 启动后验证匿名 CGI 确实返回 HTTP 401，检查失败则关闭服务；新增模拟 init/curl 实际启停测试。
+- iPhone 断网导致奖励 POST 结果不确定时，按钮保持禁用直至刷新状态成功，防止重复加时；通过真实 app.js DOM/fetch 自动化用例。
+- 以上为源码与 CI 证明，还未在 N1 的 BusyBox/uhttpd 以及真实 iPhone Safari 中完整复验。不会以自动测试替代实机。
+
+## 门禁状态
+
+- **已通过**：源码语法、IPK 构建、tvguardctl 调用格式复核、随机数无 od 测试、Origin 负面用例、CGI 模拟配对/会话/控制测试、配对并发/上限测试。
+- **未通过真实设备验收**：r9 修改后的 iPhone 配对、局域网模式/奖励操作、系统重启与 OTA 后恢复。
+- **尚未完成**：Access 身份与 JWT 强制验签、iOS 单一图标切换；数据最小化已通过自动测试但仍需 N1 实测。
+- **处理原则**：P0 全部关闭前保持 PR Draft，不合并 main，不发布正式 Release。不得删除失败的测试以凑绿色。
+
+仓库 tools/tvguard-remote-preflight.sh 提供只读现场检查，但不能替代真实 iPhone 和 Cloudflare Access 测试。
+
+## r12 增补：Cookie 路径隔离
+
+浏览器 Cookie 默认不按 TCP 端口隔离。N1 的局域网 IP 可能同时承载 LuCI 80/443 和 TVGuard 18765；若 TVGuard 会话 Cookie 使用 Path=/，浏览器可能在同一 IP 上访问 LuCI 时也发送该 Cookie。为降低跨服务泄漏风险，TVGuard 家长授权 Cookie 固定 Path=/cgi-bin/tvg，仅随其专用 CGI 请求发送。Cookie 在 HTTP 局域网内仍为明文，不能因此消除局域网窃听风险。
+
+
+## r14 家长设备管理与 Cookie 持久性复核
+
+- 手机 UI 区分内网 HTTP 与外网 HTTPS；在 POST 已授予 Cookie 但响应不是 JSON 时通过只读状态查询确认，防止误判和重复使用一次性码。
+- LuCI 新增最多 4 台已授权设备的列表与单台撤销，使用摘要短 ID，绝不返回 Cookie 或完整 token hash；每个撤销操作先持久写入 tombstone，使并发旧进程不能恢复已撤销授权。
+- 有效旧版 30 天会话在安装钩子中可迁移为长期服务器授权，失效会话必须被过滤；新会话期限字段为 0，已配对 Chrome 普通模式通过 Cookie 滚动续期。无痕模式、Cookie 清理、浏览器最长有效期以及公网 Access 期限不受本系统控制。
+- HTTP 会话长期持有增加被网络窃听后滥用的持续时间风险，因此撤销按钮和 Access 外网身份验证均为强制安全功能。保持 PR Draft，r14 的实机回归与公网访问的 Cloudflare Access 负面测试仍待进行。

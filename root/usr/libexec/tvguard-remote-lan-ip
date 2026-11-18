@@ -1,0 +1,21 @@
+#!/bin/sh
+# 只从 br-lan 获取可用的私有 IPv4；拒绝公有或缺失地址。
+set -eu
+PATH=/usr/sbin:/usr/bin:/sbin:/bin
+export PATH
+command -v ip >/dev/null 2>&1 || exit 1
+address="$(ip -4 -o addr show dev br-lan scope global 2>/dev/null |
+    awk '$3=="inet" {split($4,a,"/"); print a[1]; exit}')"
+[ -n "$address" ] || exit 1
+printf '%s\n' "$address" | awk -F. '
+NF!=4 {exit 1}
+{
+  for(i=1;i<=4;i++) {
+    if ($i !~ /^[0-9]+$/ || $i+0 > 255) exit 1
+  }
+  if ($1==10 && $2>=0 && $2<=255) exit 0
+  if ($1==172 && $2>=16 && $2<=31) exit 0
+  if ($1==192 && $2==168) exit 0
+  exit 1
+}' || exit 1
+printf '%s\n' "$address"

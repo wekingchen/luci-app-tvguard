@@ -5,8 +5,8 @@
 set -eu
 
 ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
-VERSION="${1:-0.1.15}"
-RELEASE="${2:-11}"
+VERSION="${1:-0.1.16}"
+RELEASE="${2:-16}"
 OUT="$ROOT/dist"
 PACKAGE="luci-app-tvguard"
 ARCH="all"
@@ -47,6 +47,17 @@ for f in \
     usr/libexec/tvguard-soak \
     usr/libexec/tvguard-soak-report \
     usr/libexec/tvguard-daily-report \
+    usr/libexec/tvguard-tunnel \
+    usr/libexec/tvguard-tunnel-read \
+    usr/libexec/tvguard-tunnel-manage \
+    usr/libexec/tvguard-remote-admin \
+    usr/libexec/tvguard-remote-status \
+    usr/libexec/tvguard-remote-read \
+    usr/libexec/tvguard-remote-manage \
+    usr/libexec/tvguard-remote-lan-ip \
+    usr/libexec/tvguard-random-hex \
+    etc/init.d/tvguard-remote \
+    usr/share/tvguard-remote/www/cgi-bin/tvg \
     etc/init.d/tvguard-agent-bridge \
     www/cgi-bin/tvguard-agent \
     usr/libexec/tvguard-agent-billing-hint \
@@ -76,7 +87,7 @@ Maintainer: TV Guard contributors
 Section: luci
 Priority: optional
 Installed-Size: $INSTALLED_SIZE
-Depends: luci-base, rpcd, curl, uhttpd
+Depends: luci-base, rpcd, curl, uhttpd, jsonfilter
 Conflicts: tvguard-agent-bridge
 Replaces: tvguard-agent-bridge
 Provides: tvguard-agent-bridge

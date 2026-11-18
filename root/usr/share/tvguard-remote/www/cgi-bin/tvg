@@ -1,0 +1,241 @@
+#!/bin/sh
+# TVGuard 家长遥控器专用 API。输入严格白名单，无 LuCI/RPCD 权限代理。
+set -e
+umask 077
+PATH=/usr/sbin:/usr/bin:/sbin:/bin
+export PATH
+ROOT=/mnt/mmcblk2p4/tvguard-remote
+SESSIONS="$ROOT/sessions"
+REVOKED="$ROOT/revoked"
+GENERATION="$ROOT/generation"
+PAIR=/tmp/tvguard-remote/pair
+NOW="$(date +%s)"
+new_random() { /usr/libexec/tvguard-random-hex "$1"; }
+digest() { printf '%s' "$1" | sha256sum | cut -d' ' -f1; }
+response() {
+    printf 'Status: %s\r\n' "$1"
+    printf 'Content-Type: application/json; charset=utf-8\r\n'
+    printf 'Cache-Control: no-store\r\n'
+    printf 'X-Content-Type-Options: nosniff\r\n'
+    printf 'Referrer-Policy: no-referrer\r\n'
+    printf 'X-Frame-Options: DENY\r\n'
+}
+error_json() {
+    response "$1"
+    printf '\r\n{"ok":false,"error":"%s"}\n' "$2"
+    exit 0
+}
+storage_ok() {
+    awk '$2=="/mnt/mmcblk2p4" && $3=="xfs" && index("," $4 ",", ",rw,"){ok=1} END{exit !ok}' /proc/mounts &&
+    [ -d "$ROOT" ] && [ ! -L "$ROOT" ] && [ ! -L "$SESSIONS" ] && [ ! -L "$GENERATION" ] && [ ! -L "$REVOKED" ] && [ -s "$GENERATION" ]
+}
+valid_hex() {
+    [ "$(printf '%s' "$1" | wc -c)" -eq "$2" ] &&
+    printf '%s' "$1" | LC_ALL=C grep -Eq '^[0-9a-f]+$'
+}
+same_origin() {
+    # uhttpd CGI 只转发部分标准 HTTP 头；不能依赖 HTTP_X_TVGUARD_ACTION。
+    [ -n "${HTTP_HOST:-}" ] || return 1
+
+    # 局域网入口只允许通过其自身的 IPv4:18765 访问，阻止 DNS rebinding。
+    # Tunnel 由 cloudflared 回源到 127.0.0.1，Host 则是公网域名。
+    case "${SERVER_ADDR:-}" in
+        127.0.0.1|::1) : ;;
+        10.*|172.*|192.168.*)
+            [ "$HTTP_HOST" = "$SERVER_ADDR:18765" ] || return 1 ;;
+        *) return 1 ;;
+    esac
+
+    # Origin 存在时必须严格匹配，不得用 Referer 绕过 Origin 拒绝。
+    case "${HTTP_ORIGIN:-}" in
+        "https://$HTTP_HOST"|"http://$HTTP_HOST") return 0 ;;
+        '') : ;;
+        *) return 1 ;;
+    esac
+    # 某些浏览器同源 POST 不带 Origin，才使用严格的同源 Referer。
+    # 必须要求路径斜线，不能接受 http://host.evil/ 等前缀混淆。
+    case "${HTTP_REFERER:-}" in
+        "https://$HTTP_HOST/"*|"http://$HTTP_HOST/"*) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+authenticated() {
+    storage_ok || return 1
+    [ -s "$SESSIONS" ] || return 1
+    token="$(printf '%s' "$HTTP_COOKIE" | tr ';' '\n' |
+        sed -n 's/^ *tvguard_auth=\([0-9a-f]*\)$/\1/p' | head -n 1)"
+    valid_hex "$token" 64 || return 1
+    hash="$(digest "$token")"
+    gen="$(cat "$GENERATION")"
+    valid_hex "$gen" 64 || return 1
+    [ ! -e "$REVOKED/$hash" ] || return 1
+    awk -F'|' -v key="$hash" -v now="$NOW" -v gen="$gen" \
+        '$1==key && ($2=="0" || $2>now) && $3==gen {ok=1} END {exit !ok}' "$SESSIONS"
+}
+# 设备授权服务端长期保存；Cookie 滚动续期一年。浏览器仍可能自行清理 Cookie。
+set_auth_cookie() {
+    secure=''
+    case "${HTTP_ORIGIN:-}" in
+        "https://$HTTP_HOST") secure='; Secure' ;;
+        '')
+            case "${HTTP_REFERER:-}" in
+                "https://$HTTP_HOST/"*) secure='; Secure' ;;
+            esac
+            ;;
+    esac
+    # 外网 HTTPS 回源落在 N1 本机回环地址；无 Origin/Referer 的 GET 不得降级 Secure。
+    if [ -z "$secure" ] && [ "$SERVER_ADDR" = 127.0.0.1 ]; then
+        case "$HTTP_HOST" in
+            127.0.0.1:*|localhost:*) : ;;
+            *.*) secure='; Secure' ;;
+        esac
+    fi
+    printf 'Set-Cookie: tvguard_auth=%s; Path=/cgi-bin/tvg; HttpOnly; SameSite=Strict; Max-Age=31536000%s\r\n' "$1" "$secure"
+}
+read_post() {
+    case "$CONTENT_TYPE" in
+        application/x-www-form-urlencoded*) : ;;
+        *) error_json '415 Unsupported Media Type' 'unsupported_media_type' ;;
+    esac
+    case "$CONTENT_LENGTH" in
+        ''|*[!0-9]*) error_json '400 Bad Request' 'invalid_length' ;;
+    esac
+    [ "$CONTENT_LENGTH" -le 128 ] && [ "$CONTENT_LENGTH" -gt 0 ] ||
+        error_json '413 Payload Too Large' 'invalid_length'
+    body="$(dd bs=1 count="$CONTENT_LENGTH" 2>/dev/null)"
+}
+pair_device() {
+    same_origin || error_json '403 Forbidden' 'origin_rejected'
+    storage_ok || error_json '503 Service Unavailable' 'storage_unavailable'
+    read_post
+    case "$body" in
+        code=*) code="$(printf '%s' "$body" | cut -c6-)" ;;
+        *) error_json '400 Bad Request' 'invalid_pair_code' ;;
+    esac
+    valid_hex "$code" 32 || error_json '400 Bad Request' 'invalid_pair_code'
+    gen="$(cat "$GENERATION")"
+    valid_hex "$gen" 64 || error_json '503 Service Unavailable' 'generation_invalid'
+    [ -f "$PAIR" ] && [ ! -L "$PAIR" ] ||
+        error_json '403 Forbidden' 'pair_not_available'
+
+    # 先检查设备上限，避免上限已满时浪费仍有效的一次性配对码。
+    if [ -f "$SESSIONS" ]; then
+        count=0
+        while IFS='|' read -r stored_hash stored_until stored_gen stored_at stored_name; do
+            [ "$stored_gen" = "$gen" ] || continue
+            case "$stored_until" in ''|*[!0-9]*) continue ;; esac
+            [ "${#stored_until}" -le 12 ] || continue
+            if [ "$stored_until" != 0 ] && [ "$stored_until" -le "$NOW" ]; then continue; fi
+            [ ! -e "$REVOKED/$stored_hash" ] || continue
+            count=$((count + 1))
+        done < "$SESSIONS"
+        [ "$count" -lt 4 ] || error_json '403 Forbidden' 'device_limit'
+    fi
+
+    hash="$(digest "$code")"
+    if ! awk -F'|' -v key="$hash" -v now="$NOW" -v gen="$gen" \
+        '$1==key && $2>now && $3==gen {ok=1} END {exit !ok}' "$PAIR"; then
+        error_json '403 Forbidden' 'pair_code_expired_or_invalid'
+    fi
+
+    # 以同目录原子改名领取配对码；不使用可能因 CGI 被强杀而永久残留的锁目录。
+    # 使用 BusyBox mktemp 原子占位，避免进程号拼接错误或并发路径冲突。
+    claim="$(mktemp "$PAIR.claim.XXXXXX")" ||
+        error_json '503 Service Unavailable' 'claim_unavailable'
+    trap 'rm -f "$claim"' EXIT
+    if ! mv -f "$PAIR" "$claim" 2>/dev/null; then
+        error_json '409 Conflict' 'pair_already_claimed'
+    fi
+    trap 'exit 129' HUP
+    trap 'exit 130' INT
+    trap 'exit 143' TERM
+
+    # 防止 LuCI 在本次领取前刚好重发配对码，必须对领取的实际内容再核验。
+    if ! awk -F'|' -v key="$hash" -v now="$NOW" -v gen="$gen" \
+        '$1==key && $2>now && $3==gen {ok=1} END {exit !ok}' "$claim"; then
+        if [ ! -e "$PAIR" ] && [ ! -L "$PAIR" ]; then
+            mv "$claim" "$PAIR" 2>/dev/null || :
+        fi
+        error_json '403 Forbidden' 'pair_code_expired_or_invalid'
+    fi
+    [ "$(cat "$GENERATION")" = "$gen" ] || error_json '403 Forbidden' 'pair_revoked'
+    session="$(new_random 32)"
+    valid_hex "$session" 64 || error_json '503 Service Unavailable' 'random_failed'
+    until_at=0  # 长期设备授权，直到管理员撤销。
+    [ ! -L "$SESSIONS" ] || error_json '503 Service Unavailable' 'storage_unavailable'
+    tmp="$ROOT/sessions.$$"
+    if [ -f "$SESSIONS" ]; then
+        awk -F'|' -v now="$NOW" -v gen="$gen" '$3==gen && ($2=="0" || $2>now)' "$SESSIONS" > "$tmp"
+    else
+        : > "$tmp"
+    fi
+    # 显示用设备名称采用固定 UA 分类，避免任意用户输入的注入与编码问题。
+    case "${HTTP_USER_AGENT:-}" in
+        *iPhone*CriOS*) device_name='iPhone Chrome' ;;
+        *iPhone*FxiOS*) device_name='iPhone Firefox' ;;
+        *iPhone*Safari*) device_name='iPhone Safari' ;;
+        *iPhone*) device_name='iPhone Browser' ;;
+        *iPad*) device_name='iPad Browser' ;;
+        *Android*) device_name='Android Browser' ;;
+        *Macintosh*|*Windows*) device_name='Desktop Browser' ;;
+        *) device_name='Browser' ;;
+    esac
+    printf '%s|%s|%s|%s|%s\n' "$(digest "$session")" "$until_at" "$gen" "$NOW" "$device_name" >> "$tmp"
+    chmod 600 "$tmp"; mv -f "$tmp" "$SESSIONS"
+    [ "$(cat "$GENERATION")" = "$gen" ] || error_json '403 Forbidden' 'pair_revoked'
+    response '200 OK'
+    set_auth_cookie "$session"
+    printf '\r\n{"ok":true,"paired":true}\n'
+}
+# 只允许本机 Cloudflare 回源或通过 br-lan 同网段路由返回的 IPv4 客户端。
+client_allowed() {
+    case "$REMOTE_ADDR" in
+        127.0.0.1|::1) return 0 ;;
+        ''|*[!0-9.]*) return 1 ;;
+    esac
+    command -v ip >/dev/null 2>&1 || return 1
+    # 路由器的默认路由也可能走 br-lan：仅有 dev br-lan 不足以证明同网段。
+    # 必须是直连/on-link 的 br-lan 地址；任何 via 网关的流量拒绝。
+    route="$(ip -4 route get "$REMOTE_ADDR" 2>/dev/null)" || return 1
+    case " $route " in
+        *' via '*) return 1 ;;
+        *' dev br-lan '*) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+client_allowed || error_json '403 Forbidden' 'lan_only'
+case "$REQUEST_METHOD:$QUERY_STRING" in
+    POST:action=pair) pair_device ;;
+esac
+authenticated || error_json '401 Unauthorized' 'pair_required'
+case "$REQUEST_METHOD:$QUERY_STRING" in
+    GET:action=status)
+        state="$(/usr/libexec/tvguard-remote-status 2>/dev/null)" ||
+            error_json '503 Service Unavailable' 'tvguard_unavailable'
+        response '200 OK'
+        set_auth_cookie "$token"
+        printf '\r\n%s\n' "$state"
+        ;;
+    POST:action=mode-child|POST:action=mode-parent|POST:action=mode-locked|POST:action=bonus-15|POST:action=bonus-30|POST:action=bonus-60|POST:action=bonus-undo)
+        same_origin || error_json '403 Forbidden' 'origin_rejected'
+        # 禁止借由 HTTP 参数执行任意 tvguardctl 命令。
+        case "$QUERY_STRING" in
+            action=mode-child) set -- mode child ;;
+            action=mode-parent) set -- mode parent ;;
+            action=mode-locked) set -- mode locked ;;
+            action=bonus-15) set -- bonus 15 ;;
+            action=bonus-30) set -- bonus 30 ;;
+            action=bonus-60) set -- bonus 60 ;;
+            action=bonus-undo) set -- bonus undo ;;
+            *) error_json '400 Bad Request' 'invalid_action' ;;
+        esac
+        /usr/libexec/tvguardctl "$@" >/dev/null 2>&1 ||
+            error_json '409 Conflict' 'action_rejected'
+        state="$(/usr/libexec/tvguard-remote-status 2>/dev/null)" ||
+            error_json '503 Service Unavailable' 'tvguard_unavailable'
+        response '200 OK'
+        set_auth_cookie "$token"
+        printf '\r\n%s\n' "$state"
+        ;;
+    *) error_json '405 Method Not Allowed' 'unsupported_action' ;;
+esac

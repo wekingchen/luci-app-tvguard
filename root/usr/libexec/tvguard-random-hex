@@ -1,0 +1,17 @@
+#!/bin/sh
+# 使用 /dev/urandom 与 sha256sum 安全生成十六进制随机值，兼容缺少 od 的 OpenWrt。
+set -eu
+umask 077
+case "${1:-}" in
+    16|32) bytes="$1" ;;
+    *) echo 'unsupported entropy size' >&2; exit 2 ;;
+esac
+random_file="$(mktemp /tmp/tvguard-random.XXXXXX)" || exit 1
+trap 'rm -f "$random_file"' EXIT HUP INT TERM
+dd if=/dev/urandom of="$random_file" bs=1 count="$bytes" 2>/dev/null || exit 1
+actual="$(wc -c < "$random_file" | tr -d '[:space:]')"
+[ "$actual" = "$bytes" ] || { echo 'random entropy read failed' >&2; exit 1; }
+hex="$(sha256sum "$random_file" | cut -d ' ' -f 1)" || exit 1
+[ "${#hex}" -eq 64 ] || { echo 'sha256sum failed' >&2; exit 1; }
+case "$hex" in *[!0-9a-f]*) echo 'invalid hash' >&2; exit 1 ;; esac
+printf '%s\n' "$hex" | cut -c "1-$((bytes * 2))"

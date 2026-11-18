@@ -68,7 +68,7 @@ exit 0
 SH
 
 chmod +x "$TMP/bin/uci" "$TMP/mock-action"
-for name in rpcd tvguard tvguardctl tvguard-agent-bridge tvguard-agent-bridge-setup; do
+for name in rpcd tvguard tvguardctl tvguard-remote tvguard-agent-bridge tvguard-agent-bridge-setup; do
     cp "$TMP/mock-action" "$TMP/$name"
 done
 
@@ -208,6 +208,7 @@ owned_state
 sh "$TMP/prerm" upgrade
 assert_proxy_section
 grep -q '^tvguard-agent-bridge stop$' "$LOG"
+grep -q '^tvguard-remote stop$' "$LOG"
 grep -q '^tvguard stop$' "$LOG"
 ! grep -q '^tvguardctl enforce off$' "$LOG"
 ! grep -q '^tvguard-fw remove$' "$LOG"

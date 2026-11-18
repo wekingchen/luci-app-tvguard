@@ -1,0 +1,134 @@
+/* TVGuard 家长遥控 / 远程访问统一界面。仅作用于 .tvg-console，不影响其它 LuCI 页面。 */
+.tvg-console {
+    --tvg-accent: #5571e7;
+    --tvg-text: #27334c;
+    --tvg-muted: #68758a;
+    --tvg-border: #dfe5f0;
+    --tvg-soft: #f6f8fc;
+    --tvg-green: #138567;
+    --tvg-red: #b83c4b;
+    --tvg-warn: #a96a13;
+    color: var(--tvg-text);
+    max-width: 1140px;
+    margin: 0 auto;
+    padding: 8px 4px 28px;
+    box-sizing: border-box;
+}
+.tvg-console *, .tvg-console *::before, .tvg-console *::after { box-sizing: border-box; }
+.tvg-console .tvg-header { margin: 2px 0 22px; display: flex; justify-content: space-between; gap: 18px; align-items: center; flex-wrap: wrap; }
+.tvg-console .tvg-eyebrow { color: var(--tvg-accent); font-weight: 700; font-size: 12px; letter-spacing: .09em; margin-bottom: 7px; }
+.tvg-console .tvg-page-heading { display: block; position: static; inset: auto; width: auto; max-width: none; height: auto; min-height: 0; padding: 0; margin: 0 0 8px; border: 0; border-radius: 0; background: transparent; box-shadow: none; color: var(--tvg-text); font-size: clamp(22px, 2.4vw, 28px); font-weight: 750; letter-spacing: -.02em; line-height: 1.25; }
+.tvg-console .tvg-intro { margin: 0; color: var(--tvg-muted); font-size: 14px; line-height: 1.65; max-width: 690px; }
+.tvg-console .tvg-status-grid { display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 14px; margin-bottom: 17px; }
+.tvg-console .tvg-stat { background: #fff; border: 1px solid var(--tvg-border); border-radius: 15px; padding: 19px 20px; min-height: 111px; box-shadow: 0 3px 14px rgba(19,38,71,.028); }
+.tvg-console .tvg-stat-label { color: var(--tvg-muted); font-size: 12px; font-weight: 600; margin-bottom: 11px; }
+.tvg-console .tvg-stat-value { font-size: 21px; font-weight: 750; line-height: 1.25; overflow-wrap: anywhere; }
+.tvg-console .tvg-stat-detail { color: var(--tvg-muted); font-size: 12px; line-height: 1.55; margin-top: 8px; }
+.tvg-console .tvg-layout { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 16px; align-items: start; }
+.tvg-console .tvg-card { background: #fff; border: 1px solid var(--tvg-border); border-radius: 16px; padding: 23px 24px; min-width: 0; box-shadow: 0 3px 16px rgba(19,38,71,.028); }
+.tvg-console .tvg-card-wide { grid-column: 1 / -1; }
+.tvg-console .tvg-card-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 15px; flex-wrap: wrap; }
+.tvg-console .tvg-card-title { font-size: 17px; margin: 0; font-weight: 750; letter-spacing: -.01em; }
+.tvg-console .tvg-card-desc, .tvg-console .tvg-caption { color: var(--tvg-muted); font-size: 13px; line-height: 1.65; margin: 0 0 14px; }
+.tvg-console .tvg-caption { font-size: 12px; margin: 12px 0 0; }
+.tvg-console .tvg-card-desc strong { color: var(--tvg-text); }
+.tvg-console .tvg-pill { display: inline-flex; align-items: center; gap: 6px; border-radius: 100px; border: 1px solid var(--tvg-border); background: #f8fafc; padding: 5px 11px; color: #52627c; font-size: 12px; font-weight: 650; white-space: nowrap; }
+.tvg-console .tvg-pill::before { content: ''; display: block; width: 6px; height: 6px; border-radius: 100%; background: #98a6bb; }
+.tvg-console .tvg-pill.is-good { color: #13755b; background: #ecf9f3; border-color: #cce9dc; }
+.tvg-console .tvg-pill.is-good::before { background: #20a47a; }
+.tvg-console .tvg-pill.is-warn { color: #98610f; background: #fff8e8; border-color: #f1deb4; }
+.tvg-console .tvg-pill.is-warn::before { background: #d39330; }
+.tvg-console .tvg-pill.is-bad { color: #ac3d4b; background: #fff1f2; border-color: #f0d3d7; }
+.tvg-console .tvg-pill.is-bad::before { background: #ca5363; }
+.tvg-console .tvg-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 9px; margin-top: 16px; }
+.tvg-console .tvg-btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; font: inherit; font-size: 13px; font-weight: 650; line-height: 1.35; min-height: 40px; padding: 10px 15px; border: 1px solid var(--tvg-border); border-radius: 10px; background: #fff; color: #31415e; cursor: pointer; text-decoration: none; transition: background .15s, border-color .15s, box-shadow .15s; }
+.tvg-console .tvg-btn:hover:not(:disabled) { background: #f4f6fb; border-color: #c5d0e1; text-decoration: none; }
+.tvg-console .tvg-btn:focus-visible, .tvg-console a:focus-visible, .tvg-console summary:focus-visible { outline: 3px solid rgba(85,113,231,.35); outline-offset: 2px; }
+.tvg-console .tvg-btn.is-primary { color: #fff; background: var(--tvg-accent); border-color: var(--tvg-accent); }
+.tvg-console .tvg-btn.is-primary:hover:not(:disabled) { background: #4762d1; border-color: #4762d1; }
+.tvg-console .tvg-btn.is-danger { color: var(--tvg-red); border-color: #efc9ce; background: #fff; }
+.tvg-console .tvg-btn.is-danger:hover:not(:disabled) { background: #fff2f3; }
+.tvg-console .tvg-btn:disabled { opacity: .48; cursor: not-allowed; box-shadow: none; }
+.tvg-console .tvg-btn.is-small { min-height: 34px; font-size: 12px; padding: 7px 11px; }
+.tvg-console .tvg-address { background: var(--tvg-soft); border: 1px solid var(--tvg-border); border-radius: 12px; display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 11px 12px 11px 15px; }
+.tvg-console .tvg-url { font-size: 13px; color: #4b64d6; font-weight: 650; min-width: 0; text-decoration: none; word-break: break-all; }
+.tvg-console .tvg-url:hover { text-decoration: underline; }
+.tvg-console .tvg-address-actions { display: flex; gap: 8px; flex-shrink: 0; }
+.tvg-console .tvg-help { color: var(--tvg-muted); font-size: 12px; line-height: 1.6; margin-top: 13px; }
+.tvg-console .tvg-help a { color: var(--tvg-accent); }
+.tvg-console .tvg-details { border-top: 1px solid var(--tvg-border); margin-top: 18px; padding-top: 14px; }
+.tvg-console .tvg-details summary { color: #586c8e; font-size: 13px; font-weight: 650; cursor: pointer; user-select: none; }
+.tvg-console .tvg-details-body { color: var(--tvg-muted); font-size: 12px; line-height: 1.75; padding-top: 12px; }
+.tvg-console .tvg-data { display: grid; grid-template-columns: auto minmax(0,1fr); gap: 11px 20px; font-size: 13px; }
+.tvg-console .tvg-data dt { color: var(--tvg-muted); }
+.tvg-console .tvg-data dd { margin: 0; font-weight: 600; overflow-wrap: anywhere; }
+.tvg-console .tvg-code-row { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; margin-top: 12px; }
+.tvg-console .tvg-code { display: inline-block; background: #f4f6fd; border: 1px dashed #b7c4df; border-radius: 11px; padding: 14px 18px; min-height: 52px; font-size: 22px; font-weight: 750; letter-spacing: .11em; line-height: 1.25; font-variant-numeric: tabular-nums; user-select: all; overflow-wrap: anywhere; }
+.tvg-console .tvg-code.is-expired { opacity: .55; text-decoration: line-through; user-select: none; }
+.tvg-console .tvg-devices { display: grid; gap: 11px; }
+.tvg-console .tvg-device { border: 1px solid var(--tvg-border); background: #fcfdff; border-radius: 13px; padding: 15px; display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.tvg-console .tvg-device-name { font-size: 14px; font-weight: 700; margin-bottom: 6px; }
+.tvg-console .tvg-device-meta { font-size: 12px; color: var(--tvg-muted); line-height: 1.6; overflow-wrap: anywhere; }
+.tvg-console .tvg-empty { padding: 20px; color: var(--tvg-muted); background: var(--tvg-soft); border: 1px dashed var(--tvg-border); text-align: center; border-radius: 12px; font-size: 13px; line-height: 1.6; }
+.tvg-console .tvg-field { width: 100%; min-height: 42px; background: #fff; color: var(--tvg-text); border: 1px solid #cbd4e4; border-radius: 10px; padding: 10px 12px; font: inherit; font-size: 13px; }
+.tvg-console .tvg-secret-wrap { display: flex; gap: 9px; }
+.tvg-console .tvg-secret-wrap .tvg-field { flex: 1; min-width: 0; }
+.tvg-console .tvg-log { background: #111b2d; color: #e2e8f0; border: 1px solid #2c3950; border-radius: 12px; white-space: pre-wrap; overflow-wrap: anywhere; overflow: auto; max-height: 340px; min-height: 95px; padding: 16px; line-height: 1.65; font-size: 12px; margin: 14px 0 0; }
+.tvg-console .tvg-message { font-size: 12px; color: var(--tvg-muted); margin-top: 12px; line-height: 1.6; }
+.tvg-console .tvg-message.is-error { color: var(--tvg-red); }
+.tvg-console .tvg-safety { margin-top: 17px; padding: 12px 15px; border-left: 3px solid #d9aa54; background: #fffaf0; border-radius: 7px; color: #76623e; font-size: 12px; line-height: 1.7; }
+.tvg-console .tvg-footer { margin-top: 19px; color: var(--tvg-muted); font-size: 12px; line-height: 1.65; }
+@media (max-width: 850px) {
+    .tvg-console .tvg-layout { grid-template-columns: 1fr; }
+    .tvg-console .tvg-card-wide { grid-column: auto; }
+    .tvg-console .tvg-status-grid { grid-template-columns: repeat(2, minmax(0,1fr)); }
+    .tvg-console .tvg-stat:last-child { grid-column: 1 / -1; }
+}
+@media (max-width: 560px) {
+    .tvg-console { padding: 4px 0 26px; }
+    .tvg-console .tvg-header { align-items: stretch; }
+    .tvg-console .tvg-header > .tvg-btn { width: 100%; }
+    .tvg-console .tvg-page-heading { font-size: 22px; }
+    .tvg-console .tvg-status-grid { gap: 9px; }
+    .tvg-console .tvg-stat { padding: 15px; min-height: 98px; border-radius: 12px; }
+    .tvg-console .tvg-stat-value { font-size: 17px; }
+    .tvg-console .tvg-card { padding: 18px 16px; border-radius: 13px; }
+    .tvg-console .tvg-controls .tvg-btn { flex: 1 1 130px; }
+    .tvg-console .tvg-address { align-items: stretch; flex-direction: column; }
+    .tvg-console .tvg-address-actions .tvg-btn { flex: 1; }
+    .tvg-console .tvg-device { flex-direction: column; align-items: stretch; gap: 12px; }
+    .tvg-console .tvg-device .tvg-btn { width: 100%; }
+    .tvg-console .tvg-code { width: 100%; text-align: center; font-size: 19px; letter-spacing: .08em; }
+    .tvg-console .tvg-secret-wrap { flex-direction: column; }
+    .tvg-console .tvg-secret-wrap .tvg-btn { width: 100%; }
+}
+@media (prefers-color-scheme: dark) {
+    .tvg-console { --tvg-text:#e6ecf8; --tvg-muted:#a6b2c6; --tvg-border:#33425c; --tvg-soft:#202c40; --tvg-accent:#91a5ff; }
+    .tvg-console .tvg-card, .tvg-console .tvg-stat { background: #19253a; }
+    .tvg-console .tvg-btn { color: #e4eaf6; background: #25334a; }
+    .tvg-console .tvg-btn:hover:not(:disabled) { background: #2f405d; }
+    .tvg-console .tvg-btn.is-primary { background:#4e66d0; color:#fff; border-color:#4e66d0; }
+    .tvg-console .tvg-btn.is-danger { color:#ffb9bd; background:#322a36; border-color:#704250; }
+    .tvg-console .tvg-address, .tvg-console .tvg-code { background: #202c40; }
+    .tvg-console .tvg-url { color: #aabaff; }
+    .tvg-console .tvg-device { background: #1c2940; }
+    .tvg-console .tvg-field { background:#202c40; color:#ecf0fa; border-color:#465570; }
+    .tvg-console .tvg-pill { background:#26344b; color:#c6d1e6; }
+    .tvg-console .tvg-pill.is-good { background:#183a35; color:#9fe6cc; }
+    .tvg-console .tvg-pill.is-warn { background:#41351c; color:#f2d18f; }
+    .tvg-console .tvg-pill.is-bad { background:#432830; color:#ffb7c1; }
+    .tvg-console .tvg-safety { background:#3a321f; color:#f2d59e; }
+}
+
+/* 家长设备行：桌面同排、手机纵向。修改名称就地编辑，不弹出系统 prompt。 */
+.tvg-console .tvg-device-info { min-width: 0; flex: 1; }
+.tvg-console .tvg-device-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; flex-shrink: 0; }
+.tvg-console .tvg-device-editor { margin-top: 12px; }
+.tvg-console .tvg-device-editor-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.tvg-console .tvg-device-editor-controls .tvg-field { flex: 1 1 200px; width: auto; min-width: 150px; }
+@media (max-width: 560px) {
+    .tvg-console .tvg-device-actions { width: 100%; }
+    .tvg-console .tvg-device-actions .tvg-btn { flex: 1 1 120px; width: auto; }
+    .tvg-console .tvg-device-editor-controls .tvg-field { flex-basis: 100%; }
+    .tvg-console .tvg-device-editor-controls .tvg-btn { flex: 1 1 120px; }
+}

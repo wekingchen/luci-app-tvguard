@@ -36,5 +36,31 @@
         "luci-app-tvguard"
       ]
     }
+  },
+  "admin/services/tvguard/tunnel": {
+    "title": "远程访问",
+    "order": 20,
+    "action": {
+      "type": "view",
+      "path": "tvguard/tunnel"
+    },
+    "depends": {
+      "acl": [
+        "luci-app-tvguard"
+      ]
+    }
+  },
+  "admin/services/tvguard/remote": {
+    "title": "家长遥控",
+    "order": 15,
+    "action": {
+      "type": "view",
+      "path": "tvguard/remote"
+    },
+    "depends": {
+      "acl": [
+        "luci-app-tvguard"
+      ]
+    }
   }
 }

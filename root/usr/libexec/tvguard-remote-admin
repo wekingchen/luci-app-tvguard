@@ -1,0 +1,309 @@
+#!/bin/sh
+# 家长遥控器管理员入口：仅供 LuCI 调用
+set -eu
+umask 077
+PATH=/usr/sbin:/usr/bin:/sbin:/bin
+export PATH
+ROOT=/mnt/mmcblk2p4/tvguard-remote
+SESSIONS="$ROOT/sessions"
+REVOKED="$ROOT/revoked"
+NAMES_DIR="$ROOT/device-names"
+GENERATION="$ROOT/generation"
+PAIR_DIR=/tmp/tvguard-remote
+PAIR="$PAIR_DIR/pair"
+ENABLED=/etc/tvguard/remote-enabled
+LAN_ENABLED=/etc/tvguard/remote-lan-enabled
+LAN_HELPER=/usr/libexec/tvguard-remote-lan-ip
+INIT=/etc/init.d/tvguard-remote
+require_storage() {
+    awk '$2=="/mnt/mmcblk2p4" && $3=="xfs" && index("," $4 ",", ",rw,"){ok=1} END{exit !ok}' /proc/mounts ||
+        { echo '持久 XFS 分区未挂载，拒绝启用遥控器' >&2; exit 1; }
+    [ ! -L "$ROOT" ] && [ ! -L "$SESSIONS" ] && [ ! -L "$GENERATION" ] && [ ! -L "$REVOKED" ] && [ ! -L "$NAMES_DIR" ] || exit 1
+    mkdir -p "$ROOT"
+    chmod 700 "$ROOT"
+}
+random_hex() { /usr/libexec/tvguard-random-hex "$1"; }
+rotate_generation() {
+    require_storage
+    next="$(random_hex 32)"
+    [ "$(printf '%s' "$next" | wc -c)" -eq 64 ] || exit 1
+    tmp="$(mktemp "$ROOT/generation.XXXXXX")" || exit 1
+    printf '%s\n' "$next" > "$tmp"
+    chmod 600 "$tmp"
+    mv -f "$tmp" "$GENERATION"
+}
+ensure_generation() {
+    if [ ! -s "$GENERATION" ]; then
+        rotate_generation
+    fi
+    value="$(cat "$GENERATION")"
+    [ "$(printf '%s' "$value" | wc -c)" -eq 64 ] || exit 1
+    case "$value" in *[!0-9a-f]*) exit 1 ;; esac
+}
+# 服务端长期授权使用 expiry=0，兼容旧版带到期时间的会话行。
+session_active() {
+    case "$1" in ''|*[!0-9]*) return 1 ;; esac
+    [ "${#1}" -le 12 ] || return 1
+    [ "$1" = 0 ] || [ "$1" -gt "$2" ]
+}
+valid_hash() {
+    [ "${#1}" -eq 64 ] || return 1
+    case "$1" in *[!0-9a-f]*) return 1 ;; esac
+}
+safe_label() {
+    case "$1" in
+        'iPhone Chrome'|'iPhone Safari'|'iPhone Firefox'|'iPhone Browser'|'iPad Browser'|'Android Browser'|'Desktop Browser'|'Browser'|'Previous device')
+            printf '%s' "$1" ;;
+        *) printf 'Browser' ;;
+    esac
+}
+# 设备备注限长，拒绝 JSON 分隔符、换行和控制字符；允许中文和空格。
+safe_alias() {
+    [ -n "$1" ] && [ "${#1}" -le 96 ] || return 1
+    case "$1" in *'|'*|*'"'*|*'\'*|*'
+'*) return 1 ;; esac
+    if printf '%s' "$1" | LC_ALL=C grep -q '[[:cntrl:]]'; then return 1; fi
+    return 0
+}
+rename_device() {
+    require_storage
+    id="${1:-}"
+    alias="${2:-}"
+    [ "${#id}" -eq 16 ] || { echo '设备识别码无效' >&2; return 1; }
+    case "$id" in *[!0-9a-f]*) echo '设备识别码无效' >&2; return 1 ;; esac
+    safe_alias "$alias" || { echo '设备名称不能为空、过长或包含非法字符' >&2; return 1; }
+    [ -f "$SESSIONS" ] && [ -s "$GENERATION" ] || return 1
+    current="$(cat "$GENERATION")"
+    valid_hash "$current" || return 1
+    now="$(date +%s)"
+    matched=''
+    hits=0
+    while IFS='|' read -r hashed expiry gen created name; do
+        valid_hash "$hashed" || continue
+        [ "$gen" = "$current" ] || continue
+        session_active "$expiry" "$now" || continue
+        [ ! -e "$REVOKED/$hashed" ] || continue
+        [ "$(printf '%s' "$hashed" | cut -c1-16)" = "$id" ] || continue
+        matched="$hashed"
+        hits=$((hits + 1))
+    done < "$SESSIONS"
+    [ "$hits" -eq 1 ] || { echo '设备不存在、已撤销或标识冲突' >&2; return 1; }
+    [ ! -L "$NAMES_DIR" ] || return 1
+    mkdir -p "$NAMES_DIR" || return 1
+    chmod 700 "$NAMES_DIR"
+    [ ! -L "$NAMES_DIR/$matched" ] || return 1
+    # 每设备独立临时文件并原子替换，避免同时编辑互相覆盖；不改变配对会话。
+    tmp="$(mktemp "$NAMES_DIR/.name.XXXXXX")" || return 1
+    printf '%s\n' "$alias" > "$tmp"
+    chmod 600 "$tmp"
+    mv -f "$tmp" "$NAMES_DIR/$matched"
+    echo '设备名称已更新，配对授权保持不变'
+}
+migrate_sessions() {
+    require_storage
+    [ -f "$SESSIONS" ] || return 0
+    [ -s "$GENERATION" ] || return 1
+    current="$(cat "$GENERATION")"
+    valid_hash "$current" || return 1
+    now="$(date +%s)"
+    temp="$(mktemp "$ROOT/sessions.XXXXXX")" || return 1
+    while IFS='|' read -r hashed expiry stored_gen created name; do
+        valid_hash "$hashed" || continue
+        [ "$stored_gen" = "$current" ] || continue
+        session_active "$expiry" "$now" || continue
+        [ ! -e "$REVOKED/$hashed" ] || continue
+        case "$created" in ''|*[!0-9]*) created=0 ;; esac
+        [ "${#created}" -le 12 ] || created=0
+        [ -n "$name" ] || name='Previous device'
+        name="$(safe_label "$name")"
+        printf '%s|0|%s|%s|%s\n' "$hashed" "$current" "$created" "$name" >> "$temp"
+    done < "$SESSIONS"
+    chmod 600 "$temp"
+    mv -f "$temp" "$SESSIONS"
+}
+revoke_device() {
+    require_storage
+    id="${1:-}"
+    [ "${#id}" -eq 16 ] || { echo '设备识别码无效' >&2; return 1; }
+    case "$id" in *[!0-9a-f]*) echo '设备识别码无效' >&2; return 1 ;; esac
+    [ -f "$SESSIONS" ] && [ -s "$GENERATION" ] || return 1
+    current="$(cat "$GENERATION")"
+    valid_hash "$current" || return 1
+    now="$(date +%s)"
+    matched=''
+    hits=0
+    while IFS='|' read -r hashed expiry gen created name; do
+        valid_hash "$hashed" || continue
+        [ "$gen" = "$current" ] || continue
+        session_active "$expiry" "$now" || continue
+        [ ! -e "$REVOKED/$hashed" ] || continue
+        [ "$(printf '%s' "$hashed" | cut -c1-16)" = "$id" ] || continue
+        matched="$hashed"
+        hits=$((hits + 1))
+    done < "$SESSIONS"
+    [ "$hits" -eq 1 ] || { echo '设备不存在或识别码冲突' >&2; return 1; }
+    mkdir -p "$REVOKED"; chmod 700 "$REVOKED"
+    [ ! -L "$REVOKED/$matched" ] || return 1
+    # 先写入撤销标记，防止并发 CGI 写回被撤销会话。
+    printf 'revoked\n' > "$REVOKED/$matched"
+    chmod 600 "$REVOKED/$matched"
+    temp="$(mktemp "$ROOT/sessions.XXXXXX")" || return 1
+    awk -F'|' -v id="$matched" '$1!=id' "$SESSIONS" > "$temp"
+    chmod 600 "$temp"; mv -f "$temp" "$SESSIONS"
+    [ ! -L "$NAMES_DIR" ] && rm -f "$NAMES_DIR/$matched"
+    echo '此家长设备授权已撤销'
+}
+status() {
+    enabled=false; listener=false; count=0
+    [ -f "$ENABLED" ] && [ "$(cat "$ENABLED")" = 1 ] && enabled=true
+    if command -v curl >/dev/null 2>&1; then
+        code="$(curl --noproxy '*' --max-time 2 -s -o /dev/null -w '%{http_code}' 'http://127.0.0.1:18765/cgi-bin/tvg?action=status' 2>/dev/null || :)"
+        [ "$code" = 401 ] && listener=true
+    fi
+    entries=''
+    separator=''
+    if [ -f "$SESSIONS" ] && [ ! -L "$SESSIONS" ] &&
+       [ -s "$GENERATION" ] && [ ! -L "$GENERATION" ] && [ ! -L "$REVOKED" ]; then
+        current="$(cat "$GENERATION")"
+        now="$(date +%s)"
+        if valid_hash "$current"; then
+            while IFS='|' read -r stored_hash until_at stored_gen paired_at name; do
+                valid_hash "$stored_hash" || continue
+                [ "$stored_gen" = "$current" ] || continue
+                session_active "$until_at" "$now" || continue
+                [ ! -e "$REVOKED/$stored_hash" ] || continue
+                id="$(printf '%s' "$stored_hash" | cut -c1-16)"
+                case "$paired_at" in ''|*[!0-9]*) paired_at=0 ;; esac
+                [ "${#paired_at}" -le 12 ] || paired_at=0
+                name="$(safe_label "$name")"
+                alias=''
+                if [ -f "$NAMES_DIR/$stored_hash" ] && [ ! -L "$NAMES_DIR/$stored_hash" ]; then
+                    alias="$(cat "$NAMES_DIR/$stored_hash")"
+                    safe_alias "$alias" || alias=''
+                fi
+                entries="${entries}${separator}{\"id\":\"$id\",\"name\":\"$name\",\"label\":\"$alias\",\"paired_at\":$paired_at,\"expires\":$until_at}"
+                separator=','
+                count=$((count + 1))
+            done < "$SESSIONS"
+        fi
+    fi
+    lan_enabled=false; lan_url=''
+    if [ -f "$LAN_ENABLED" ] && [ "$(cat "$LAN_ENABLED")" = 1 ]; then
+        lan_enabled=true
+        addr="$("$LAN_HELPER" 2>/dev/null || :)"
+        if [ -n "$addr" ]; then
+            lan_url="http://$addr:18765/"
+        fi
+    fi
+    printf '{"enabled":%s,"listener":%s,"paired":%s,"devices":[%s],"lan_enabled":%s,"lan_url":"%s"}\n' \
+        "$enabled" "$listener" "$count" "$entries" "$lan_enabled" "$lan_url"
+}
+enable_remote() {
+    require_storage
+    command -v uhttpd >/dev/null 2>&1 || { echo 'uhttpd 未安装' >&2; exit 1; }
+    mkdir -p /etc/tvguard; chmod 700 /etc/tvguard
+    printf '1\n' > "$ENABLED"; chmod 600 "$ENABLED"
+    "$INIT" enable
+    ready=0
+    if "$INIT" restart; then
+        attempts=0
+        while [ "$attempts" -lt 5 ]; do
+            # 用匿名 CGI 预期 401 而非仅凭进程或首页 200 判断服务就绪。
+            probe="$(curl --noproxy '*' --max-time 2 -s -o /dev/null -w '%{http_code}' \
+                'http://127.0.0.1:18765/cgi-bin/tvg?action=status' 2>/dev/null || :)"
+            if [ "$probe" = 401 ]; then
+                ready=1
+                break
+            fi
+            attempts=$((attempts + 1))
+            sleep 1
+        done
+    fi
+    if [ "$ready" != 1 ]; then
+        printf '0\n' > "$ENABLED"
+        "$INIT" stop >/dev/null 2>&1 || :
+        "$INIT" disable >/dev/null 2>&1 || :
+        echo '家长遥控 API 未达到预期 401，就绪检查失败；已回退为关闭状态' >&2
+        exit 1
+    fi
+    echo '家长遥控服务已启动：仅监听 127.0.0.1:18765'
+}
+disable_remote() {
+    mkdir -p /etc/tvguard
+    chmod 700 /etc/tvguard
+    printf '0\n' > "$ENABLED"
+    "$INIT" stop; "$INIT" disable
+    echo '家长遥控服务已停止，不影响电视控制核心'
+}
+enable_lan() {
+    require_storage
+    [ -f "$ENABLED" ] && [ "$(cat "$ENABLED")" = 1 ] ||
+        { echo '请先启用家长遥控服务，再开启局域网访问' >&2; exit 1; }
+    addr="$("$LAN_HELPER")" ||
+        { echo 'br-lan 没有可用的私有 IPv4，拒绝开放 LAN' >&2; exit 1; }
+    mkdir -p /etc/tvguard; chmod 700 /etc/tvguard
+    printf '1\n' > "$LAN_ENABLED"; chmod 600 "$LAN_ENABLED"
+    started=0
+    if "$INIT" restart; then
+        tries=0
+        while [ "$tries" -lt 5 ]; do
+            status_code="$(curl --noproxy '*' --max-time 2 -s -o /dev/null -w '%{http_code}' "http://$addr:18765/" 2>/dev/null || :)"
+            if [ "$status_code" = 200 ]; then
+                started=1
+                break
+            fi
+            tries=$((tries + 1))
+            sleep 1
+        done
+    fi
+    if [ "$started" != 1 ]; then
+        printf '0\n' > "$LAN_ENABLED"
+        "$INIT" restart >/dev/null 2>&1 || :
+        echo '局域网 HTTP 未能正常监听，已回退为仅本机访问' >&2
+        exit 1
+    fi
+    echo "局域网 HTTP 已就绪：http://$addr:18765/"
+}
+disable_lan() {
+    mkdir -p /etc/tvguard; chmod 700 /etc/tvguard
+    printf '0\n' > "$LAN_ENABLED"; chmod 600 "$LAN_ENABLED"
+    if [ -f "$ENABLED" ] && [ "$(cat "$ENABLED")" = 1 ]; then
+        "$INIT" restart || { echo '关闭局域网监听时重启失败，请检查服务状态' >&2; exit 1; }
+    fi
+    echo '已关闭局域网 HTTP，只保留本机回环监听'
+}
+issue_pair() {
+    require_storage
+    ensure_generation
+    mkdir -p "$PAIR_DIR"; chmod 700 "$PAIR_DIR"
+    [ ! -L "$PAIR" ] || exit 1
+    code="$(random_hex 16)"
+    [ "$(printf '%s' "$code" | wc -c)" -eq 32 ] || exit 1
+    digest="$(printf '%s' "$code" | sha256sum | cut -d' ' -f1)"
+    end=$(( $(date +%s) + 300 ))
+    pair_tmp="$(mktemp "$PAIR.tmp.XXXXXX")" || exit 1
+    printf '%s|%s|%s\n' "$digest" "$end" "$value" > "$pair_tmp"
+    chmod 600 "$pair_tmp"; mv -f "$pair_tmp" "$PAIR"
+    printf '一次性配对码（5 分钟内有效）：%s\n' "$code"
+}
+revoke_all() {
+    require_storage
+    rotate_generation
+    rm -f "$SESSIONS" "$PAIR"
+    [ ! -L "$REVOKED" ] && rm -rf "$REVOKED"
+    [ ! -L "$NAMES_DIR" ] && rm -rf "$NAMES_DIR"
+    echo '已撤销所有已配对设备和未使用配对码'
+}
+case "${1:-}" in
+    status) [ "$#" -eq 1 ] || exit 2; status ;;
+    migrate) [ "$#" -eq 1 ] || exit 2; migrate_sessions ;;
+    revoke-device) [ "$#" -eq 2 ] || exit 2; revoke_device "$2" ;;
+    rename-device) [ "$#" -eq 3 ] || exit 2; rename_device "$2" "$3" ;;
+    enable) [ "$#" -eq 1 ] || exit 2; enable_remote ;;
+    disable) [ "$#" -eq 1 ] || exit 2; disable_remote ;;
+    enable-lan) [ "$#" -eq 1 ] || exit 2; enable_lan ;;
+    disable-lan) [ "$#" -eq 1 ] || exit 2; disable_lan ;;
+    pair) [ "$#" -eq 1 ] || exit 2; issue_pair ;;
+    revoke-all) [ "$#" -eq 1 ] || exit 2; revoke_all ;;
+    *) exit 2 ;;
+esac

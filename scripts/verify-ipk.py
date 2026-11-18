@@ -44,7 +44,7 @@ for field in (
     "Package: luci-app-tvguard",
     f"Version: {version}-{release}",
     "Architecture: all",
-    "Depends: luci-base, rpcd, curl, uhttpd",
+    "Depends: luci-base, rpcd, curl, uhttpd, jsonfilter",
     "Conflicts: tvguard-agent-bridge",
     "Replaces: tvguard-agent-bridge",
     "Provides: tvguard-agent-bridge",
@@ -69,6 +69,21 @@ for name in (
     "usr/libexec/tvguard-soak",
     "usr/libexec/tvguard-soak-report",
     "usr/libexec/tvguard-daily-report",
+    "usr/libexec/tvguard-remote-admin",
+    "usr/libexec/tvguard-remote-status",
+    "usr/libexec/tvguard-remote-read",
+    "usr/libexec/tvguard-remote-manage",
+    "usr/libexec/tvguard-remote-lan-ip",
+    "usr/libexec/tvguard-random-hex",
+    "etc/init.d/tvguard-remote",
+    "usr/share/tvguard-remote/www/cgi-bin/tvg",
+    "usr/share/tvguard-remote/www/index.html",
+    "usr/share/tvguard-remote/www/app.js",
+    "www/luci-static/resources/view/tvguard/remote.js",
+    "www/luci-static/resources/view/tvguard/panel.css",
+    "usr/libexec/tvguard-tunnel",
+    "usr/libexec/tvguard-tunnel-read",
+    "usr/libexec/tvguard-tunnel-manage",
     "etc/init.d/tvguard-agent-bridge",
     "usr/libexec/tvguard-agent-bridge-setup",
     "usr/libexec/tvguard-agent-billing-hint",
@@ -79,10 +94,11 @@ for name in (
     "www/cgi-bin/tvguard-agent",
     "usr/share/tvguard/default-config",
     "www/luci-static/resources/view/tvguard/overview.js",
+    "www/luci-static/resources/view/tvguard/tunnel.js",
 ):
     if name not in data:
         raise SystemExit(f"FAIL: missing installed file {name}")
-    if name.startswith("usr/libexec/") or name.startswith("etc/init.d/") or name.startswith("www/cgi-bin/"):
+    if name.startswith("usr/libexec/") or name.startswith("etc/init.d/") or name.startswith("www/cgi-bin/") or name == "usr/share/tvguard-remote/www/cgi-bin/tvg":
         assert data[name][0].mode & 0o111, f"{name} is not executable"
 assert "etc/tvguard/agent-bridge.key" not in data, "key must never be packaged"
 assert "conffiles" in control and b"agent-bridge.key" not in control["conffiles"][1]
