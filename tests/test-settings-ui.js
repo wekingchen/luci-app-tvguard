@@ -90,7 +90,7 @@ const mockFs = {
     }
 };
 const mockUi = {addNotification(_id, node, type) {notices.push({node, type});}};
-const E = (tag, attrs, children) => ({tag, children});
+const E = (tag, attrs, children) => ({tag, attrs: attrs || {}, children});
 const factory = new Function('view', 'form', 'uci', 'fs', 'ui', 'E', source);
 const page = factory(view, form, uci, mockFs, mockUi, E);
 
@@ -98,7 +98,13 @@ const page = factory(view, form, uci, mockFs, mockUi, E);
     await page.load();
     assert.equal(loaded, true);
 
-    const map = page.render();
+    const root = await page.render();
+    assert.equal(root.attrs.class, 'tvg-settings-root');
+    assert.equal(root.children[0].tag, 'link');
+    assert.match(root.children[0].attrs.href, /panel\.css\?v=0\.1\.16-r20$/);
+    assert.equal(root.children[1].attrs.class, 'tvg-settings-header');
+    assert.equal(root.children[1].children[0].attrs.role, 'heading');
+    const map = root.children[2];
     assert.equal(map.title, 'TV Guard · 设置');
     assert.match(map.description, /高风险功能/);
     assert.deepEqual(
