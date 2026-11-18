@@ -17,7 +17,9 @@ function exec(path, args) {
 }
 function button(label, callback, type) {
     return E('button', { 'type': 'button',
-        'class': 'tvg-btn' + (type ? ' ' + type : ''), 'click': callback }, label);
+        'class': 'btn tvg-btn ' + (type === 'is-primary' ? 'cbi-button-positive' :
+            (type === 'is-danger' ? 'cbi-button-negative' : 'cbi-button-action')) +
+            (type ? ' ' + type : ''), 'click': callback }, label);
 }
 function block(title, right) {
     var children = [E('div', { 'class': 'tvg-card-title', 'role': 'heading', 'aria-level': '2' }, title)];
@@ -291,11 +293,10 @@ return view.extend({
         buttons = [enable, disable, enableLan, disableLan, pair, revoke, update];
 
         root = E('div', { 'class': 'tvg-console' }, [
-            E('link', { 'rel': 'stylesheet', 'href': STYLE + '?v=0.1.16-r19' }),
+            E('link', { 'rel': 'stylesheet', 'href': STYLE + '?v=0.1.16-r20' }),
             E('div', { 'class': 'tvg-header' }, [
                 E('div', {}, [
-                    E('div', { 'class': 'tvg-eyebrow' }, 'TVGUARD / PARENT ACCESS'),
-                    E('div', { 'class': 'tvg-page-heading', 'role': 'heading', 'aria-level': '2' }, '家长遥控'),
+                    E('div', { 'class': 'tvg-page-heading', 'role': 'heading', 'aria-level': '1' }, 'TV Guard · 家长遥控'),
                     E('p', { 'class': 'tvg-intro' }, '管理家长遥控服务、家中访问与配对设备，不影响现有的观看计时与断网策略。')
                 ]),
                 update

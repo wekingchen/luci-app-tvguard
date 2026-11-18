@@ -149,6 +149,7 @@ jobs:
           - LuCI 家长遥控及远程访问桌面/移动界面、配对码倒计时、精简状态、Token/Metrics 保护与诊断。
           - iPhone 独立 Web App 安全区修复、模式与奖励卡片微调、远程在线标签简化为「远程连接正常」；r18 更换静态 JS/CSS 版本地址，防止 r17 脚本缓存复用；未更改后台计时/控制/配对。
           - r19 修复 LuCI 家长遥控与远程访问的深色模式：配对码及辅助文字高对比、卡片标题隔离主题样式、两页共用 CSS 缓存版本更新；不涉及控制逻辑。
+          - r20 以「概览」作为统一视觉基准：设置、家长遥控、远程访问使用一致的透明卡片、指标、标题、原生 LuCI 按钮及手机响应布局。设置仍为原生 UCI 表单。
 
           ## 真机与发布验证
           - 用户已确认 N1 上正式控制、计时、局域网家长遥控及 https://tv.rqqr.de 外网访问正常。
@@ -219,7 +220,8 @@ jobs:
             fix/v0.1.16-r17-iphone-pwa \
             fix/v0.1.16-r17-release-asset-hygiene \
             fix/v0.1.16-r18-pwa-cache-bust \
-            fix/v0.1.16-r19-dark-console-contrast; do
+            fix/v0.1.16-r19-dark-console-contrast \
+            feat/v0.1.16-r20-overview-ui-unification; do
             encoded="${branch//\//%2F}"
             # Best-effort cleanup only; release success must not depend on an
             # already-deleted development branch.

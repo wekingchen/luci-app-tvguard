@@ -59,8 +59,11 @@ function nodeWithClass(root, name) {
     const css = fs.readFileSync('htdocs/luci-static/resources/view/tvguard/panel.css','utf8');
     assert(css.includes('.tvg-console') && css.includes('.tvg-status-grid'));
     assert(css.includes('.tvg-page-heading') && css.includes('background: transparent'), 'isolated heading styling is missing');
-    assert(css.includes('grid-template-columns: repeat(2, minmax(0,1fr))'), 'desktop two columns missing');
-    assert(css.includes('@media (max-width: 850px)') && css.includes('@media (max-width: 560px)'));
+    assert(css.includes('grid-template-columns: repeat(2,minmax(0,1fr))'), 'overview-style desktop two columns missing');
+    assert(css.includes('@media (max-width: 700px)') && css.includes('@media (max-width: 360px)'));
+    assert(css.includes('max-width: 980px'), 'console max width must align with overview');
+    assert(css.includes('border-radius: 12px; background: transparent; box-shadow: none'), 'console cards should match overview panels');
+    assert(css.includes('.tvg-settings-root .cbi-section'), 'native settings form is not themed');
     assert(css.includes('.tvg-device { flex-direction: column'), 'mobile device controls need vertical layout');
     assert(css.includes('.tvg-address { align-items: stretch; flex-direction: column'), 'mobile address stacking missing');
 
@@ -86,8 +89,12 @@ function nodeWithClass(root, name) {
     assert(nodeWithClass(p.tree,'tvg-console').length === 1);
     assert(nodeWithClass(p.tree,'tvg-stat').length === 3);
     assert(nodeWithClass(p.tree,'tvg-card').length === 4);
+    assert(strings(p.tree).includes('TV Guard · 家长遥控'), 'overview-style parent header missing');
+    assert(all(p.tree,x=>x.tag==='button').every(x=>
+        (x.className || '').split(/\s+/).includes('btn')),
+        'parent actions must use native overview LuCI buttons');
     assert(find(p.tree,'link').attrs.href.includes('panel.css'));
-    assert(find(p.tree,'link').attrs.href.includes('?v=0.1.16-r19'), 'LuCI parent CSS cache key stale');
+    assert(find(p.tree,'link').attrs.href.includes('?v=0.1.16-r20'), 'LuCI parent CSS cache key stale');
     const code = nodeWithClass(p.tree,'tvg-code')[0];
     assert(code && code.tag === 'code', 'pairing code must remain selectable code');
     const parentHeadings = nodeWithClass(p.tree,'tvg-card-title');
@@ -123,7 +130,11 @@ function nodeWithClass(root, name) {
     assert(all(t.tree,x=>x.className==='tvg-page-heading'&&strings(x).includes('远程访问')).length===1);
     assert(nodeWithClass(t.tree,'tvg-stat').length === 3);
     assert(nodeWithClass(t.tree,'tvg-card').length === 3);
-    assert(find(t.tree,'link').attrs.href.includes('?v=0.1.16-r19'), 'LuCI tunnel CSS cache key stale');
+    assert(strings(t.tree).includes('TV Guard · 远程访问'), 'overview-style tunnel header missing');
+    assert(all(t.tree,x=>x.tag==='button').every(x=>
+        (x.className || '').split(/\s+/).includes('btn')),
+        'tunnel actions must use native overview LuCI buttons');
+    assert(find(t.tree,'link').attrs.href.includes('?v=0.1.16-r20'), 'LuCI tunnel CSS cache key stale');
     const tunnelHeadings = nodeWithClass(t.tree,'tvg-card-title');
     assert(tunnelHeadings.length === 3 && tunnelHeadings.every(x =>
         x.tag === 'div' && x.attrs.role === 'heading' && x.attrs['aria-level'] === '2'),
