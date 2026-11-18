@@ -1,5 +1,13 @@
 # TV Guard · 家庭电视时间管理
 
+## 开发候选 · v0.1.16-r17（iPhone 主屏 Web App 修复）
+
+- iPhone「添加到主屏幕」后标题落在 iOS 状态栏后方，现已加入独立模式安全区留白，修正顶部标题与连接标签显示。
+- 同步调整卡片密度、当前模式选中状态、奖励按钮与儿童观看进度，家长模式不再展示无意义的进度条。
+- 不改 TVGuard 后台控制/配对、正式控制规则、Agent 或 Cloudflare Tunnel。
+- r17 的 IPK 需先完成 CI 和 iPhone 真机主屏视觉验收，**稳定版继续是 r16**，不提前更新 Release。
+- [iOS Web App 布局修复与验收](docs/PWA_IOS_LAYOUT.md)
+
 ## 当前稳定版 · v0.1.16-r16
 
 - **N1 主包**：luci-app-tvguard_0.1.16-16_all.ipk；原有 Android 6 电视 Agent 0.3.7 保持固定签名，已安装则无需重复安装。
