@@ -1,0 +1,76 @@
+#!/bin/sh
+# 家长遥控器管理员入口：仅供 LuCI 调用
+set -eu
+umask 077
+PATH=/usr/sbin:/usr/bin:/sbin:/bin
+export PATH
+ROOT=/mnt/mmcblk2p4/tvguard-remote
+SESSIONS="$ROOT/sessions"
+PAIR_DIR=/tmp/tvguard-remote
+PAIR="$PAIR_DIR/pair"
+ENABLED=/etc/tvguard/remote-enabled
+INIT=/etc/init.d/tvguard-remote
+require_storage() {
+    awk '$2=="/mnt/mmcblk2p4" && $3=="xfs" && index(","$4",",",rw,"){ok=1} END{exit !ok}' /proc/mounts ||
+        { echo '持久 XFS 分区未挂载，拒绝启用遥控器' >&2; exit 1; }
+    [ ! -L "$ROOT" ] && [ ! -L "$SESSIONS" ] || exit 1
+    mkdir -p "$ROOT"
+    chmod 700 "$ROOT"
+}
+random_hex() { dd if=/dev/urandom bs=1 count="$1" 2>/dev/null | od -An -tx1 | tr -d ' \n'; }
+status() {
+    enabled=false; listener=false; count=0
+    [ -f "$ENABLED" ] && [ "$(cat "$ENABLED")" = 1 ] && enabled=true
+    if command -v curl >/dev/null 2>&1; then
+        code="$(curl --max-time 2 -s -o /dev/null -w '%{http_code}' http://127.0.0.1:18765/ || :)"
+        [ "$code" = 200 ] && listener=true
+    fi
+    if [ -f "$SESSIONS" ]; then
+        count="$(awk -F'|' -v now="$(date +%s)" '$2>now {n++} END {print n+0}' "$SESSIONS")"
+    fi
+    printf '{"enabled":%s,"listener":%s,"paired":%s}\n' "$enabled" "$listener" "$count"
+}
+enable_remote() {
+    require_storage
+    command -v uhttpd >/dev/null 2>&1 || { echo 'uhttpd 未安装' >&2; exit 1; }
+    mkdir -p /etc/tvguard; chmod 700 /etc/tvguard
+    printf '1\n' > "$ENABLED"; chmod 600 "$ENABLED"
+    "$INIT" enable
+    if ! "$INIT" restart; then
+        printf '0\n' > "$ENABLED"
+        "$INIT" stop >/dev/null 2>&1 || :
+        echo '本机服务启动失败，已撤销启用状态' >&2
+        exit 1
+    fi
+    echo '家长遥控服务已启动：仅监听 127.0.0.1:18765'
+}
+disable_remote() {
+    printf '0\n' > "$ENABLED"
+    "$INIT" stop; "$INIT" disable
+    echo '家长遥控服务已停止，不影响电视控制核心'
+}
+issue_pair() {
+    require_storage
+    mkdir -p "$PAIR_DIR"; chmod 700 "$PAIR_DIR"
+    [ ! -L "$PAIR" ] || exit 1
+    code="$(random_hex 16)"
+    [ "$(printf '%s' "$code" | wc -c)" -eq 32 ] || exit 1
+    digest="$(printf '%s' "$code" | sha256sum | cut -d' ' -f1)"
+    end=$(( $(date +%s) + 300 ))
+    printf '%s|%s\n' "$digest" "$end" > "$PAIR.tmp"
+    chmod 600 "$PAIR.tmp"; mv -f "$PAIR.tmp" "$PAIR"
+    printf '一次性配对码（5 分钟内有效）：%s\n' "$code"
+}
+revoke_all() {
+    require_storage
+    rm -f "$SESSIONS" "$PAIR"
+    echo '已撤销所有已配对设备和未使用配对码'
+}
+case "$*" in
+    status) status ;;
+    enable) enable_remote ;;
+    disable) disable_remote ;;
+    pair) issue_pair ;;
+    revoke-all) revoke_all ;;
+    *) exit 2 ;;
+esac

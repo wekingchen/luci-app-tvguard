@@ -1,0 +1,5 @@
+#!/bin/sh
+case "$*" in
+    enable|disable|pair|revoke-all) exec /usr/libexec/tvguard-remote-admin "$1" ;;
+    *) exit 2 ;;
+esac
