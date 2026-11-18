@@ -28,7 +28,7 @@
 .tvg-console .tvg-card { background: #fff; border: 1px solid var(--tvg-border); border-radius: 16px; padding: 23px 24px; min-width: 0; box-shadow: 0 3px 16px rgba(19,38,71,.028); }
 .tvg-console .tvg-card-wide { grid-column: 1 / -1; }
 .tvg-console .tvg-card-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 15px; flex-wrap: wrap; }
-.tvg-console .tvg-card-title { font-size: 17px; margin: 0; font-weight: 750; letter-spacing: -.01em; }
+.tvg-console .tvg-card-header > .tvg-card-title { display: block; position: static; inset: auto; width: auto; height: auto; min-height: 0; padding: 0; margin: 0; border: 0; border-radius: 0; background: transparent; box-shadow: none; color: var(--tvg-text); font-size: 17px; font-weight: 750; letter-spacing: -.01em; line-height: 1.4; }
 .tvg-console .tvg-card-desc, .tvg-console .tvg-caption { color: var(--tvg-muted); font-size: 13px; line-height: 1.65; margin: 0 0 14px; }
 .tvg-console .tvg-caption { font-size: 12px; margin: 12px 0 0; }
 .tvg-console .tvg-card-desc strong { color: var(--tvg-text); }
@@ -63,8 +63,8 @@
 .tvg-console .tvg-data dt { color: var(--tvg-muted); }
 .tvg-console .tvg-data dd { margin: 0; font-weight: 600; overflow-wrap: anywhere; }
 .tvg-console .tvg-code-row { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; margin-top: 12px; }
-.tvg-console .tvg-code { display: inline-block; background: #f4f6fd; border: 1px dashed #b7c4df; border-radius: 11px; padding: 14px 18px; min-height: 52px; font-size: 22px; font-weight: 750; letter-spacing: .11em; line-height: 1.25; font-variant-numeric: tabular-nums; user-select: all; overflow-wrap: anywhere; }
-.tvg-console .tvg-code.is-expired { opacity: .55; text-decoration: line-through; user-select: none; }
+.tvg-console code.tvg-code { display: inline-block; background: #f4f6fd; color: #25344e !important; border: 1px dashed #b7c4df; border-radius: 11px; padding: 14px 18px; min-height: 52px; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 22px; font-weight: 750; letter-spacing: .11em; line-height: 1.25; font-variant-numeric: tabular-nums; user-select: all; overflow-wrap: anywhere; }
+.tvg-console code.tvg-code.is-expired { opacity: .75; text-decoration: line-through; user-select: none; }
 .tvg-console .tvg-devices { display: grid; gap: 11px; }
 .tvg-console .tvg-device { border: 1px solid var(--tvg-border); background: #fcfdff; border-radius: 13px; padding: 15px; display: flex; align-items: center; justify-content: space-between; gap: 16px; }
 .tvg-console .tvg-device-name { font-size: 14px; font-weight: 700; margin-bottom: 6px; }
@@ -103,13 +103,22 @@
     .tvg-console .tvg-secret-wrap .tvg-btn { width: 100%; }
 }
 @media (prefers-color-scheme: dark) {
-    .tvg-console { --tvg-text:#e6ecf8; --tvg-muted:#a6b2c6; --tvg-border:#33425c; --tvg-soft:#202c40; --tvg-accent:#91a5ff; }
+    .tvg-console { --tvg-text:#f1f5ff; --tvg-muted:#c4d0e4; --tvg-border:#415574; --tvg-soft:#23344e; --tvg-accent:#aec0ff; }
     .tvg-console .tvg-card, .tvg-console .tvg-stat { background: #19253a; }
     .tvg-console .tvg-btn { color: #e4eaf6; background: #25334a; }
     .tvg-console .tvg-btn:hover:not(:disabled) { background: #2f405d; }
     .tvg-console .tvg-btn.is-primary { background:#4e66d0; color:#fff; border-color:#4e66d0; }
     .tvg-console .tvg-btn.is-danger { color:#ffb9bd; background:#322a36; border-color:#704250; }
-    .tvg-console .tvg-address, .tvg-console .tvg-code { background: #202c40; }
+    /* LuCI theme may force native <code> foreground to dark ink. Enforce readable pairing code. */
+    .tvg-console code.tvg-code { background: #283c5a; color: #f7faff !important; border-color: #7891b9; }
+    .tvg-console .tvg-address { background: #23344e; }
+    .tvg-console .tvg-details summary { color: #d1dfff; }
+    .tvg-console .tvg-card-header > .tvg-card-title { color: #f1f5ff; background: transparent !important; }
+    .tvg-console .tvg-card-desc, .tvg-console .tvg-caption, .tvg-console .tvg-help,
+    .tvg-console .tvg-device-meta, .tvg-console .tvg-device-name, .tvg-console .tvg-footer {
+        color: var(--tvg-muted);
+    }
+    .tvg-console .tvg-device-name { color: var(--tvg-text); }
     .tvg-console .tvg-url { color: #aabaff; }
     .tvg-console .tvg-device { background: #1c2940; }
     .tvg-console .tvg-field { background:#202c40; color:#ecf0fa; border-color:#465570; }
