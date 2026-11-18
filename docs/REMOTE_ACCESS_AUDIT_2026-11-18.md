@@ -79,3 +79,11 @@
 ## r12 增补：Cookie 路径隔离
 
 浏览器 Cookie 默认不按 TCP 端口隔离。N1 的局域网 IP 可能同时承载 LuCI 80/443 和 TVGuard 18765；若 TVGuard 会话 Cookie 使用 Path=/，浏览器可能在同一 IP 上访问 LuCI 时也发送该 Cookie。为降低跨服务泄漏风险，TVGuard 家长授权 Cookie 固定 Path=/cgi-bin/tvg，仅随其专用 CGI 请求发送。Cookie 在 HTTP 局域网内仍为明文，不能因此消除局域网窃听风险。
+
+
+## r14 家长设备管理与 Cookie 持久性复核
+
+- 手机 UI 区分内网 HTTP 与外网 HTTPS；在 POST 已授予 Cookie 但响应不是 JSON 时通过只读状态查询确认，防止误判和重复使用一次性码。
+- LuCI 新增最多 4 台已授权设备的列表与单台撤销，使用摘要短 ID，绝不返回 Cookie 或完整 token hash；每个撤销操作先持久写入 tombstone，使并发旧进程不能恢复已撤销授权。
+- 有效旧版 30 天会话在安装钩子中可迁移为长期服务器授权，失效会话必须被过滤；新会话期限字段为 0，已配对 Chrome 普通模式通过 Cookie 滚动续期。无痕模式、Cookie 清理、浏览器最长有效期以及公网 Access 期限不受本系统控制。
+- HTTP 会话长期持有增加被网络窃听后滥用的持续时间风险，因此撤销按钮和 Access 外网身份验证均为强制安全功能。保持 PR Draft，r14 的实机回归与公网访问的 Cloudflare Access 负面测试仍待进行。
