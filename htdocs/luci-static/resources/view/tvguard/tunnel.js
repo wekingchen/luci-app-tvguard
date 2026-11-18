@@ -87,7 +87,10 @@ return view.extend({
         }
         function applyButtons() {
             buttons.forEach(function(b) { b.disabled = !!busy; });
-            if (!current || busy) return;
+            if (!current || busy) {
+                if (!current) buttons.forEach(function(x) { x.disabled = x !== refreshBtn; });
+                return;
+            }
             var running = current.container === 'running';
             var ready = !!current.configured && !!current.storage_ready && !!current.docker_ready;
             var owned = current.container !== 'foreign' && current.container !== 'unavailable';
@@ -167,11 +170,14 @@ return view.extend({
             if (confirmText && !window.confirm(confirmText)) return;
             busyUI(true);
             inform('操作进行中…');
+            var completed = false;
             return exec(MANAGE, [name]).then(function(msg) {
+                completed = true;
                 inform(msg || '操作已完成');
                 return exec(READ, ['status']).then(function(text) { renderState(JSON.parse(text)); });
             }).catch(function(err) {
-                inform('操作失败：' + String(err.message || err), true);
+                inform((completed ? '操作已执行，但状态刷新失败：' : '操作失败：') +
+                    String(err.message || err), true);
             }).finally(function() { busyUI(false); });
         }
         function saveToken() {
@@ -185,6 +191,7 @@ return view.extend({
                 return;
             busyUI(true);
             inform('正在安全保存 Token…');
+            var saved = false;
             return exec(MANAGE, ['prepare']).catch(function(err) {
                 throw new Error('准备临时目录失败：' + String(err.message || err));
             }).then(function() {
@@ -196,10 +203,12 @@ return view.extend({
                     throw new Error('保存到持久分区失败：' + String(err.message || err));
                 });
             }).then(function(msg) {
+                saved = true;
                 inform(msg || 'Tunnel Token 已更新');
                 return exec(READ, ['status']).then(function(text) { renderState(JSON.parse(text)); });
             }).catch(function(err) {
-                inform('保存失败：' + String(err.message || err), true);
+                inform((saved ? 'Token 已保存，但状态刷新失败：' : '保存失败：') +
+                    String(err.message || err), true);
             }).finally(function() {
                 input.value = '';
                 value = '';

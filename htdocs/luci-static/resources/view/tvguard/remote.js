@@ -74,7 +74,7 @@ return view.extend({
             '一次性配对码仅供当前可信设备使用');
         var errorText = E('div', { 'class': 'tvg-message', 'role': 'status', 'aria-live': 'polite' }, '');
         var issueDeadline = 0, latestCode = '', timer = null, root;
-        var enable, disable, enableLan, disableLan, pair, revoke, update;
+        var enable, disable, enableLan, disableLan, pair, revoke, update, copyCode;
 
         function report(msg, level) {
             errorText.textContent = msg || '';
@@ -97,6 +97,7 @@ return view.extend({
             var left = Math.max(0, Math.ceil((issueDeadline - Date.now()) / 1000));
             if (!left) {
                 pairCode.textContent = '配对码已过期';
+                copyCode.disabled = true;
                 pairCode.className = 'tvg-code is-expired';
                 pairTimer.textContent = '请重新生成一次性配对码';
                 latestCode = '';
@@ -113,6 +114,8 @@ return view.extend({
         function applyButtons() {
             buttons.forEach(function(b) { b.disabled = !!busy; });
             if (!current || busy) {
+                if (!current) buttons.forEach(function(b) { b.disabled = b !== update; });
+                if (copyCode) copyCode.disabled = !latestCode || !!busy;
                 deviceButtons.forEach(function(b) { b.disabled = true; });
                 return;
             }
@@ -123,6 +126,7 @@ return view.extend({
             pair.disabled = !current.listener;
             revoke.disabled = !(Number(current.paired) > 0);
             deviceButtons.forEach(function(b) { b.disabled = false; });
+            if (copyCode) copyCode.disabled = !latestCode;
         }
         function renderDevices(list) {
             deviceButtons = [];
@@ -216,7 +220,9 @@ return view.extend({
             if (confirmation && !window.confirm(confirmation)) return;
             lock(true);
             report('操作进行中…');
+            var actionCompleted = false;
             return exec(MANAGE, [name].concat(args || [])).then(function(result) {
+                actionCompleted = true;
                 if (name === 'pair') {
                     latestCode = result.replace(/^.*：/, '').trim();
                     if (!/^[0-9a-f]{32}$/.test(latestCode)) throw new Error('配对码格式异常');
@@ -224,17 +230,20 @@ return view.extend({
                     pairCode.textContent = latestCode;
                     pairCode.className = 'tvg-code';
                     tick();
+                    copyCode.disabled = false;
                     report('一次性配对码已生成，请在手机上输入');
                 } else {
                     report(result || '操作已完成');
                     if (name === 'revoke-all') {
                         latestCode = ''; issueDeadline = 0;
                         pairCode.textContent = '已有授权已撤销';
+                        copyCode.disabled = true;
                     }
                 }
                 return exec(READ, ['status']).then(function(text) { renderState(JSON.parse(text)); });
             }).catch(function(err) {
-                report('操作失败：' + String(err.message || err), 'error');
+                report((actionCompleted ? '操作已执行，但状态刷新失败：' : '操作失败：') +
+                    String(err.message || err), 'error');
             }).finally(function() { lock(false); });
         }
 
@@ -253,7 +262,7 @@ return view.extend({
             return run('revoke-all', '确认撤销所有家长设备？所有设备均需重新配对。');
         }, 'is-danger');
         update = button('刷新状态', refresh);
-        var copyCode = button('复制配对码', function() {
+        copyCode = button('复制配对码', function() {
             return copyText(latestCode);
         }, 'is-small');
         buttons = [enable, disable, enableLan, disableLan, pair, revoke, update];
