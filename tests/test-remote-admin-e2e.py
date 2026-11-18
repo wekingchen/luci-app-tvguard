@@ -29,7 +29,8 @@ with tempfile.TemporaryDirectory(prefix="tvguard-admin-e2e-") as temp:
     admin.chmod(0o700)
 
     def run(action):
-        return subprocess.run(["/bin/sh",str(admin),*action.split()],capture_output=True,text=True,timeout=8)
+        args=action if isinstance(action,list) else action.split()
+        return subprocess.run(["/bin/sh",str(admin),*args],capture_output=True,text=True,timeout=8)
 
     out=run("pair")
     assert out.returncode==0,(out.stderr,out.stdout)
@@ -57,6 +58,28 @@ with tempfile.TemporaryDirectory(prefix="tvguard-admin-e2e-") as temp:
     assert session.read_text().split("|")[1]=="0"
     state=json.loads(run("status").stdout)
     assert state["paired"]==1 and state["devices"][0]["expires"]==0
+    # 备注名写入独立 XFS 文件，不触碰原会话记录，支持中文和空格。
+    session_before=session.read_bytes()
+    longname="妙妙的 iPhone 17"
+    rename=run(["rename-device",state["devices"][0]["id"],longname])
+    assert rename.returncode==0,(rename.stdout,rename.stderr)
+    assert session.read_bytes()==session_before, "rename must not change pairing token/hash"
+    renamed=json.loads(run("status").stdout)
+    assert renamed["devices"][0]["label"]==longname,renamed
+    assert renamed["devices"][0]["name"]=="Previous device" or renamed["devices"][0]["name"]=="Browser"
+    alias_file=persistent/"device-names"/hashlib.sha256(b"old-session").hexdigest()
+    assert alias_file.read_text().strip()==longname
+    assert alias_file.stat().st_mode & 0o077==0, "alias file must be private"
+    # 重新执行管理程序仍可读取，模拟服务进程退出后重新进入。
+    assert json.loads(run("status").stdout)["devices"][0]["label"]==longname
+    for invalid_name in ("", "bad|split", 'bad"json', "bad\\slash", "a"*97, "new\nline", "tab\tinside"):
+        failed=run(["rename-device",state["devices"][0]["id"],invalid_name])
+        assert failed.returncode!=0,(invalid_name,failed.stdout,failed.stderr)
+        assert alias_file.read_text().strip()==longname, "invalid rename corrupted nickname"
+    unknown=run(["rename-device","0000000000000000","陌生设备"])
+    assert unknown.returncode!=0
+    assert json.loads(run("status").stdout)["devices"][0]["label"]==longname
+
     invalid=run("revoke-device not-a-valid-id")
     assert invalid.returncode!=0
     target=state["devices"][0]["id"]
@@ -65,6 +88,7 @@ with tempfile.TemporaryDirectory(prefix="tvguard-admin-e2e-") as temp:
     assert json.loads(run("status").stdout)["paired"]==0
     marker=persistent/"revoked"/hashlib.sha256(b"old-session").hexdigest()
     assert marker.exists(), "selective revoke marker missing"
+    assert not alias_file.exists(), "revoked device nickname should be purged"
     # 旧会话即使被并发 CGI 写回，仍不能绕过单台撤销。
     session.write_text(hashlib.sha256(b"old-session").hexdigest()+"|0|"+generation+"|0|Browser\n")
     assert json.loads(run("status").stdout)["paired"]==0
@@ -77,6 +101,7 @@ with tempfile.TemporaryDirectory(prefix="tvguard-admin-e2e-") as temp:
     assert new_generation!=generation and re.fullmatch(r"[0-9a-f]{64}",new_generation)
     assert not pairfile.exists() and not session.exists()
     assert not (persistent/"revoked").exists(), "revoke-all should clear stale per-device markers"
+    assert not (persistent/"device-names").exists(), "revoke-all should clear custom device names"
     session.write_text(hashlib.sha256(b"resurrected-session").hexdigest()+"|"+
                        str(int(time.time())+1200)+"|"+generation+"\n")
     assert json.loads(run("status").stdout)["paired"]==0
