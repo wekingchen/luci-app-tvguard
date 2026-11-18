@@ -135,12 +135,17 @@ const nextTick = () => new Promise(resolve => setImmediate(resolve));
   window.location.hostname = 'tv.example.org'; window.location.protocol = 'https:';
   reply(200,status);
   await call('refresh()');
-  assert.strictEqual(els.network.textContent,'远程连接正常');
+  assert.strictEqual(els.network.textContent,'远程连接 · 在线');
   await call("showPair()");
   assert.strictEqual(els.network.textContent,'远程连接 · 待配对');
   reply(200,status);
   await call('refresh()');
-  assert.strictEqual(els.network.textContent,'远程连接正常');
+  assert.strictEqual(els.network.textContent,'远程连接 · 在线');
+  // 同一格式也适用于外网异常与操作未确认状态，避免仅在线时特判。
+  await call("connectionState('连接异常')");
+  assert.strictEqual(els.network.textContent,'远程连接 · 连接异常');
+  await call("connectionState('操作待确认')");
+  assert.strictEqual(els.network.textContent,'远程连接 · 操作待确认');
   window.location.hostname = '192.168.101.99'; window.location.protocol = 'http:';
 
   console.log('PASS: iPhone PWA DOM/fetch, zero watch, pairing, offline, and no duplicate bonus after uncertain POST');
