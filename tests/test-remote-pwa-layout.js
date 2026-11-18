@@ -7,6 +7,11 @@ const html = fs.readFileSync(base+'index.html','utf8');
 const css = fs.readFileSync(base+'style.css','utf8');
 const js = fs.readFileSync(base+'app.js','utf8');
 const manifest = JSON.parse(fs.readFileSync(base+'manifest.webmanifest','utf8'));
+const makefile = fs.readFileSync('Makefile','utf8');
+const version = (makefile.match(/^PKG_VERSION:=(\S+)$/m) || [])[1];
+const release = (makefile.match(/^PKG_RELEASE:=(\d+)$/m) || [])[1];
+assert(version && release, 'Makefile version/release missing');
+const assetVersion = version + '-r' + release;
 
 assert(html.includes('viewport-fit=cover'), 'missing safe area viewport');
 assert(html.includes('apple-mobile-web-app-capable'), 'missing home screen app setting');
@@ -15,8 +20,8 @@ assert(html.includes('class="brand-copy"') && html.includes('<h1>TVGuard</h1>'))
 assert(html.includes('id="network"') && html.includes('aria-live="polite"'));
 assert(html.includes('id="watchProgress"') && html.includes('aria-valuenow="0"'));
 assert(html.includes('class="mode-note"'), 'status notice missing');
-assert(html.includes('/style.css?v=0.1.16-r17'), 'PWA CSS cache-busting missing');
-assert(html.includes('/app.js?v=0.1.16-r17'), 'PWA JS cache-busting missing');
+assert(html.includes('/style.css?v=' + assetVersion), 'PWA CSS URL must match package revision');
+assert(html.includes('/app.js?v=' + assetVersion), 'PWA JS URL must match package revision to avoid stale iPhone Web App code');
 assert(html.includes('目前未启用 Cloudflare Access'), 'external access wording must be honest');
 assert(!html.includes('Tunnel + Access'), 'must not claim Access is required');
 assert(css.includes('(display-mode: standalone)'), 'standalone media query missing');
