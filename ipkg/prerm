@@ -9,6 +9,12 @@ if [ "${1:-remove}" = upgrade ]; then
     exit 0
 fi
 
+# 卸载时停止独立遥控服务；升级不删除授权记录和后台配置。
+if [ "${1:-remove}" != upgrade ]; then
+    /etc/init.d/tvguard-remote stop 2>/dev/null || :
+    /etc/init.d/tvguard-remote disable 2>/dev/null || :
+fi
+
 # Stop integrated Bridge before removing/replacing its executable.
 # Keep one-time pairing key and persistent viewing data intact.
 /etc/init.d/tvguard-agent-bridge stop 2>/dev/null || :

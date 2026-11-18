@@ -6,7 +6,7 @@ set -eu
 
 ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
 VERSION="${1:-0.1.16}"
-RELEASE="${2:-3}"
+RELEASE="${2:-4}"
 OUT="$ROOT/dist"
 PACKAGE="luci-app-tvguard"
 ARCH="all"
@@ -50,6 +50,11 @@ for f in \
     usr/libexec/tvguard-tunnel \
     usr/libexec/tvguard-tunnel-read \
     usr/libexec/tvguard-tunnel-manage \
+    usr/libexec/tvguard-remote-admin \
+    usr/libexec/tvguard-remote-read \
+    usr/libexec/tvguard-remote-manage \
+    etc/init.d/tvguard-remote \
+    usr/share/tvguard-remote/www/cgi-bin/tvg \
     etc/init.d/tvguard-agent-bridge \
     www/cgi-bin/tvguard-agent \
     usr/libexec/tvguard-agent-billing-hint \

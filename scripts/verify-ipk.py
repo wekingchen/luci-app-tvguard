@@ -69,6 +69,14 @@ for name in (
     "usr/libexec/tvguard-soak",
     "usr/libexec/tvguard-soak-report",
     "usr/libexec/tvguard-daily-report",
+    "usr/libexec/tvguard-remote-admin",
+    "usr/libexec/tvguard-remote-read",
+    "usr/libexec/tvguard-remote-manage",
+    "etc/init.d/tvguard-remote",
+    "usr/share/tvguard-remote/www/cgi-bin/tvg",
+    "usr/share/tvguard-remote/www/index.html",
+    "usr/share/tvguard-remote/www/app.js",
+    "www/luci-static/resources/view/tvguard/remote.js",
     "usr/libexec/tvguard-tunnel",
     "usr/libexec/tvguard-tunnel-read",
     "usr/libexec/tvguard-tunnel-manage",
@@ -86,7 +94,7 @@ for name in (
 ):
     if name not in data:
         raise SystemExit(f"FAIL: missing installed file {name}")
-    if name.startswith("usr/libexec/") or name.startswith("etc/init.d/") or name.startswith("www/cgi-bin/"):
+    if name.startswith("usr/libexec/") or name.startswith("etc/init.d/") or name.startswith("www/cgi-bin/") or name == "usr/share/tvguard-remote/www/cgi-bin/tvg":
         assert data[name][0].mode & 0o111, f"{name} is not executable"
 assert "etc/tvguard/agent-bridge.key" not in data, "key must never be packaged"
 assert "conffiles" in control and b"agent-bridge.key" not in control["conffiles"][1]
