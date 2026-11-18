@@ -1,6 +1,6 @@
 # TVGuard 家长遥控器 · 受限预览版
 
-状态：v0.1.16-r11 开发候选；尚未经过 N1 真机验收。新增家长控制端完全独立，默认关闭。
+状态：v0.1.16-r12 开发候选；尚未经过 N1 真机验收。新增家长控制端完全独立，默认关闭。
 
 ## 第一阶段已开发
 
@@ -43,3 +43,7 @@ OpenWrt uhttpd 的 CGI 默认只转发特定 HTTP 头（Host/Origin/Referer/Cook
 ## r11 独立状态与撤销保护
 
 手机端只返回固定九个必要状态，不再透传 Agent/流量诊断字段。配对会话绑定服务端授权代际，LuCI 撤销全部设备后轮换代际，旧会话即使被并发进程写回也无法再登录。由于内部格式更新，从 r5-r9 开发预览版升级后需要重新配对一次。对于网络中断造成的 POST 操作结果不确定，手机会锁住控制按钮，直至成功刷新状态，以防重复奖励。本轮仍为开发候选，未经过 N1/iPhone 真机复验。
+
+## r12 受限 Cookie 与 Access 会话恢复
+
+家长授权 Cookie Path=/cgi-bin/tvg（浏览器 Cookie 不按 TCP 端口隔离），尽量避免请求同主机 LuCI 时发送。保留 HttpOnly、SameSite=Strict；外网 HTTPS 按严格 Origin/Referer 判定设置 Secure。Access 会话失效时，手机页面提供「重新打开页面」按钮，触发顶层导航以便完成 Cloudflare Access 登录。HTTP 家庭链路仍不是加密连接，不能防止同网段窃取 Cookie。
