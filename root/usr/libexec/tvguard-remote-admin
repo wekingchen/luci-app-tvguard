@@ -42,8 +42,8 @@ status() {
     enabled=false; listener=false; count=0
     [ -f "$ENABLED" ] && [ "$(cat "$ENABLED")" = 1 ] && enabled=true
     if command -v curl >/dev/null 2>&1; then
-        code="$(curl --max-time 2 -s -o /dev/null -w '%{http_code}' http://127.0.0.1:18765/ || :)"
-        [ "$code" = 200 ] && listener=true
+        code="$(curl --noproxy '*' --max-time 2 -s -o /dev/null -w '%{http_code}' 'http://127.0.0.1:18765/cgi-bin/tvg?action=status' 2>/dev/null || :)"
+        [ "$code" = 401 ] && listener=true
     fi
     if [ -f "$SESSIONS" ] && [ -s "$GENERATION" ] && [ ! -L "$GENERATION" ]; then
         current="$(cat "$GENERATION")"
@@ -66,10 +66,26 @@ enable_remote() {
     mkdir -p /etc/tvguard; chmod 700 /etc/tvguard
     printf '1\n' > "$ENABLED"; chmod 600 "$ENABLED"
     "$INIT" enable
-    if ! "$INIT" restart; then
+    ready=0
+    if "$INIT" restart; then
+        attempts=0
+        while [ "$attempts" -lt 5 ]; do
+            # 用匿名 CGI 预期 401 而非仅凭进程或首页 200 判断服务就绪。
+            probe="$(curl --noproxy '*' --max-time 2 -s -o /dev/null -w '%{http_code}' \
+                'http://127.0.0.1:18765/cgi-bin/tvg?action=status' 2>/dev/null || :)"
+            if [ "$probe" = 401 ]; then
+                ready=1
+                break
+            fi
+            attempts=$((attempts + 1))
+            sleep 1
+        done
+    fi
+    if [ "$ready" != 1 ]; then
         printf '0\n' > "$ENABLED"
         "$INIT" stop >/dev/null 2>&1 || :
-        echo '本机服务启动失败，已撤销启用状态' >&2
+        "$INIT" disable >/dev/null 2>&1 || :
+        echo '家长遥控 API 未达到预期 401，就绪检查失败；已回退为关闭状态' >&2
         exit 1
     fi
     echo '家长遥控服务已启动：仅监听 127.0.0.1:18765'
