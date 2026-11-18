@@ -59,11 +59,19 @@
 - 恢复网络、后台返回、Cloudflare 重连时只刷新状态，不重放有副作用的奖励/模式指令。
 - 完成开机、OTA、XFS 挂载延迟、Docker 重启、Agent 保活与正式控制状态保持的联动回归。
 
+## r11 代码审计补强
+
+- 独立手机状态 API 固定只输出 mode、watch_seconds、remaining_seconds、quota_seconds、bonus_seconds、bonus_limit_seconds、bonus_undo_available、enforce、blocked 九个字段，jsonfilter 被声明为运行依赖。缺失或非法字段时不回退泄漏原始 TVGuard JSON。
+- 配对会话采用持久授权代际校验，LuCI 撤销全部设备先轮换代际；即使在途配对随后写回旧会话也无法重新授权。之前的两字段开发版会话不兼容，升级预览版后需要重新配对。
+- 独立 uhttpd 启动后验证匿名 CGI 确实返回 HTTP 401，检查失败则关闭服务；新增模拟 init/curl 实际启停测试。
+- iPhone 断网导致奖励 POST 结果不确定时，按钮保持禁用直至刷新状态成功，防止重复加时；通过真实 app.js DOM/fetch 自动化用例。
+- 以上为源码与 CI 证明，还未在 N1 的 BusyBox/uhttpd 以及真实 iPhone Safari 中完整复验。不会以自动测试替代实机。
+
 ## 门禁状态
 
 - **已通过**：源码语法、IPK 构建、tvguardctl 调用格式复核、随机数无 od 测试、Origin 负面用例、CGI 模拟配对/会话/控制测试、配对并发/上限测试。
 - **未通过真实设备验收**：r9 修改后的 iPhone 配对、局域网模式/奖励操作、系统重启与 OTA 后恢复。
-- **尚未实现**：数据最小化、Access 身份与 JWT 强制验签、iOS 单一图标切换。
+- **尚未完成**：Access 身份与 JWT 强制验签、iOS 单一图标切换；数据最小化已通过自动测试但仍需 N1 实测。
 - **处理原则**：P0 全部关闭前保持 PR Draft，不合并 main，不发布正式 Release。不得删除失败的测试以凑绿色。
 
 仓库 tools/tvguard-remote-preflight.sh 提供只读现场检查，但不能替代真实 iPhone 和 Cloudflare Access 测试。

@@ -24,6 +24,23 @@ if [ -x /usr/libexec/tvguard-status ]; then
 else
     bad 'tvguard-status 不存在'
 fi
+if command -v jsonfilter >/dev/null 2>&1; then
+    pass 'jsonfilter 运行时依赖已安装'
+else
+    bad '缺少 jsonfilter：手机状态白名单将无法解析'
+fi
+if [ -x /usr/libexec/tvguard-remote-status ]; then
+    minimal="$(/usr/libexec/tvguard-remote-status 2>/dev/null || :)"
+    if printf '%s\n' "$minimal" | grep -q '"watch_seconds":' &&
+       ! printf '%s\n' "$minimal" | grep -q '"agent_'; then
+        pass '家长手机状态接口最小化'
+    else
+        bad '家长手机状态生成失败或包含内部字段'
+    fi
+    unset minimal
+else
+    bad '家长状态白名单程序缺失'
+fi
 if [ -x /usr/libexec/tvguard-random-hex ]; then
     p="$(/usr/libexec/tvguard-random-hex 16 2>/dev/null || :)"
     s="$(/usr/libexec/tvguard-random-hex 32 2>/dev/null || :)"
