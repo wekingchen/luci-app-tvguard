@@ -6,6 +6,7 @@ PATH=/usr/sbin:/usr/bin:/sbin:/bin
 export PATH
 ROOT=/mnt/mmcblk2p4/tvguard-remote
 SESSIONS="$ROOT/sessions"
+REVOKED="$ROOT/revoked"
 GENERATION="$ROOT/generation"
 PAIR_DIR=/tmp/tvguard-remote
 PAIR="$PAIR_DIR/pair"
@@ -16,7 +17,7 @@ INIT=/etc/init.d/tvguard-remote
 require_storage() {
     awk '$2=="/mnt/mmcblk2p4" && $3=="xfs" && index("," $4 ",", ",rw,"){ok=1} END{exit !ok}' /proc/mounts ||
         { echo '持久 XFS 分区未挂载，拒绝启用遥控器' >&2; exit 1; }
-    [ ! -L "$ROOT" ] && [ ! -L "$SESSIONS" ] && [ ! -L "$GENERATION" ] || exit 1
+    [ ! -L "$ROOT" ] && [ ! -L "$SESSIONS" ] && [ ! -L "$GENERATION" ] && [ ! -L "$REVOKED" ] || exit 1
     mkdir -p "$ROOT"
     chmod 700 "$ROOT"
 }
@@ -38,6 +39,76 @@ ensure_generation() {
     [ "$(printf '%s' "$value" | wc -c)" -eq 64 ] || exit 1
     case "$value" in *[!0-9a-f]*) exit 1 ;; esac
 }
+# 服务端长期授权使用 expiry=0，兼容旧版带到期时间的会话行。
+session_active() {
+    case "$1" in ''|*[!0-9]*) return 1 ;; esac
+    [ "${#1}" -le 12 ] || return 1
+    [ "$1" = 0 ] || [ "$1" -gt "$2" ]
+}
+valid_hash() {
+    [ "${#1}" -eq 64 ] || return 1
+    case "$1" in *[!0-9a-f]*) return 1 ;; esac
+}
+safe_label() {
+    case "$1" in
+        'iPhone Chrome'|'iPhone Safari'|'iPhone Firefox'|'iPhone Browser'|'iPad Browser'|'Android Browser'|'Desktop Browser'|'Browser'|'Previous device')
+            printf '%s' "$1" ;;
+        *) printf 'Browser' ;;
+    esac
+}
+migrate_sessions() {
+    require_storage
+    [ -f "$SESSIONS" ] || return 0
+    [ -s "$GENERATION" ] || return 1
+    current="$(cat "$GENERATION")"
+    valid_hash "$current" || return 1
+    now="$(date +%s)"
+    temp="$(mktemp "$ROOT/sessions.XXXXXX")" || return 1
+    while IFS='|' read -r hashed expiry stored_gen created name; do
+        valid_hash "$hashed" || continue
+        [ "$stored_gen" = "$current" ] || continue
+        session_active "$expiry" "$now" || continue
+        [ ! -e "$REVOKED/$hashed" ] || continue
+        case "$created" in ''|*[!0-9]*) created=0 ;; esac
+        [ "${#created}" -le 12 ] || created=0
+        [ -n "$name" ] || name='Previous device'
+        name="$(safe_label "$name")"
+        printf '%s|0|%s|%s|%s\n' "$hashed" "$current" "$created" "$name" >> "$temp"
+    done < "$SESSIONS"
+    chmod 600 "$temp"
+    mv -f "$temp" "$SESSIONS"
+}
+revoke_device() {
+    require_storage
+    id="${1:-}"
+    [ "${#id}" -eq 16 ] || { echo '设备识别码无效' >&2; return 1; }
+    case "$id" in *[!0-9a-f]*) echo '设备识别码无效' >&2; return 1 ;; esac
+    [ -f "$SESSIONS" ] && [ -s "$GENERATION" ] || return 1
+    current="$(cat "$GENERATION")"
+    valid_hash "$current" || return 1
+    now="$(date +%s)"
+    matched=''
+    hits=0
+    while IFS='|' read -r hashed expiry gen created name; do
+        valid_hash "$hashed" || continue
+        [ "$gen" = "$current" ] || continue
+        session_active "$expiry" "$now" || continue
+        [ ! -e "$REVOKED/$hashed" ] || continue
+        [ "$(printf '%s' "$hashed" | cut -c1-16)" = "$id" ] || continue
+        matched="$hashed"
+        hits=$((hits + 1))
+    done < "$SESSIONS"
+    [ "$hits" -eq 1 ] || { echo '设备不存在或识别码冲突' >&2; return 1; }
+    mkdir -p "$REVOKED"; chmod 700 "$REVOKED"
+    [ ! -L "$REVOKED/$matched" ] || return 1
+    # 先写入撤销标记，防止并发 CGI 写回被撤销会话。
+    printf 'revoked\n' > "$REVOKED/$matched"
+    chmod 600 "$REVOKED/$matched"
+    temp="$(mktemp "$ROOT/sessions.XXXXXX")" || return 1
+    awk -F'|' -v id="$matched" '$1!=id' "$SESSIONS" > "$temp"
+    chmod 600 "$temp"; mv -f "$temp" "$SESSIONS"
+    echo '此家长设备授权已撤销'
+}
 status() {
     enabled=false; listener=false; count=0
     [ -f "$ENABLED" ] && [ "$(cat "$ENABLED")" = 1 ] && enabled=true
@@ -45,9 +116,27 @@ status() {
         code="$(curl --noproxy '*' --max-time 2 -s -o /dev/null -w '%{http_code}' 'http://127.0.0.1:18765/cgi-bin/tvg?action=status' 2>/dev/null || :)"
         [ "$code" = 401 ] && listener=true
     fi
-    if [ -f "$SESSIONS" ] && [ -s "$GENERATION" ] && [ ! -L "$GENERATION" ]; then
+    entries=''
+    separator=''
+    if [ -f "$SESSIONS" ] && [ ! -L "$SESSIONS" ] &&
+       [ -s "$GENERATION" ] && [ ! -L "$GENERATION" ] && [ ! -L "$REVOKED" ]; then
         current="$(cat "$GENERATION")"
-        count="$(awk -F'|' -v now="$(date +%s)" -v gen="$current" '$2>now && $3==gen {n++} END {print n+0}' "$SESSIONS")"
+        now="$(date +%s)"
+        if valid_hash "$current"; then
+            while IFS='|' read -r stored_hash until_at stored_gen paired_at name; do
+                valid_hash "$stored_hash" || continue
+                [ "$stored_gen" = "$current" ] || continue
+                session_active "$until_at" "$now" || continue
+                [ ! -e "$REVOKED/$stored_hash" ] || continue
+                id="$(printf '%s' "$stored_hash" | cut -c1-16)"
+                case "$paired_at" in ''|*[!0-9]*) paired_at=0 ;; esac
+                [ "${#paired_at}" -le 12 ] || paired_at=0
+                name="$(safe_label "$name")"
+                entries="${entries}${separator}{\"id\":\"$id\",\"name\":\"$name\",\"paired_at\":$paired_at,\"expires\":$until_at}"
+                separator=','
+                count=$((count + 1))
+            done < "$SESSIONS"
+        fi
     fi
     lan_enabled=false; lan_url=''
     if [ -f "$LAN_ENABLED" ] && [ "$(cat "$LAN_ENABLED")" = 1 ]; then
@@ -57,8 +146,8 @@ status() {
             lan_url="http://$addr:18765/"
         fi
     fi
-    printf '{"enabled":%s,"listener":%s,"paired":%s,"lan_enabled":%s,"lan_url":"%s"}\n' \
-        "$enabled" "$listener" "$count" "$lan_enabled" "$lan_url"
+    printf '{"enabled":%s,"listener":%s,"paired":%s,"devices":[%s],"lan_enabled":%s,"lan_url":"%s"}\n' \
+        "$enabled" "$listener" "$count" "$entries" "$lan_enabled" "$lan_url"
 }
 enable_remote() {
     require_storage
@@ -152,10 +241,13 @@ revoke_all() {
     require_storage
     rotate_generation
     rm -f "$SESSIONS" "$PAIR"
+    [ ! -L "$REVOKED" ] && rm -rf "$REVOKED"
     echo '已撤销所有已配对设备和未使用配对码'
 }
 case "$*" in
     status) status ;;
+    migrate) migrate_sessions ;;
+    revoke-device) revoke_device "$2" ;;
     enable) enable_remote ;;
     disable) disable_remote ;;
     enable-lan) enable_lan ;;
