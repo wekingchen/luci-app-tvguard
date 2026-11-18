@@ -94,7 +94,7 @@ function nodeWithClass(root, name) {
         (x.className || '').split(/\s+/).includes('btn')),
         'parent actions must use native overview LuCI buttons');
     assert(find(p.tree,'link').attrs.href.includes('panel.css'));
-    assert(find(p.tree,'link').attrs.href.includes('?v=0.1.16-r23'), 'LuCI parent CSS cache key stale');
+    assert(find(p.tree,'link').attrs.href.includes('?v=0.1.16-r24'), 'LuCI parent CSS cache key stale');
     const code = nodeWithClass(p.tree,'tvg-code')[0];
     assert(code && code.tag === 'code', 'pairing code must remain selectable code');
     const parentHeadings = nodeWithClass(p.tree,'tvg-card-title');
@@ -135,7 +135,7 @@ function nodeWithClass(root, name) {
     assert(all(t.tree,x=>x.tag==='button').every(x=>
         (x.className || '').split(/\s+/).includes('btn')),
         'tunnel actions must use native overview LuCI buttons');
-    assert(find(t.tree,'link').attrs.href.includes('?v=0.1.16-r23'), 'LuCI tunnel CSS cache key stale');
+    assert(find(t.tree,'link').attrs.href.includes('?v=0.1.16-r24'), 'LuCI tunnel CSS cache key stale');
     const tunnelHeadings = nodeWithClass(t.tree,'tvg-card-title');
     assert(tunnelHeadings.length === 3 && tunnelHeadings.every(x =>
         x.tag === 'div' && x.attrs.role === 'heading' && x.attrs['aria-level'] === '2'),
