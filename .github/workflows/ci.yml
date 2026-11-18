@@ -22,6 +22,10 @@ jobs:
             sh -n "$file"
             dash -n "$file"
           done
+      - name: Validate read-only N1 preflight script syntax
+        run: |
+          sh -n tools/tvguard-remote-preflight.sh
+          dash -n tools/tvguard-remote-preflight.sh
       - name: Validate standalone CGI and LAN helper syntax
         run: |
           sh -n root/usr/share/tvguard-remote/www/cgi-bin/tvg
