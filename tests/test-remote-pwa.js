@@ -135,7 +135,12 @@ const nextTick = () => new Promise(resolve => setImmediate(resolve));
   window.location.hostname = 'tv.example.org'; window.location.protocol = 'https:';
   reply(200,status);
   await call('refresh()');
-  assert.strictEqual(els.network.textContent,'Cloudflare Tunnel · 在线');
+  assert.strictEqual(els.network.textContent,'远程连接正常');
+  await call("showPair()");
+  assert.strictEqual(els.network.textContent,'远程连接 · 待配对');
+  reply(200,status);
+  await call('refresh()');
+  assert.strictEqual(els.network.textContent,'远程连接正常');
   window.location.hostname = '192.168.101.99'; window.location.protocol = 'http:';
 
   console.log('PASS: iPhone PWA DOM/fetch, zero watch, pairing, offline, and no duplicate bonus after uncertain POST');
