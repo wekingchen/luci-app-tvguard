@@ -41,7 +41,7 @@ assert "Path=/cgi-bin/tvg" in cgi
 assert 'claim="$(mktemp "$PAIR.claim.XXXXXX")"' in cgi and 'mv -f "$PAIR" "$claim"' in cgi
 assert 'trap \'rm -f "$claim"\' EXIT' in cgi
 assert 'pair.lock' not in cgi
-assert cgi.index("device_limit") < cgi.index('mv "$PAIR" "$claim"')
+assert cgi.index("device_limit") < cgi.index('mv -f "$PAIR" "$claim"')
 assert "new_random" in cgi and "tvguard-random-hex" in cgi
 assert 'GENERATION="$ROOT/generation"' in cgi
 assert '$3==gen' in cgi
