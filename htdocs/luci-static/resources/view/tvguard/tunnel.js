@@ -242,7 +242,7 @@ return view.extend({
         ]);
 
         var page = E('div', { 'class': 'tvg-console' }, [
-            E('link', { 'rel': 'stylesheet', 'href': STYLE + '?v=0.1.16-r16' }),
+            E('link', { 'rel': 'stylesheet', 'href': STYLE + '?v=0.1.16-r19' }),
             E('div', { 'class': 'tvg-header' }, [
                 E('div', {}, [
                     E('div', { 'class': 'tvg-eyebrow' }, 'TVGUARD / REMOTE ACCESS'),
@@ -258,7 +258,7 @@ return view.extend({
             E('div', { 'class': 'tvg-layout' }, [
                 E('section', { 'class': 'tvg-card' }, [
                     E('div', { 'class': 'tvg-card-header' }, [
-                        E('h3', { 'class': 'tvg-card-title' }, '外网家长遥控'),
+                        E('div', { 'class': 'tvg-card-title', 'role': 'heading', 'aria-level': '2' }, '外网家长遥控'),
                         badge('公网 HTTPS')
                     ]),
                     E('p', { 'class': 'tvg-card-desc' },
@@ -279,7 +279,7 @@ return view.extend({
                 ]),
                 E('section', { 'class': 'tvg-card' }, [
                     E('div', { 'class': 'tvg-card-header' }, [
-                        E('h3', { 'class': 'tvg-card-title' }, 'Tunnel 服务'),
+                        E('div', { 'class': 'tvg-card-title', 'role': 'heading', 'aria-level': '2' }, 'Tunnel 服务'),
                         runBadge
                     ]),
                     summaryText,
@@ -300,7 +300,7 @@ return view.extend({
                 ]),
                 E('section', { 'class': 'tvg-card tvg-card-wide' }, [
                     E('div', { 'class': 'tvg-card-header' }, [
-                        E('h3', { 'class': 'tvg-card-title' }, '维护与诊断'),
+                        E('div', { 'class': 'tvg-card-title', 'role': 'heading', 'aria-level': '2' }, '维护与诊断'),
                         detailsBadge
                     ]),
                     E('p', { 'class': 'tvg-card-desc' },
