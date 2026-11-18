@@ -1,6 +1,15 @@
 # TV Guard · 家庭电视时间管理
 
-## 当前稳定版 · v0.1.16-r22（家长遥控连接状态格式统一）
+## 当前稳定版 · v0.1.16-r23（Cloudflare Tunnel HTTP/2 稳定性修复）
+
+- **N1 主包**：`luci-app-tvguard_0.1.16-23_all.ipk`；电视 Agent 仍为原签名 0.3.7，不需重装。
+- N1 实测：TVGuard 与 ntfy 的 QUIC/UDP 长连接多次超时，Vaultwarden 的 HTTP/2/TCP 连接相对稳定。因此只把 **tvguard-cloudflared 固定为 HTTP/2（TCP 7844）**，不改 Vaultwarden、ntfy 或 N1 全局网络。
+- 新建容器直接传入 `cloudflared tunnel --no-autoupdate --protocol http2 … run --token-file`；更新旧主包后，若 TVGuard 专用 Tunnel 正在运行，自动进行一次性迁移。对已停用容器不擅自启动。
+- 自动迁移仅处理带原 TVGuard 所有权标签的同名容器：停止并暂存旧容器，创建 HTTP/2 容器；**只在日志中出现实际 `Registered tunnel connection … protocol=http2` 后清理旧容器**。失败时恢复旧容器与运行状态。XFS Token、容器权限、Metrics 回环地址保持原样。
+- LuCI「远程访问」可查看启动协议；不以 Docker `running` 冒充 Cloudflare 健康连通。新增模拟 Docker 生命周期测试，覆盖迁移、握手失败回退、异物拒绝和重复重启。
+- 不修改儿童计时、Agent、配对授权、Bark、Tunnel Token、Cloudflare 配置或 iPhone 快捷指令。**N1 真机是否稳定仍需检查新容器日志和蜂窝访问。**
+
+## 上一稳定版 · v0.1.16-r22（家长遥控连接状态格式统一）
 
 - **N1 主包**：`luci-app-tvguard_0.1.16-22_all.ipk`，电视 Agent 仍为 `0.3.7`，无需重装。
 - iPhone 家长遥控 Web App 将连接标签统一成 **「连接方式 · 状态」**：家中为「内网直连 · 在线」，外网为「远程连接 · 在线」。

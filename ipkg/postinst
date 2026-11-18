@@ -203,5 +203,18 @@ fi
 if [ -f /etc/tvguard/remote-enabled ] && [ "$(cat /etc/tvguard/remote-enabled)" = 1 ]; then
     /etc/init.d/tvguard-remote restart 2>/dev/null || echo 'TVGuard: parent remote service restart failed' >&2
 fi
+
+# r23: upgrade only an ALREADY RUNNING, TVGuard-owned legacy cloudflared
+# container. New installs and deliberately stopped Tunnels stay untouched.
+# The controller itself verifies ownership, XFS/Token/image, and restores the
+# original container if the new HTTP/2 edge connection cannot register.
+# This best-effort migration must never fail the core TVGuard installation.
+if command -v docker >/dev/null 2>&1 &&
+   docker container inspect tvguard-cloudflared >/dev/null 2>&1 &&
+   [ "$(docker inspect -f '{{index .Config.Labels "org.tvguard.owner"}}' tvguard-cloudflared 2>/dev/null || :)" = luci-app-tvguard ] &&
+   [ "$(docker inspect -f '{{.State.Running}}' tvguard-cloudflared 2>/dev/null || :)" = true ]; then
+    /usr/libexec/tvguard-tunnel start ||
+        echo 'TVGuard: HTTP/2 upgrade could not be confirmed; old Tunnel should remain in place, inspect container logs' >&2
+fi
 rm -rf "$UPGRADE"
 exit 0

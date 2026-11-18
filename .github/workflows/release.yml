@@ -152,6 +152,7 @@ jobs:
           - r20 以「概览」作为统一视觉基准：设置、家长遥控、远程访问使用一致的透明卡片、指标、标题、原生 LuCI 按钮及手机响应布局。设置仍为原生 UCI 表单。
           - r21 将相同视觉规范扩展到独立家长遥控 Web App：透明细边卡片、灰阶统计块、紧凑层级、深浅色可读性与 44px 触控目标；保留 iPhone 安全区和原控制逻辑。
           - r22 统一家长遥控右上角连接标签格式：内网直连 · 在线 / 远程连接 · 在线；待配对、连接异常和操作待确认也使用「连接方式 · 状态」，控制与授权不变。
+          - r23 TVGuard 专用 cloudflared 固定 HTTP/2（TCP 7844）；只对运行中、所有权匹配的旧容器升级，连接成功后清理暂存旧容器，失败恢复旧容器；保持 Token、容器隔离与其它 Tunnel 不变。
 
           ## 真机与发布验证
           - 用户已确认 N1 上正式控制、计时、局域网家长遥控及 https://tv.rqqr.de 外网访问正常。
@@ -225,7 +226,8 @@ jobs:
             fix/v0.1.16-r19-dark-console-contrast \
             feat/v0.1.16-r20-overview-ui-unification \
             feat/v0.1.16-r21-pwa-overview-polish \
-            fix/v0.1.16-r22-connection-status-format; do
+            fix/v0.1.16-r22-connection-status-format \
+            fix/v0.1.16-r23-cloudflared-http2; do
             encoded="${branch//\//%2F}"
             # Best-effort cleanup only; release success must not depend on an
             # already-deleted development branch.
