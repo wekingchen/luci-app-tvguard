@@ -87,7 +87,7 @@ Maintainer: TV Guard contributors
 Section: luci
 Priority: optional
 Installed-Size: $INSTALLED_SIZE
-Depends: luci-base, rpcd, curl, uhttpd
+Depends: luci-base, rpcd, curl, uhttpd, jsonfilter
 Conflicts: tvguard-agent-bridge
 Replaces: tvguard-agent-bridge
 Provides: tvguard-agent-bridge

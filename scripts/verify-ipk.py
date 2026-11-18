@@ -44,7 +44,7 @@ for field in (
     "Package: luci-app-tvguard",
     f"Version: {version}-{release}",
     "Architecture: all",
-    "Depends: luci-base, rpcd, curl, uhttpd",
+    "Depends: luci-base, rpcd, curl, uhttpd, jsonfilter",
     "Conflicts: tvguard-agent-bridge",
     "Replaces: tvguard-agent-bridge",
     "Provides: tvguard-agent-bridge",
