@@ -185,18 +185,30 @@ rebuild() {
     backup=tvguard-cloudflared-rebuild-backup
     docker container inspect "$backup" >/dev/null 2>&1 &&
         die "已有重建备份容器，请先人工检查，拒绝覆盖"
+    mkdir -p /tmp/tvguard-tunnel
+    [ ! -L /tmp/tvguard-tunnel ] || die "临时目录路径异常"
+    mkdir /tmp/tvguard-tunnel/rebuild.lock 2>/dev/null || die "已有重建操作正在执行"
+    trap 'rmdir /tmp/tvguard-tunnel/rebuild.lock 2>/dev/null || :' EXIT HUP INT TERM
     running="$(docker inspect -f '{{.State.Running}}' "$NAME")"
     docker stop "$NAME" >/dev/null || die "无法停止原容器"
     if ! docker rename "$NAME" "$backup"; then
         [ "$running" != true ] || docker start "$NAME" >/dev/null 2>&1 || :
         die "保留旧容器失败，未进行重建"
     fi
-    # 新容器仅在 Docker 报告运行时才替换原容器，否则恢复。
+    # 需要同时看到注册成功日志与本机 metrics 响应；单纯 running 不算健康。
     success=0
     if create_container; then
-        if [ "$(docker inspect -f '{{.State.Running}}' "$NAME" 2>/dev/null || :)" = true ]; then
-            success=1
-        fi
+        tries=0
+        while [ "$tries" -lt 8 ]; do
+            [ "$(docker inspect -f '{{.State.Running}}' "$NAME" 2>/dev/null || :)" = true ] || break
+            if docker logs --tail 150 "$NAME" 2>&1 | grep -q 'Registered tunnel connection' &&
+               curl -fsS --max-time 2 http://127.0.0.1:20241/metrics >/dev/null 2>&1; then
+                success=1
+                break
+            fi
+            tries=$((tries + 1))
+            sleep 2
+        done
     fi
     if [ "$success" = 1 ]; then
         docker rm "$backup" >/dev/null || :

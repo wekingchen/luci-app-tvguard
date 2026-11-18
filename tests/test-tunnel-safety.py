@@ -28,6 +28,9 @@ assert "--token-file /etc/tvguard/token" in src
 assert '--mount "type=bind,src=$DATA,dst=/etc/tvguard,readonly"' in src
 assert "--metrics 127.0.0.1:20241" in src
 assert 'docker rename' in src
+assert 'Registered tunnel connection' in src
+assert '127.0.0.1:20241/metrics' in src
+assert 'rebuild.lock' in src
 assert "runAction('rebuild'" in page
 assert "--cap-drop ALL" in src
 assert "no-new-privileges:true" in src

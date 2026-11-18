@@ -27,7 +27,7 @@ async function request(method, action, body) {
     }
     return json;
 }
-function showPair() { $('main').classList.add('hidden'); $('pair').classList.remove('hidden'); $('network').textContent = '待配对'; }
+function showPair() { session = null; $('main').classList.add('hidden'); $('pair').classList.remove('hidden'); $('network').textContent = '待配对'; }
 function showMain() { $('main').classList.remove('hidden'); $('pair').classList.add('hidden'); $('network').textContent = '已连接'; }
 function paint(s) {
     session = s;
