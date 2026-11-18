@@ -26,6 +26,7 @@ jobs:
         run: |
           sh -n root/usr/share/tvguard-remote/www/cgi-bin/tvg
           sh -n root/usr/libexec/tvguard-remote-lan-ip
+          sh -n root/usr/libexec/tvguard-random-hex
       - name: Validate LuCI JSON and JavaScript syntax
         shell: bash
         run: |
@@ -54,6 +55,8 @@ jobs:
         run: dash tests/test-daily-report.sh
       - name: Validate LuCI settings hierarchy and safety
         run: node tests/test-settings-ui.js
+      - name: Verify random generation without od/hexdump/xxd
+        run: sh tests/test-remote-random.sh
       - name: Validate standalone parent remote safety
         run: python3 tests/test-parent-remote-safety.py
       - name: Validate Cloudflare Tunnel management permissions
@@ -192,17 +195,17 @@ jobs:
       - name: Build and validate OpenWrt-compatible development IPK
         run: |
           set -eu
-          sh scripts/build-ipk.sh 0.1.16 7
-          PKG=dist/luci-app-tvguard_0.1.16-7_all.ipk
+          sh scripts/build-ipk.sh 0.1.16 8
+          PKG=dist/luci-app-tvguard_0.1.16-8_all.ipk
           test -f "$PKG"
           # OpenWrt ipkg-build uses gzip-compressed tar, not Debian ar.
           test "$(od -An -tx1 -N2 "$PKG" | tr -d ' \n')" = 1f8b
           tar -tzf "$PKG" | grep -q './control.tar.gz'
-          python3 scripts/verify-ipk.py "$PKG" 0.1.16 7
+          python3 scripts/verify-ipk.py "$PKG" 0.1.16 8
           sha256sum "$PKG"
       - name: Upload development IPK
         uses: actions/upload-artifact@v4
         with:
-          name: tvguard-v0.1.16-r7-lan-http-ipk
+          name: tvguard-v0.1.16-r8-busybox-random-fix-ipk
           path: dist/*.ipk
           if-no-files-found: error

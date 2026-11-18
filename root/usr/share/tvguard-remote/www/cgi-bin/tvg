@@ -8,7 +8,7 @@ ROOT=/mnt/mmcblk2p4/tvguard-remote
 SESSIONS="$ROOT/sessions"
 PAIR=/tmp/tvguard-remote/pair
 NOW="$(date +%s)"
-new_random() { dd if=/dev/urandom bs=1 count="$1" 2>/dev/null | od -An -tx1 | tr -d ' \n'; }
+new_random() { /usr/libexec/tvguard-random-hex "$1"; }
 digest() { printf '%s' "$1" | sha256sum | cut -d' ' -f1; }
 response() {
     printf 'Status: %s\r\n' "$1"

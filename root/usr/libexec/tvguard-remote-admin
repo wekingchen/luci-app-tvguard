@@ -19,7 +19,7 @@ require_storage() {
     mkdir -p "$ROOT"
     chmod 700 "$ROOT"
 }
-random_hex() { dd if=/dev/urandom bs=1 count="$1" 2>/dev/null | od -An -tx1 | tr -d ' \n'; }
+random_hex() { /usr/libexec/tvguard-random-hex "$1"; }
 status() {
     enabled=false; listener=false; count=0
     [ -f "$ENABLED" ] && [ "$(cat "$ENABLED")" = 1 ] && enabled=true

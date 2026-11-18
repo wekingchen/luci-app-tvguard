@@ -73,6 +73,7 @@ for name in (
     "usr/libexec/tvguard-remote-read",
     "usr/libexec/tvguard-remote-manage",
     "usr/libexec/tvguard-remote-lan-ip",
+    "usr/libexec/tvguard-random-hex",
     "etc/init.d/tvguard-remote",
     "usr/share/tvguard-remote/www/cgi-bin/tvg",
     "usr/share/tvguard-remote/www/index.html",

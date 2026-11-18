@@ -28,7 +28,13 @@ assert "same_origin ||" in cgi and "HTTP_ORIGIN" in cgi
 assert "HTTP_X_TVGUARD_ACTION" in cgi and "SameSite=Strict" in cgi
 assert "HttpOnly" in cgi and "Max-Age=2592000" in cgi
 assert "pair.lock" in cgi and 'rm -f "$PAIR"' in cgi
-assert "sha256sum" in cgi and "new_random" in cgi
+assert "new_random" in cgi and "tvguard-random-hex" in cgi
+admin=(p/"root/usr/libexec/tvguard-remote-admin").read_text()
+assert 'tvguard-random-hex "$1"' in admin
+helper=(p/"root/usr/libexec/tvguard-random-hex").read_text()
+assert "/dev/urandom" in helper and "sha256sum" in helper
+assert "od -" not in helper and "xxd " not in helper and "hexdump " not in helper
+assert "od -" not in cgi and "od -" not in admin
 assert "status)" in read and "enable)" not in read
 assert "enable|disable|enable-lan|disable-lan|pair|revoke-all)" in manage
 assert acl["read"]["file"]["/usr/libexec/tvguard-remote-read"]==["exec"]

@@ -1,6 +1,6 @@
 # TVGuard 家长遥控器 · 受限预览版
 
-状态：v0.1.16-r7 开发候选；尚未经过 N1 真机验收。新增家长控制端完全独立，默认关闭。
+状态：v0.1.16-r8 开发候选；尚未经过 N1 真机验收。新增家长控制端完全独立，默认关闭。
 
 ## 第一阶段已开发
 
@@ -31,3 +31,7 @@
 5. 公网前先设置 Cloudflare Access 仅授权家长身份，再为 TVGuard 专用 Tunnel 创建 Published Application Route，Service URL 使用 `http://127.0.0.1:18765`；禁止暴露 LuCI、RPCD、SSH。
 
 HTTP 明文可能泄露 Cookie，即便启用 HttpOnly、SameSite 也不等于加密，请隔离访客 Wi-Fi，勿做公网端口映射。
+
+## r8 · 生成配对码兼容性修复
+
+r7 的随机码生成使用 `od`，但 N1 精简固件不含该命令，导致配对失败。r8 在一次性配对码和 30 天会话令牌两处统一使用独立的 `/usr/libexec/tvguard-random-hex`，从 `/dev/urandom` 读取 16/32 字节并校验实际读取长度，使用 sha256sum 输出 32/64 位十六进制编码。CI 模拟缺少 `od`、`hexdump`、`xxd` 的运行环境。无需安装 coreutils，且不会在电视端写日志。
