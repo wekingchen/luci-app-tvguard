@@ -120,8 +120,9 @@ function nodeWithClass(root, name) {
     assert(!strings(p.tree).includes('http://192.168.101.99:18765/'), 'disabled LAN link still visible');
 
     let tunnel = {configured:true,storage_ready:true,docker_ready:true,
-        image_present:true,container:'running',metrics_local:true,transport:'http2'};
+        image_present:true,container:'running',metrics_local:true,transport:'http2',image_update:'available'};
     const t=create('htdocs/luci-static/resources/view/tvguard/tunnel.js',()=>tunnel,args=>{
+        if (args[0]==='apply-image') {tunnel={...tunnel,image_update:'current'};return '镜像已应用';}
         if (args[0]==='stop') {tunnel={...tunnel,container:'exited'};return '已停止';}
         return 'ok';
     });
@@ -142,6 +143,15 @@ function nodeWithClass(root, name) {
     assert(strings(t.tree).includes('tv.rqqr.de'));
     assert(strings(t.tree).includes('127.0.0.1:20241'));
     assert(strings(t.tree).includes('HTTP/2（TCP 7844）'), 'Tunnel must show configured transport');
+    assert(strings(t.tree).includes('检测到 N1 本地 latest 镜像'), 'local image comparison missing');
+    const applyImage = find(t.tree,'button','应用本地最新镜像');
+    assert(!applyImage.disabled, 'new local image should enable apply action');
+    await applyImage.attrs.click();
+    assert(t.calls.some(x=>x.cmd.includes('tvguard-tunnel-manage') && x.args[0] === 'apply-image'),
+      'image apply must use the write-authorized wrapper');
+    assert(strings(t.tree).includes('当前容器已使用 N1 本地最新镜像'));
+    assert(applyImage.disabled, 'same image should not be applied twice');
+
     assert(strings(t.tree).includes('Token 已配置'));
     assert(find(t.tree,'button','启动 Tunnel').disabled,'running container should not be startable');
     await find(t.tree,'button','停止 Tunnel').attrs.click();
