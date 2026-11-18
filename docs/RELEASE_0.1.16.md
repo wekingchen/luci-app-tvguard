@@ -1,11 +1,18 @@
-# TVGuard v0.1.16-r17 · 稳定版交付记录
+# TVGuard v0.1.16-r18 · 交付与验收记录
 
 ## 交付内容
 
-- **N1**：`luci-app-tvguard_0.1.16-17_all.ipk`，Build ID `v0.1.16-r17-iphone-pwa-safearea`。
+- **N1**：`luci-app-tvguard_0.1.16-18_all.ipk`，Build ID `v0.1.16-r18-iphone-pwa-cache-bust`。
 - **小米电视 Agent**：保持固定签名 `0.3.7`（versionCode 20）；原先已装同版本且权限正常，无需重复安装。
 - **GitHub Release**：正式版标签 `v0.1.16`，同时提供 N1 主 IPK 与已验证固定签名的 Agent APK；Bridge/Fusion 已包含在 N1 主包。
 - **受控的数据与服务**：家长设备授权/备注、TVGuard 计时和学习数据、Bark 设置、Cloudflare Tunnel Token 均在 N1 保留；软件升级不要求重新配对或重建 Docker 容器。
+
+## r18 缓存键修正
+
+- r17 截图确认独立 Web App 的顶部与深色 UI 视觉正确，但强制覆盖安装后外网状态标签仍显示旧「Cloudflare Tunnel · 在线」。
+- r17 原候选与状态文案微调均引用 `/app.js?v=0.1.16-r17`，因此无法排除 iOS 已缓存旧脚本。
+- r18 独立新包启用 `/app.js?v=0.1.16-r18` 和同版 CSS 查询键；CI 直接核对 IPK 中的资源地址和最新文案。
+- 此修正不改动计时、Agent、配对、Tunnel、容器、Bark 或正式控制。新标签是否已显示，仍以用户升级后的 iPhone 截图为准。
 
 ## 用户真机确认
 
