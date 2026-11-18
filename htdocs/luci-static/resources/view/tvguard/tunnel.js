@@ -19,7 +19,9 @@ function exec(script, args) {
 }
 function button(text, callback, type) {
     return E('button', { 'type': 'button',
-        'class': 'tvg-btn' + (type ? ' ' + type : ''), 'click': callback }, text);
+        'class': 'btn tvg-btn ' + (type === 'is-primary' ? 'cbi-button-positive' :
+            (type === 'is-danger' ? 'cbi-button-negative' : 'cbi-button-action')) +
+            (type ? ' ' + type : ''), 'click': callback }, text);
 }
 function badge(text, kind) {
     return E('span', { 'class': 'tvg-pill' + (kind ? ' ' + kind : '') }, text);
@@ -242,11 +244,10 @@ return view.extend({
         ]);
 
         var page = E('div', { 'class': 'tvg-console' }, [
-            E('link', { 'rel': 'stylesheet', 'href': STYLE + '?v=0.1.16-r19' }),
+            E('link', { 'rel': 'stylesheet', 'href': STYLE + '?v=0.1.16-r20' }),
             E('div', { 'class': 'tvg-header' }, [
                 E('div', {}, [
-                    E('div', { 'class': 'tvg-eyebrow' }, 'TVGUARD / REMOTE ACCESS'),
-                    E('div', { 'class': 'tvg-page-heading', 'role': 'heading', 'aria-level': '2' }, '远程访问'),
+                    E('div', { 'class': 'tvg-page-heading', 'role': 'heading', 'aria-level': '1' }, 'TV Guard · 远程访问'),
                     E('p', { 'class': 'tvg-intro' },
                         '通过独立的 Cloudflare Tunnel 访问家长遥控，不开放 LuCI 管理界面。')
                 ]),
@@ -267,7 +268,7 @@ return view.extend({
                         address,
                         E('div', { 'class': 'tvg-address-actions' }, [
                             button('复制', function() { return copyText(PUBLIC_URL, inform); }, 'is-small'),
-                            E('a', { 'class': 'tvg-btn is-primary is-small',
+                            E('a', { 'class': 'btn cbi-button-positive tvg-btn is-primary is-small',
                                 'href': PUBLIC_URL, 'target': '_blank',
                                 'rel': 'noopener noreferrer' }, '打开')
                         ])
