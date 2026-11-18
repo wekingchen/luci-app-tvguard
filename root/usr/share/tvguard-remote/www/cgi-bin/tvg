@@ -1,0 +1,139 @@
+#!/bin/sh
+# TVGuard 家长遥控器专用 API。输入严格白名单，无 LuCI/RPCD 权限代理。
+set -e
+umask 077
+PATH=/usr/sbin:/usr/bin:/sbin:/bin
+export PATH
+ROOT=/mnt/mmcblk2p4/tvguard-remote
+SESSIONS="$ROOT/sessions"
+PAIR=/tmp/tvguard-remote/pair
+NOW="$(date +%s)"
+new_random() { dd if=/dev/urandom bs=1 count="$1" 2>/dev/null | od -An -tx1 | tr -d ' \n'; }
+digest() { printf '%s' "$1" | sha256sum | cut -d' ' -f1; }
+response() {
+    printf 'Status: %s\r\n' "$1"
+    printf 'Content-Type: application/json; charset=utf-8\r\n'
+    printf 'Cache-Control: no-store\r\n'
+    printf 'X-Content-Type-Options: nosniff\r\n'
+    printf 'Referrer-Policy: no-referrer\r\n'
+    printf 'X-Frame-Options: DENY\r\n'
+}
+error_json() {
+    response "$1"
+    printf '\r\n{"ok":false,"error":"%s"}\n' "$2"
+    exit 0
+}
+storage_ok() {
+    awk '$2=="/mnt/mmcblk2p4" && $3=="xfs" && index(","$4",",rw,"){ok=1} END{exit !ok}' /proc/mounts &&
+    [ -d "$ROOT" ] && [ ! -L "$ROOT" ] && [ ! -L "$SESSIONS" ]
+}
+valid_hex() {
+    [ "$(printf '%s' "$1" | wc -c)" -eq "$2" ] &&
+    printf '%s' "$1" | LC_ALL=C grep -Eq '^[0-9a-f]+$'
+}
+same_origin() {
+    [ "$HTTP_X_TVGUARD_ACTION" = 1 ] || return 1
+    [ -n "$HTTP_HOST" ] && [ -n "$HTTP_ORIGIN" ] || return 1
+    case "$HTTP_ORIGIN" in
+        "https://$HTTP_HOST"|"http://$HTTP_HOST") return 0 ;;
+        *) return 1 ;;
+    esac
+}
+authenticated() {
+    storage_ok || return 1
+    [ -s "$SESSIONS" ] || return 1
+    token="$(printf '%s' "$HTTP_COOKIE" | tr ';' '\n' |
+        sed -n 's/^ *tvguard_auth=\([0-9a-f]*\)$/\1/p' | head -n 1)"
+    valid_hex "$token" 64 || return 1
+    hash="$(digest "$token")"
+    awk -F'|' -v key="$hash" -v now="$NOW" \
+        '$1==key && $2>now {ok=1} END {exit !ok}' "$SESSIONS"
+}
+read_post() {
+    case "$CONTENT_TYPE" in
+        application/x-www-form-urlencoded*) : ;;
+        *) error_json '415 Unsupported Media Type' 'unsupported_media_type' ;;
+    esac
+    case "$CONTENT_LENGTH" in
+        ''|*[!0-9]*) error_json '400 Bad Request' 'invalid_length' ;;
+    esac
+    [ "$CONTENT_LENGTH" -le 128 ] && [ "$CONTENT_LENGTH" -gt 0 ] ||
+        error_json '413 Payload Too Large' 'invalid_length'
+    body="$(dd bs=1 count="$CONTENT_LENGTH" 2>/dev/null)"
+}
+pair_device() {
+    same_origin || error_json '403 Forbidden' 'origin_rejected'
+    storage_ok || error_json '503 Service Unavailable' 'storage_unavailable'
+    read_post
+    case "$body" in
+        code=*) code="$(printf '%s' "$body" | cut -c6-)" ;;
+        *) error_json '400 Bad Request' 'invalid_pair_code' ;;
+    esac
+    valid_hex "$code" 32 || error_json '400 Bad Request' 'invalid_pair_code'
+    mkdir /tmp/tvguard-remote/pair.lock 2>/dev/null ||
+        error_json '429 Too Many Requests' 'pair_busy'
+    trap 'rmdir /tmp/tvguard-remote/pair.lock 2>/dev/null || :' EXIT
+    [ -f "$PAIR" ] && [ ! -L "$PAIR" ] ||
+        error_json '403 Forbidden' 'pair_not_available'
+    hash="$(digest "$code")"
+    if ! awk -F'|' -v key="$hash" -v now="$NOW" \
+        '$1==key && $2>now {ok=1} END {exit !ok}' "$PAIR"; then
+        error_json '403 Forbidden' 'pair_code_expired_or_invalid'
+    fi
+    # 用过即失效，防止配对码重复使用。
+    rm -f "$PAIR"
+    if [ -f "$SESSIONS" ]; then
+        count="$(awk -F'|' -v now="$NOW" '$2>now {n++} END{print n+0}' "$SESSIONS")"
+        [ "$count" -lt 4 ] || error_json '403 Forbidden' 'device_limit'
+    fi
+    session="$(new_random 32)"
+    valid_hex "$session" 64 || error_json '503 Service Unavailable' 'random_failed'
+    until_at=$((NOW + 2592000))
+    [ ! -L "$SESSIONS" ] || error_json '503 Service Unavailable' 'storage_unavailable'
+    tmp="$ROOT/sessions.$$"
+    if [ -f "$SESSIONS" ]; then
+        awk -F'|' -v now="$NOW" '$2>now' "$SESSIONS" > "$tmp"
+    else
+        : > "$tmp"
+    fi
+    printf '%s|%s\n' "$(digest "$session")" "$until_at" >> "$tmp"
+    chmod 600 "$tmp"; mv -f "$tmp" "$SESSIONS"
+    response '200 OK'
+    secure=''
+    [ "$HTTP_X_FORWARDED_PROTO" = https ] && secure='; Secure'
+    printf 'Set-Cookie: tvguard_auth=%s; Path=/; HttpOnly; SameSite=Strict; Max-Age=2592000%s\r\n' "$session" "$secure"
+    printf '\r\n{"ok":true,"paired":true}\n'
+}
+case "$REQUEST_METHOD:$QUERY_STRING" in
+    POST:action=pair) pair_device ;;
+esac
+authenticated || error_json '401 Unauthorized' 'pair_required'
+case "$REQUEST_METHOD:$QUERY_STRING" in
+    GET:action=status)
+        state="$(/usr/libexec/tvguard-status status 2>/dev/null)" ||
+            error_json '503 Service Unavailable' 'tvguard_unavailable'
+        response '200 OK'
+        printf '\r\n%s\n' "$state"
+        ;;
+    POST:action=mode-child|POST:action=mode-parent|POST:action=mode-locked|POST:action=bonus-15|POST:action=bonus-30|POST:action=bonus-60|POST:action=bonus-undo)
+        same_origin || error_json '403 Forbidden' 'origin_rejected'
+        # 禁止借由 HTTP 参数执行任意 tvguardctl 命令。
+        case "$QUERY_STRING" in
+            action=mode-child) set -- mode child ;;
+            action=mode-parent) set -- mode parent ;;
+            action=mode-locked) set -- mode locked ;;
+            action=bonus-15) set -- bonus 15 ;;
+            action=bonus-30) set -- bonus 30 ;;
+            action=bonus-60) set -- bonus 60 ;;
+            action=bonus-undo) set -- bonus undo ;;
+            *) error_json '400 Bad Request' 'invalid_action' ;;
+        esac
+        /usr/libexec/tvguardctl "$@" >/dev/null 2>&1 ||
+            error_json '409 Conflict' 'action_rejected'
+        state="$(/usr/libexec/tvguard-status status 2>/dev/null)" ||
+            error_json '503 Service Unavailable' 'tvguard_unavailable'
+        response '200 OK'
+        printf '\r\n%s\n' "$state"
+        ;;
+    *) error_json '405 Method Not Allowed' 'unsupported_action' ;;
+esac
