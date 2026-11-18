@@ -147,10 +147,12 @@ jobs:
           - 儿童累计观看时长、Bark 每日汇总与历史学习记录；Agent Bridge 已完整合入 N1 主包。
           - 家长遥控：本地 HTTP、Cloudflare Tunnel 外网 HTTPS，独立配对、长期授权、单设备撤销、设备自定义备注。
           - LuCI 家长遥控及远程访问桌面/移动界面、配对码倒计时、精简状态、Token/Metrics 保护与诊断。
+          - iPhone 独立 Web App 安全区修复、模式与奖励卡片微调、远程在线标签简化为「远程连接正常」；未更改后台计时/控制/配对。
 
           ## 真机与发布验证
           - 用户已确认 N1 上正式控制、计时、局域网家长遥控及 https://tv.rqqr.de 外网访问正常。
           - 用户已确认 r16 两页 LuCI UI 正常，N1 重启后服务运行正常。
+          - 用户于 2026-11-18 提供 r17 iPhone 主屏 Web App 真机截图，顶部标题和控制卡片正常可见。
           - CI 通过真实 BusyBox/CGI、LuCI 交互、权限、核心计时、代理隔离、Agent Bridge 和 Android 6 Agent 冒烟测试。
           - 电视 Agent 保持固定签名，APK 由 Release 工作流校验证书，避免覆盖升级丢失数据。
 
@@ -201,7 +203,8 @@ jobs:
             feat/v0.1.14-integrated-agent-bridge \
             chore/v0.1.14-release-refresh \
             feat/v0.1.15-multi-app-generalization \
-            feat/v0.1.16-tunnel-ui; do
+            feat/v0.1.16-tunnel-ui \
+            fix/v0.1.16-r17-iphone-pwa; do
             encoded="${branch//\//%2F}"
             # Best-effort cleanup only; release success must not depend on an
             # already-deleted development branch.
