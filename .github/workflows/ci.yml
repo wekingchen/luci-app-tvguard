@@ -85,6 +85,8 @@ jobs:
         run: python3 tests/test-remote-origin.py
       - name: Exercise LuCI paired-device list and scoped revocation
         run: node tests/test-remote-luci.js
+      - name: Verify four-tab visual consistency against overview
+        run: node tests/test-luci-ui-consistency.js
       - name: Verify responsive parent and tunnel LuCI product UI
         run: |
           node tests/test-console-ui.js
