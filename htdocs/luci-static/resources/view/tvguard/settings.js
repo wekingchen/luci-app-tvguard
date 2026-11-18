@@ -5,6 +5,10 @@
 'require fs';
 'require ui';
 
+// 与概览、家长遥控、远程访问共用透明卡片和紧凑排版。
+var STYLE = (typeof L !== 'undefined' && L.resource)
+    ? L.resource('view/tvguard/panel.css') : '/luci-static/resources/view/tvguard/panel.css';
+
 function validateServer(section_id, value) {
     var url = String(value || '').trim();
     return /^https?:\/\/[^\s\/?#@]+\/?$/.test(url) ? true :
@@ -163,6 +167,19 @@ return view.extend({
         o = device.option(form.DummyValue, 'interface', '进入 N1 的接口');
         o.description = 'TV Guard 只匹配该接口上来自这台电视的 IPv4 流量。';
 
-        return m.render();
+        // Only wrap the rendered LuCI form. Map, UCI validators, save/apply and
+        // the Bark test callbacks remain owned by the stock form implementation.
+        return Promise.resolve(m.render()).then(function(mapNode) {
+            return E('div', { 'class': 'tvg-settings-root' }, [
+                E('link', { 'rel': 'stylesheet', 'href': STYLE + '?v=0.1.16-r20' }),
+                E('div', { 'class': 'tvg-settings-header' }, [
+                    E('div', { 'class': 'tvg-settings-heading', 'role': 'heading', 'aria-level': '1' },
+                        'TV Guard · 设置'),
+                    E('p', { 'class': 'tvg-settings-intro' },
+                        '这里配置日常时间规则与通知。正式网络控制和实验回程观测属于高风险功能，不在普通设置页提供开关。')
+                ]),
+                mapNode
+            ]);
+        });
     }
 });
