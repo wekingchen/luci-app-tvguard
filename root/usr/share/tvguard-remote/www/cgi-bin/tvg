@@ -104,6 +104,17 @@ pair_device() {
     printf 'Set-Cookie: tvguard_auth=%s; Path=/; HttpOnly; SameSite=Strict; Max-Age=2592000%s\r\n' "$session" "$secure"
     printf '\r\n{"ok":true,"paired":true}\n'
 }
+# 只允许本机 Cloudflare 回源或通过 br-lan 同网段路由返回的 IPv4 客户端。
+client_allowed() {
+    case "$REMOTE_ADDR" in
+        127.0.0.1|::1) return 0 ;;
+        ''|*[!0-9.]*) return 1 ;;
+    esac
+    command -v ip >/dev/null 2>&1 || return 1
+    ip -4 route get "$REMOTE_ADDR" 2>/dev/null |
+        grep -Eq ' dev br-lan( |$)'
+}
+client_allowed || error_json '403 Forbidden' 'lan_only'
 case "$REQUEST_METHOD:$QUERY_STRING" in
     POST:action=pair) pair_device ;;
 esac

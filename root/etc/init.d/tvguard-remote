@@ -12,6 +12,12 @@ start_service() {
     procd_set_param command /usr/sbin/uhttpd -f -D -S \
         -h /usr/share/tvguard-remote/www \
         -x /cgi-bin -p 127.0.0.1:18765 -t 15 -n 5
+    # 只有显式开启局域网访问后才绑定 br-lan 私有地址。
+    if [ -f /etc/tvguard/remote-lan-enabled ] &&
+       [ "$(cat /etc/tvguard/remote-lan-enabled)" = 1 ]; then
+        lan_ip="$(/usr/libexec/tvguard-remote-lan-ip)" || return 1
+        procd_append_param command -p "$lan_ip:18765"
+    fi
     procd_set_param respawn 3600 5 5
     procd_set_param stdout 0
     procd_set_param stderr 1

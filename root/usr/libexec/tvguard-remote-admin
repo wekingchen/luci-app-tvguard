@@ -9,6 +9,8 @@ SESSIONS="$ROOT/sessions"
 PAIR_DIR=/tmp/tvguard-remote
 PAIR="$PAIR_DIR/pair"
 ENABLED=/etc/tvguard/remote-enabled
+LAN_ENABLED=/etc/tvguard/remote-lan-enabled
+LAN_HELPER=/usr/libexec/tvguard-remote-lan-ip
 INIT=/etc/init.d/tvguard-remote
 require_storage() {
     awk '$2=="/mnt/mmcblk2p4" && $3=="xfs" && index(","$4",",",rw,"){ok=1} END{exit !ok}' /proc/mounts ||
@@ -28,7 +30,16 @@ status() {
     if [ -f "$SESSIONS" ]; then
         count="$(awk -F'|' -v now="$(date +%s)" '$2>now {n++} END {print n+0}' "$SESSIONS")"
     fi
-    printf '{"enabled":%s,"listener":%s,"paired":%s}\n' "$enabled" "$listener" "$count"
+    lan_enabled=false; lan_url=''
+    if [ -f "$LAN_ENABLED" ] && [ "$(cat "$LAN_ENABLED")" = 1 ]; then
+        lan_enabled=true
+        addr="$("$LAN_HELPER" 2>/dev/null || :)"
+        if [ -n "$addr" ]; then
+            lan_url="http://$addr:18765/"
+        fi
+    fi
+    printf '{"enabled":%s,"listener":%s,"paired":%s,"lan_enabled":%s,"lan_url":"%s"}\n' \
+        "$enabled" "$listener" "$count" "$lan_enabled" "$lan_url"
 }
 enable_remote() {
     require_storage
@@ -51,6 +62,30 @@ disable_remote() {
     "$INIT" stop; "$INIT" disable
     echo '家长遥控服务已停止，不影响电视控制核心'
 }
+enable_lan() {
+    require_storage
+    [ -f "$ENABLED" ] && [ "$(cat "$ENABLED")" = 1 ] ||
+        { echo '请先启用家长遥控服务，再开启局域网访问' >&2; exit 1; }
+    addr="$("$LAN_HELPER")" ||
+        { echo 'br-lan 没有可用的私有 IPv4，拒绝开放 LAN' >&2; exit 1; }
+    mkdir -p /etc/tvguard; chmod 700 /etc/tvguard
+    printf '1\n' > "$LAN_ENABLED"; chmod 600 "$LAN_ENABLED"
+    if ! "$INIT" restart; then
+        printf '0\n' > "$LAN_ENABLED"
+        "$INIT" restart >/dev/null 2>&1 || :
+        echo '局域网监听失败，已回退为仅本机访问' >&2
+        exit 1
+    fi
+    echo "已启用局域网 HTTP：http://$addr:18765/"
+}
+disable_lan() {
+    mkdir -p /etc/tvguard; chmod 700 /etc/tvguard
+    printf '0\n' > "$LAN_ENABLED"; chmod 600 "$LAN_ENABLED"
+    if [ -f "$ENABLED" ] && [ "$(cat "$ENABLED")" = 1 ]; then
+        "$INIT" restart || { echo '关闭局域网监听时重启失败，请检查服务状态' >&2; exit 1; }
+    fi
+    echo '已关闭局域网 HTTP，只保留本机回环监听'
+}
 issue_pair() {
     require_storage
     mkdir -p "$PAIR_DIR"; chmod 700 "$PAIR_DIR"
@@ -72,6 +107,8 @@ case "$*" in
     status) status ;;
     enable) enable_remote ;;
     disable) disable_remote ;;
+    enable-lan) enable_lan ;;
+    disable-lan) disable_lan ;;
     pair) issue_pair ;;
     revoke-all) revoke_all ;;
     *) exit 2 ;;
