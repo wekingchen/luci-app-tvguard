@@ -291,7 +291,7 @@ return view.extend({
         buttons = [enable, disable, enableLan, disableLan, pair, revoke, update];
 
         root = E('div', { 'class': 'tvg-console' }, [
-            E('link', { 'rel': 'stylesheet', 'href': STYLE + '?v=0.1.16-r15' }),
+            E('link', { 'rel': 'stylesheet', 'href': STYLE + '?v=0.1.16-r16' }),
             E('div', { 'class': 'tvg-header' }, [
                 E('div', {}, [
                     E('div', { 'class': 'tvg-eyebrow' }, 'TVGUARD / PARENT ACCESS'),
