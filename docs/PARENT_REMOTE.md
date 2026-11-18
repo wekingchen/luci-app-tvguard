@@ -1,6 +1,6 @@
 # TVGuard 家长遥控器 · 受限预览版
 
-状态：v0.1.16-r8 开发候选；尚未经过 N1 真机验收。新增家长控制端完全独立，默认关闭。
+状态：v0.1.16-r9 开发候选；尚未经过 N1 真机验收。新增家长控制端完全独立，默认关闭。
 
 ## 第一阶段已开发
 
@@ -35,3 +35,7 @@ HTTP 明文可能泄露 Cookie，即便启用 HttpOnly、SameSite 也不等于�
 ## r8 · 生成配对码兼容性修复
 
 r7 的随机码生成使用 `od`，但 N1 精简固件不含该命令，导致配对失败。r8 在一次性配对码和 30 天会话令牌两处统一使用独立的 `/usr/libexec/tvguard-random-hex`，从 `/dev/urandom` 读取 16/32 字节并校验实际读取长度，使用 sha256sum 输出 32/64 位十六进制编码。CI 模拟缺少 `od`、`hexdump`、`xxd` 的运行环境。无需安装 coreutils，且不会在电视端写日志。
+
+## r9 · uhttpd Origin 兼容修复
+
+OpenWrt uhttpd 的 CGI 默认只转发特定 HTTP 头（Host/Origin/Referer/Cookie 等），不转发 X-TVGuard-Action。旧版本以缺失的自定义 CGI 变量作为必备条件，因此所有手机配对 POST 均会被误拒绝为 origin_rejected。r9 只依赖标准 CGI 头，优先严格比对 Origin 与 Host；仅在 Origin 缺失时允许同源 Referer 回退，同时改成只对同源请求发送 Referer，不泄露至外站。局域网 HTTP 额外要求 Host 等于实际监听 IP:18765，减少 DNS rebinding 风险。公网 HTTPS 回源时按严格比对过的 Origin/Referer 设置 Secure Cookie，不再依赖未转发的 X-Forwarded-Proto。跨站 Origin 即使 Referer 伪装成同源也必须拒绝；两者都不存在时仍拒绝，不允许匿名或任意 Origin。

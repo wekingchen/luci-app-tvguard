@@ -12,7 +12,6 @@ function clearError() { $('errorBox').classList.add('hidden'); $('errorBox').tex
 async function request(method, action, body) {
     const headers = {};
     if (method === 'POST') {
-        headers['X-TVGuard-Action'] = '1';
         headers['Content-Type'] = 'application/x-www-form-urlencoded';
     }
     const resp = await fetch('/cgi-bin/tvg?action=' + encodeURIComponent(action), {

@@ -25,7 +25,13 @@ assert "/usr/libexec/tvguardctl" in cgi and "/usr/libexec/tvguard-status status"
 for command in ("mode child","mode parent","mode locked","bonus 15","bonus 30","bonus 60","bonus undo"):
     assert command in cgi,command
 assert "same_origin ||" in cgi and "HTTP_ORIGIN" in cgi
+assert "HTTP_REFERER" in cgi and "HTTP_HOST" in cgi
+assert "SERVER_ADDR" in cgi and "DNS rebinding" in cgi
+assert "HTTP_X_FORWARDED_PROTO" not in cgi
+assert "secure='; Secure'" in cgi
+assert 'name="referrer" content="same-origin"' in (p/"root/usr/share/tvguard-remote/www/index.html").read_text()
 assert "HTTP_X_TVGUARD_ACTION" in cgi and "SameSite=Strict" in cgi
+assert '[ "$HTTP_X_TVGUARD_ACTION" = 1 ]' not in cgi
 assert "HttpOnly" in cgi and "Max-Age=2592000" in cgi
 assert "pair.lock" in cgi and 'rm -f "$PAIR"' in cgi
 assert "new_random" in cgi and "tvguard-random-hex" in cgi
@@ -44,6 +50,6 @@ assert "/usr/libexec/tvguard-remote-admin" not in acl["write"]["file"]
 assert menu["admin/services/tvguard/remote"]["action"]["path"]=="tvguard/remote"
 for unsafe in ("iptables ","nft ","uci set","docker ","eval ","ubus "):
     assert unsafe not in cgi,unsafe
-assert "credentials: 'same-origin'" in frontend and "X-TVGuard-Action" in frontend
+assert "credentials: 'same-origin'" in frontend and "X-TVGuard-Action" not in frontend
 assert "window.confirm" in frontend
 print("PASS: gated local-only remote PWA, CGI actions and ACL separation")

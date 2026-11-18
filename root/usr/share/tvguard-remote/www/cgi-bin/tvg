@@ -32,10 +32,28 @@ valid_hex() {
     printf '%s' "$1" | LC_ALL=C grep -Eq '^[0-9a-f]+$'
 }
 same_origin() {
-    [ "$HTTP_X_TVGUARD_ACTION" = 1 ] || return 1
-    [ -n "$HTTP_HOST" ] && [ -n "$HTTP_ORIGIN" ] || return 1
-    case "$HTTP_ORIGIN" in
+    # uhttpd CGI 只转发部分标准 HTTP 头；不能依赖 HTTP_X_TVGUARD_ACTION。
+    [ -n "${HTTP_HOST:-}" ] || return 1
+
+    # 局域网入口只允许通过其自身的 IPv4:18765 访问，阻止 DNS rebinding。
+    # Tunnel 由 cloudflared 回源到 127.0.0.1，Host 则是公网域名。
+    case "${SERVER_ADDR:-}" in
+        127.0.0.1|::1) : ;;
+        10.*|172.*|192.168.*)
+            [ "$HTTP_HOST" = "$SERVER_ADDR:18765" ] || return 1 ;;
+        *) return 1 ;;
+    esac
+
+    # Origin 存在时必须严格匹配，不得用 Referer 绕过 Origin 拒绝。
+    case "${HTTP_ORIGIN:-}" in
         "https://$HTTP_HOST"|"http://$HTTP_HOST") return 0 ;;
+        '') : ;;
+        *) return 1 ;;
+    esac
+    # 某些浏览器同源 POST 不带 Origin，才使用严格的同源 Referer。
+    # 必须要求路径斜线，不能接受 http://host.evil/ 等前缀混淆。
+    case "${HTTP_REFERER:-}" in
+        "https://$HTTP_HOST/"*|"http://$HTTP_HOST/"*) return 0 ;;
         *) return 1 ;;
     esac
 }
@@ -99,8 +117,17 @@ pair_device() {
     printf '%s|%s\n' "$(digest "$session")" "$until_at" >> "$tmp"
     chmod 600 "$tmp"; mv -f "$tmp" "$SESSIONS"
     response '200 OK'
+    # uhttpd 默认不向 CGI 转发 X-Forwarded-Proto；
+    # 以已严格验证过的浏览器 Origin/Referer 判定 HTTPS Cookie。
     secure=''
-    [ "$HTTP_X_FORWARDED_PROTO" = https ] && secure='; Secure'
+    case "${HTTP_ORIGIN:-}" in
+        "https://$HTTP_HOST") secure='; Secure' ;;
+        '')
+            case "${HTTP_REFERER:-}" in
+                "https://$HTTP_HOST/"*) secure='; Secure' ;;
+            esac
+            ;;
+    esac
     printf 'Set-Cookie: tvguard_auth=%s; Path=/; HttpOnly; SameSite=Strict; Max-Age=2592000%s\r\n' "$session" "$secure"
     printf '\r\n{"ok":true,"paired":true}\n'
 }
