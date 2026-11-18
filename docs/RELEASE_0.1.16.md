@@ -1,11 +1,20 @@
-# TVGuard v0.1.16-r22 · 交付与验收记录
+# TVGuard v0.1.16-r23 · 交付与验收记录
 
 ## 交付内容
 
-- **N1**：`luci-app-tvguard_0.1.16-22_all.ipk`，Build ID `v0.1.16-r22-connection-status-format`。
+- **N1**：`luci-app-tvguard_0.1.16-23_all.ipk`，Build ID `v0.1.16-r23-cloudflared-http2`。
 - **小米电视 Agent**：保持固定签名 `0.3.7`（versionCode 20）；原先已装同版本且权限正常，无需重复安装。
 - **GitHub Release**：正式版标签 `v0.1.16`，同时提供 N1 主 IPK 与已验证固定签名的 Agent APK；Bridge/Fusion 已包含在 N1 主包。
 - **受控的数据与服务**：家长设备授权/备注、TVGuard 计时和学习数据、Bark 设置、Cloudflare Tunnel Token 均在 N1 保留；软件升级不要求重新配对或重建 Docker 容器。
+
+## r23 · 仅 TVGuard Tunnel 使用 HTTP/2（待 N1 真机稳定性验证）
+
+- N1 用户日志确认 TVGuard / ntfy 的 QUIC 连接出现 `no recent network activity`、运行中重连，Vaultwarden 通过 HTTP/2 运行相对稳定；N1 的 IPv4/IPv6 回环 DNS 后续查询正常，TVGuard 本地 HTTP 约 2.36ms。证据支持先对 TVGuard 单独进行 TCP 7844 对照。
+- 只调整 TVGuard 专用容器启动参数为 `--protocol http2`；使用既有 `--network host`、只读 XFS Token、`--cap-drop ALL`、`no-new-privileges`、Metrics `127.0.0.1:20241`、日志轮转，不改另外两套 Tunnel。
+- 已存在的 QUIC / auto 容器无法通过简单 `docker restart` 修改配置。r23 在升级完成时**只对正在运行且所有权标签匹配的 TVGuard 容器**自动迁移；停止的容器保持停止，后续手动启动时再迁移。
+- 一次性迁移保留停止的旧容器作为回退副本，必须等新容器日志中注册实际 HTTP/2 边缘连接再清理旧副本；失败时尝试完整恢复旧容器和原运行状态。若旧副本名称已经被占用，则直接拒绝覆盖。
+- LuCI 可显示当前容器启动协议（但不冒充 Tunnel 在线健康检查）。独立模拟 Docker 测试覆盖成功、失败、异物、冲突、幂等重启及 Token 不变，打包检查验证真正的安装代码。
+- **仍需真机执行**：升级 r23 后查看 `docker inspect ... .Config.Cmd` 是否包含 `--protocol http2`，日志是否出现 `Registered tunnel connection ... protocol=http2`，并用 5G 验证 `https://tv.rqqr.de`。
 
 ## r22 · 家长遥控在线状态文案统一（待 iPhone 实机确认）
 
