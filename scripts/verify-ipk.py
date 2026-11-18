@@ -161,6 +161,16 @@ assert "docker container inspect tvguard-cloudflared" in postinst_script, "upgra
 assert "org.tvguard.owner" in postinst_script, "upgrade migration ownership check missing"
 luci_tunnel_expected = data["www/luci-static/resources/view/tvguard/tunnel.js"][1].decode("utf-8")
 assert "HTTP/2（TCP 7844）" in luci_tunnel_expected, "configured transport indicator missing from LuCI"
+# Portainer-pulled image update must work without registry calls or Token export.
+tunnel_manage = data["usr/libexec/tvguard-tunnel-manage"][1].decode("utf-8")
+assert "apply-image) apply_image ;;" in tunnel_script, "image apply command missing"
+assert "IMAGE_ROLLBACK=tvguard-cloudflared-before-local-image" in tunnel_script, "separate image rollback name missing"
+assert "docker inspect -f '{{.Image}}'" in tunnel_script, "running image ID comparison missing"
+assert "docker image inspect -f '{{.Id}}'" in tunnel_script, "locally downloaded latest image ID comparison missing"
+assert "expected_image_id" in tunnel_script and "wait_for_http2_edge" in tunnel_script, "image identity and edge verification missing"
+assert "docker pull" not in tunnel_script, "TVGuard must not fetch registry images"
+assert "apply-image)" in tunnel_manage, "write-authorized image update entrypoint missing"
+assert "应用本地最新镜像" in luci_tunnel_expected, "LuCI local image update action missing"
 
 assert "etc/tvguard/agent-bridge.key" not in data, "key must never be packaged"
 assert "conffiles" in control and b"agent-bridge.key" not in control["conffiles"][1]
