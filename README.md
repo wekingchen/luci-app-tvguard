@@ -1,6 +1,15 @@
 # TV Guard · 家庭电视时间管理
 
-## 当前稳定版 · v0.1.16-r23（Cloudflare Tunnel HTTP/2 稳定性修复）
+## 当前稳定版 · v0.1.16-r24（应用 Portainer 已下载的 cloudflared 镜像）
+
+- **N1 主包**：`luci-app-tvguard_0.1.16-24_all.ipk`；电视 Agent 仍为 0.3.7，不需重装。
+- 用户已在 Portainer 拉取 `cloudflare/cloudflared:latest`。本轮**不检查远端、不拉取镜像**，只负责将已下载的新镜像安全应用到 TVGuard 自己的运行容器。
+- LuCI「远程访问 → 维护与诊断 → 本地镜像更新（高级）」比较运行容器的不可变镜像 ID 与 N1 本地 `latest` 的 ID。不同才允许点击「应用本地最新镜像」，相同则禁用，普通「重启」不会切换镜像。
+- 更新前检查 Token、XFS、容器所有权、HTTP/2、运行状态和本地镜像兼容版本。仅备份重命名 `tvguard-cloudflared`，使用新镜像创建原参数容器（HTTP/2、host、只读 Token、最小权限、仅本机 Metrics），并确认真实 HTTP/2 边缘连接且新容器镜像 ID 匹配后清理备份；失败恢复原容器镜像和运行状态。
+- 已停止的服务不会擅自启动；不动 Vaultwarden、ntfy、ZeroTier、电视 Agent、Bark、家长设备配对或控制逻辑。新增真 Docker CLI 模拟场景的镜像相同/更新/回退/停用/外来容器/备份冲突检查，以及 LuCI/IPK 实物门禁。
+- 真机仍需从 N1 由用户确认镜像 ID、日志 `protocol=http2` 和 iPhone 5G 外网访问。不要通过 `docker restart` 期待镜像替换。
+
+## 上一稳定版 · v0.1.16-r23（Cloudflare Tunnel HTTP/2 稳定性修复）
 
 - **N1 主包**：`luci-app-tvguard_0.1.16-23_all.ipk`；电视 Agent 仍为原签名 0.3.7，不需重装。
 - N1 实测：TVGuard 与 ntfy 的 QUIC/UDP 长连接多次超时，Vaultwarden 的 HTTP/2/TCP 连接相对稳定。因此只把 **tvguard-cloudflared 固定为 HTTP/2（TCP 7844）**，不改 Vaultwarden、ntfy 或 N1 全局网络。
