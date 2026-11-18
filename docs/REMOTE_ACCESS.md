@@ -1,6 +1,6 @@
 # TVGuard · 远程访问（Cloudflare Tunnel）
 
-当前开发候选：**v0.1.16-r16**。N1 上原有专用 Tunnel 已由用户完成真实配置，iPhone 蜂窝网络通过 `https://tv.rqqr.de` 访问与控制正常。r15 仅改 LuCI 远程访问页面的视觉和交互。
+当前开发候选：**v0.1.16-r16**。LuCI 远程访问页的 UI 已于 2026-11-18 获用户真机确认正常。N1 上原有专用 Tunnel 已由用户完成真实配置，iPhone 蜂窝网络通过 `https://tv.rqqr.de` 访问与控制正常。r15 仅改 LuCI 远程访问页面的视觉和交互。
 
 ## 页面结构
 
