@@ -38,7 +38,7 @@ assert "HTTP_X_TVGUARD_ACTION" in cgi and "SameSite=Strict" in cgi
 assert '[ "$HTTP_X_TVGUARD_ACTION" = 1 ]' not in cgi
 assert "HttpOnly" in cgi and "Max-Age=2592000" in cgi
 assert "Path=/cgi-bin/tvg" in cgi
-assert 'claim="$PAIR.claim.$"' in cgi and 'mv "$PAIR" "$claim"' in cgi
+assert 'claim="$(mktemp "$PAIR.claim.XXXXXX")"' in cgi and 'mv -f "$PAIR" "$claim"' in cgi
 assert 'trap \'rm -f "$claim"\' EXIT' in cgi
 assert 'pair.lock' not in cgi
 assert cgi.index("device_limit") < cgi.index('mv "$PAIR" "$claim"')
@@ -71,6 +71,6 @@ assert "window.location.reload()" in frontend
 assert 'index("," $4 ",", ",rw,")' in cgi
 assert 'index(","$4",",rw,")' not in cgi
 assert 'index("," $4 ",", ",rw,")' in admin
-assert 'tmp="$ROOT/generation.$$"' in admin
-assert 'pair_tmp="$PAIR.tmp.$$"' in admin
+assert 'tmp="$(mktemp "$ROOT/generation.XXXXXX")"' in admin
+assert 'pair_tmp="$(mktemp "$PAIR.tmp.XXXXXX")"' in admin
 assert 'storage_ok() { [ -d "$ROOT" ]; }' not in (p/"tests/test-remote-cgi-e2e.py").read_text()

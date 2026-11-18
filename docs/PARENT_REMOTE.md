@@ -51,3 +51,5 @@ OpenWrt uhttpd 的 CGI 默认只转发特定 HTTP 头（Host/Origin/Referer/Cook
 
 ## r13：存储检查真机故障修复
 N1 r12 上配对时报 storage_unavailable，但生成配对码及 XFS 检查正常。代码审计定位到 CGI 里的 awk index 传参缺少引号，导致存储检查表达式无法可靠执行；管理员端的对应表达式则不同。原测试通过替换 storage_ok 函数掩盖了这个缺陷。r13 将两端统一成 index("," $4 ",", ",rw,")，使只读挂载无法误判；新增真实 BusyBox awk、XFS 读写状态、generation 文件缺失/符号链接等反向测试，并将 CGI、管理员端测试改为运行真实存储函数。修正此前误写成单美元号的临时文件进程号，不改 TVGuard 核心或 Tunnel。
+
+同时复核配对临时文件生命周期：使用 BusyBox mktemp 原子生成专用临时路径（授权代际、配对码、CGI claim），不再拼接固定后缀。CI 检查异常和并发路径；无需升级 N1 上的电视 Agent。

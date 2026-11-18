@@ -25,7 +25,7 @@ rotate_generation() {
     require_storage
     next="$(random_hex 32)"
     [ "$(printf '%s' "$next" | wc -c)" -eq 64 ] || exit 1
-    tmp="$ROOT/generation.$"
+    tmp="$(mktemp "$ROOT/generation.XXXXXX")" || exit 1
     printf '%s\n' "$next" > "$tmp"
     chmod 600 "$tmp"
     mv -f "$tmp" "$GENERATION"
@@ -143,7 +143,7 @@ issue_pair() {
     [ "$(printf '%s' "$code" | wc -c)" -eq 32 ] || exit 1
     digest="$(printf '%s' "$code" | sha256sum | cut -d' ' -f1)"
     end=$(( $(date +%s) + 300 ))
-    pair_tmp="$PAIR.tmp.$"
+    pair_tmp="$(mktemp "$PAIR.tmp.XXXXXX")" || exit 1
     printf '%s|%s|%s\n' "$digest" "$end" "$value" > "$pair_tmp"
     chmod 600 "$pair_tmp"; mv -f "$pair_tmp" "$PAIR"
     printf '一次性配对码（5 分钟内有效）：%s\n' "$code"

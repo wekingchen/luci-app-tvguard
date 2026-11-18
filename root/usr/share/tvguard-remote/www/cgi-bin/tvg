@@ -109,11 +109,13 @@ pair_device() {
     fi
 
     # 以同目录原子改名领取配对码；不使用可能因 CGI 被强杀而永久残留的锁目录。
-    claim="$PAIR.claim.$"
-    if ! mv "$PAIR" "$claim" 2>/dev/null; then
+    # 使用 BusyBox mktemp 原子占位，避免进程号拼接错误或并发路径冲突。
+    claim="$(mktemp "$PAIR.claim.XXXXXX")" ||
+        error_json '503 Service Unavailable' 'claim_unavailable'
+    trap 'rm -f "$claim"' EXIT
+    if ! mv -f "$PAIR" "$claim" 2>/dev/null; then
         error_json '409 Conflict' 'pair_already_claimed'
     fi
-    trap 'rm -f "$claim"' EXIT
     trap 'exit 129' HUP
     trap 'exit 130' INT
     trap 'exit 143' TERM
