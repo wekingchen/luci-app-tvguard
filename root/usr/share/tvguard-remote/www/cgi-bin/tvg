@@ -111,8 +111,14 @@ client_allowed() {
         ''|*[!0-9.]*) return 1 ;;
     esac
     command -v ip >/dev/null 2>&1 || return 1
-    ip -4 route get "$REMOTE_ADDR" 2>/dev/null |
-        grep -Eq ' dev br-lan( |$)'
+    # 路由器的默认路由也可能走 br-lan：仅有 dev br-lan 不足以证明同网段。
+    # 必须是直连/on-link 的 br-lan 地址；任何 via 网关的流量拒绝。
+    route="$(ip -4 route get "$REMOTE_ADDR" 2>/dev/null)" || return 1
+    case " $route " in
+        *' via '*) return 1 ;;
+        *' dev br-lan '*) return 0 ;;
+        *) return 1 ;;
+    esac
 }
 client_allowed || error_json '403 Forbidden' 'lan_only'
 case "$REQUEST_METHOD:$QUERY_STRING" in
