@@ -54,7 +54,8 @@ with tempfile.TemporaryDirectory(prefix="tvguard-api-e2e-") as directory:
         env.update(REQUEST_METHOD=method, QUERY_STRING="action=" + action,
                    HTTP_HOST=host, HTTP_ORIGIN=origin, HTTP_REFERER=referer,
                    HTTP_COOKIE=cookie, REMOTE_ADDR=remote, SERVER_ADDR=server,
-                   CONTENT_LENGTH=str(len(body)), CONTENT_TYPE="application/x-www-form-urlencoded")
+                   CONTENT_LENGTH=str(len(body)), CONTENT_TYPE="application/x-www-form-urlencoded",
+                   HTTP_USER_AGENT="Mozilla/5.0 (iPhone; CPU iPhone OS 27_0) AppleWebKit/605.1 CriOS/143.0")
         result = subprocess.run(["/bin/sh", str(script_path)], env=env, input=body,
                                 capture_output=True, timeout=5)
         response = result.stdout.decode(errors="replace")
@@ -100,9 +101,22 @@ with tempfile.TemporaryDirectory(prefix="tvguard-api-e2e-") as directory:
     cookie = "tvguard_auth=" + cookie_match.group(1)
     assert (state / "sessions").exists()
     assert cookie_match.group(1) not in (state / "sessions").read_text(), "明文 Token 被保存在服务端"
+    stored = (state / "sessions").read_text().strip().split("|")
+    assert stored[1] == "0" and stored[2] == generation, stored
+    assert stored[4] == "iPhone Chrome", stored
+    assert "Max-Age=31536000" in pair_headers
 
     need("403", request("POST", "pair", body=("code="+code).encode()), "pair_not_available")
-    need("200", request(cookie=cookie), '"mode":"child"')
+    renewed_header, _ = need("200", request(cookie=cookie), '"mode":"child"')
+    assert "Set-Cookie: tvguard_auth=" in renewed_header and "Max-Age=31536000" in renewed_header
+    secure_without_referer, _ = need("200", request(cookie=cookie, server="127.0.0.1", host="tv.example.org", origin="", referer=""), '"mode":"child"')
+    assert "Secure" in secure_without_referer, secure_without_referer
+    revoked_folder = state / "revoked"
+    revoked_folder.mkdir()
+    revoked_marker = revoked_folder / stored[0]
+    revoked_marker.write_text("revoked\n")
+    need("401", request(cookie=cookie), "pair_required")
+    revoked_marker.unlink()
     need("403", request("POST", "mode-child", cookie=cookie, origin="https://evil.invalid"), "origin_rejected")
     assert not action_log.exists(), "跨站请求触发了实际控制指令"
     need("405", request("POST", "enforce-on", cookie=cookie), "unsupported_action")

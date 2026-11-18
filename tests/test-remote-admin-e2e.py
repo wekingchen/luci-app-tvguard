@@ -48,6 +48,27 @@ with tempfile.TemporaryDirectory(prefix="tvguard-admin-e2e-") as temp:
                        str(int(time.time())+1200)+"|"+generation+"\n")
     state=json.loads(run("status").stdout)
     assert state["paired"]==1,state
+    assert len(state["devices"])==1 and state["devices"][0]["expires"]>int(time.time()),state
+    assert state["devices"][0]["id"]==hashlib.sha256(b"old-session").hexdigest()[:16]
+
+    # 老版仍有效会话升级迁移为 0=永不过期，并可单独撤销。
+    mig=run("migrate")
+    assert mig.returncode==0,(mig.stdout,mig.stderr)
+    assert session.read_text().split("|")[1]=="0"
+    state=json.loads(run("status").stdout)
+    assert state["paired"]==1 and state["devices"][0]["expires"]==0
+    invalid=run("revoke-device not-a-valid-id")
+    assert invalid.returncode!=0
+    target=state["devices"][0]["id"]
+    one=run("revoke-device "+target)
+    assert one.returncode==0,(one.stdout,one.stderr)
+    assert json.loads(run("status").stdout)["paired"]==0
+    marker=persistent/"revoked"/hashlib.sha256(b"old-session").hexdigest()
+    assert marker.exists(), "selective revoke marker missing"
+    # 旧会话即使被并发 CGI 写回，仍不能绕过单台撤销。
+    session.write_text(hashlib.sha256(b"old-session").hexdigest()+"|0|"+generation+"|0|Browser\n")
+    assert json.loads(run("status").stdout)["paired"]==0
+    session.write_text(hashlib.sha256(b"still-authorized").hexdigest()+"|0|"+generation+"|0|Browser\n")
 
     # 撤销必须先旋转 generation，过期旧会话即使被并发写回也不得计入。
     revoked=run("revoke-all")
@@ -55,6 +76,7 @@ with tempfile.TemporaryDirectory(prefix="tvguard-admin-e2e-") as temp:
     new_generation=(persistent/"generation").read_text().strip()
     assert new_generation!=generation and re.fullmatch(r"[0-9a-f]{64}",new_generation)
     assert not pairfile.exists() and not session.exists()
+    assert not (persistent/"revoked").exists(), "revoke-all should clear stale per-device markers"
     session.write_text(hashlib.sha256(b"resurrected-session").hexdigest()+"|"+
                        str(int(time.time())+1200)+"|"+generation+"\n")
     assert json.loads(run("status").stdout)["paired"]==0

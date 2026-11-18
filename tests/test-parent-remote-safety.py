@@ -36,7 +36,7 @@ assert "object-src 'none'" in html and "base-uri 'none'" in html
 assert 'app.js?v=0.1.16-r13' in html
 assert "HTTP_X_TVGUARD_ACTION" in cgi and "SameSite=Strict" in cgi
 assert '[ "$HTTP_X_TVGUARD_ACTION" = 1 ]' not in cgi
-assert "HttpOnly" in cgi and "Max-Age=2592000" in cgi
+assert "HttpOnly" in cgi and "Max-Age=31536000" in cgi
 assert "Path=/cgi-bin/tvg" in cgi
 assert 'claim="$(mktemp "$PAIR.claim.XXXXXX")"' in cgi and 'mv -f "$PAIR" "$claim"' in cgi
 assert 'trap \'rm -f "$claim"\' EXIT' in cgi
@@ -74,3 +74,10 @@ assert 'index("," $4 ",", ",rw,")' in admin
 assert 'tmp="$(mktemp "$ROOT/generation.XXXXXX")"' in admin
 assert 'pair_tmp="$(mktemp "$PAIR.tmp.XXXXXX")"' in admin
 assert 'storage_ok() { [ -d "$ROOT" ]; }' not in (p/"tests/test-remote-cgi-e2e.py").read_text()
+
+assert '"devices":[' in admin and 'revoke_device()' in admin and 'migrate_sessions()' in admin
+assert 'revoke-device' in manage and '[ "${#id}" -eq 16 ]' in manage
+assert "until_at=0" in cgi
+assert 'REVOKED="$ROOT/revoked"' in cgi and '[ ! -e "$REVOKED/$hash" ]' in cgi
+assert 'set_auth_cookie "$token"' in cgi
+assert 'renderDevices(s.devices)' in (p/"htdocs/luci-static/resources/view/tvguard/remote.js").read_text()
