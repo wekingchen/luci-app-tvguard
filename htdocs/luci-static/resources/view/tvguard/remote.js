@@ -137,21 +137,46 @@ return view.extend({
             list.forEach(function(d) {
                 var id = String(d.id || '');
                 if (!/^[0-9a-f]{16}$/.test(id)) return;
-                var title = String(d.name || '浏览器');
-                var meta = '配对时间：' + dateText(d.paired_at) + ' · 设备标识：' + id;
+                var title = String(d.label || d.name || '浏览器');
+                var type = String(d.name || '浏览器');
+                var meta = '浏览器类型：' + type + ' · 配对时间：' + dateText(d.paired_at);
                 var expiry = Number(d.expires) === 0 ? '长期有效 · 可随时撤销' :
                     '到期：' + dateText(d.expires);
-                var cancel = button('撤销此设备', function() {
+                var editorInput = E('input', { 'type': 'text', 'class': 'tvg-field',
+                    'value': title, 'maxlength': '24', 'autocomplete': 'off',
+                    'aria-label': '自定义设备名称', 'placeholder': '例如：妙妙的 iPhone' });
+                var editor = E('div', { 'class': 'tvg-device-editor', 'style': 'display:none' }, []);
+                var rename = button('修改名称', function() {
+                    editorInput.value = title;
+                    editor.style.display = '';
+                }, 'is-small');
+                var save = button('保存名称', function() {
+                    var alias = String(editorInput.value || '').trim();
+                    if (!alias || alias.length > 24 || /[|"\r\n\\\x00-\x1f]/.test(alias)) {
+                        report('设备名称必须为 1～24 个字符，不能包含引号、竖线、反斜杠或控制字符', 'error');
+                        return;
+                    }
+                    return run('rename-device', null, [id, alias]);
+                }, 'is-primary is-small');
+                var cancelEdit = button('取消', function() {
+                    editor.style.display = 'none';
+                }, 'is-small');
+                editor.appendChild(E('div', { 'class': 'tvg-device-editor-controls' }, [
+                    editorInput, save, cancelEdit
+                ]));
+                var revokeDevice = button('撤销此设备', function() {
                     return run('revoke-device', '确认撤销「' + title + '」的遥控授权？此设备需要重新配对才能使用。', [id]);
                 }, 'is-danger is-small');
-                deviceButtons.push(cancel);
+                deviceButtons.push(rename, save, cancelEdit, revokeDevice);
                 deviceList.appendChild(E('div', { 'class': 'tvg-device' }, [
-                    E('div', {}, [
+                    E('div', { 'class': 'tvg-device-info' }, [
                         E('div', { 'class': 'tvg-device-name' }, title),
                         E('div', { 'class': 'tvg-device-meta' }, meta),
-                        E('div', { 'class': 'tvg-device-meta' }, expiry)
+                        E('div', { 'class': 'tvg-device-meta' }, '设备标识：' + id),
+                        E('div', { 'class': 'tvg-device-meta' }, expiry),
+                        editor
                     ]),
-                    cancel
+                    E('div', { 'class': 'tvg-device-actions' }, [rename, revokeDevice])
                 ]));
             });
             if (!deviceButtons.length) {
@@ -267,10 +292,10 @@ return view.extend({
 
         root = E('div', { 'class': 'tvg-console' }, [
             E('link', { 'rel': 'stylesheet', 'href': STYLE + '?v=0.1.16-r15' }),
-            E('header', { 'class': 'tvg-header' }, [
+            E('div', { 'class': 'tvg-header' }, [
                 E('div', {}, [
                     E('div', { 'class': 'tvg-eyebrow' }, 'TVGUARD / PARENT ACCESS'),
-                    E('h2', { 'class': 'tvg-title' }, '家长遥控'),
+                    E('div', { 'class': 'tvg-page-heading', 'role': 'heading', 'aria-level': '2' }, '家长遥控'),
                     E('p', { 'class': 'tvg-intro' }, '管理家长遥控服务、家中访问与配对设备，不影响现有的观看计时与断网策略。')
                 ]),
                 update

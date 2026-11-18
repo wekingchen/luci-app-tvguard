@@ -243,10 +243,10 @@ return view.extend({
 
         var page = E('div', { 'class': 'tvg-console' }, [
             E('link', { 'rel': 'stylesheet', 'href': STYLE + '?v=0.1.16-r15' }),
-            E('header', { 'class': 'tvg-header' }, [
+            E('div', { 'class': 'tvg-header' }, [
                 E('div', {}, [
                     E('div', { 'class': 'tvg-eyebrow' }, 'TVGUARD / REMOTE ACCESS'),
-                    E('h2', { 'class': 'tvg-title' }, '远程访问'),
+                    E('div', { 'class': 'tvg-page-heading', 'role': 'heading', 'aria-level': '2' }, '远程访问'),
                     E('p', { 'class': 'tvg-intro' },
                         '通过独立的 Cloudflare Tunnel 访问家长遥控，不开放 LuCI 管理界面。')
                 ]),
