@@ -23,13 +23,46 @@ return view.extend({
         var state=E('div',{},'读取中…');
         var code=E('code',{'style':'overflow-wrap:anywhere;user-select:all'},'尚未生成');
         var lanLink=E('a',{'target':'_blank','rel':'noopener noreferrer','style':'display:none;overflow-wrap:anywhere'},'');
+        var deviceList=E('div',{'style':'margin-top:12px'},'读取设备列表中…');
         var codeHint=E('p',{'class':'description'},
             '配对码仅显示本次生成的值，5 分钟后失效，每个配对码最多使用一次。');
-        var busy=false,buttons=[];
-        function lock(v){busy=v;buttons.forEach(function(b){b.disabled=v;});}
+        var busy=false,buttons=[],deviceButtons=[];
+        function lock(v){busy=v;buttons.concat(deviceButtons).forEach(function(b){b.disabled=v;});}
+        function deviceTime(epoch){
+            var n=Number(epoch);
+            return n>0 ? new Date(n*1000).toLocaleString('zh-CN') : '旧版配对，时间未记录';
+        }
+        function renderDevices(devices){
+            deviceButtons=[];
+            deviceList.replaceChildren();
+            if(!Array.isArray(devices)||!devices.length){
+                deviceList.appendChild(E('p',{'class':'description'},'尚无已授权的家长设备'));
+                return;
+            }
+            devices.forEach(function(d){
+                var id=String(d.id||'');
+                if(!/^[0-9a-f]{16}$/.test(id))return;
+                var deviceName=String(d.name||'浏览器');
+                var detail='设备标识 '+id+' · '+deviceTime(d.paired_at)+' · '+
+                    (Number(d.expires)===0?'长期授权（除非撤销）':'到期：'+deviceTime(d.expires));
+                var cancel=button('撤销此设备',function(){
+                    return run('revoke-device','确定撤销 '+deviceName+'（'+id+'）的家长遥控授权吗？',[id]);
+                },'cbi-button-negative');
+                cancel.disabled=busy;
+                deviceButtons.push(cancel);
+                deviceList.appendChild(E('div',{'style':'display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;padding:10px 0;border-bottom:1px solid rgba(127,127,127,.16)'},[
+                    E('div',{},[
+                        E('strong',{},deviceName),
+                        E('div',{'class':'description','style':'overflow-wrap:anywhere;margin-top:4px'},detail)
+                    ]),
+                    cancel
+                ]));
+            });
+        }
         function notice(msg,level){ui.addNotification(null,E('p',{},msg),level||'info');}
         function renderState(s){
             if(!s){state.textContent='状态读取失败，请检查 RPCD 权限';return;}
+            renderDevices(s.devices);
             state.textContent='服务：'+(s.enabled?'已启用':'已关闭')+
                 ' · 本机 HTTP：'+(s.listener?'可连接':'未监听')+
                 ' · 已配对设备：'+s.paired+
@@ -49,11 +82,11 @@ return view.extend({
             return exec(READ,['status']).then(function(s){renderState(JSON.parse(s));})
                 .catch(function(err){notice('读取状态失败：'+String(err),'error');});
         }
-        function run(name,confirmation) {
+        function run(name,confirmation,args) {
             if(busy)return;
             if(confirmation&&!window.confirm(confirmation))return;
             lock(true);
-            return exec(MANAGE,[name]).then(function(result){
+            return exec(MANAGE,[name].concat(args||[])).then(function(result){
                 if(name==='pair'){
                     code.textContent=result.replace(/^.*：/,'');
                     notice('一次性配对码已生成，请在可信设备上使用');
@@ -100,10 +133,12 @@ return view.extend({
             E('section',{'class':'cbi-section'},[
                 E('h3',{},'家长设备配对'),
                 E('p',{'class':'description'},
-                    '在独立遥控页面输入以下一次性配对码，设备即可建立独立会话。服务端保存哈希而非明文会话令牌；30 天过期，最多支持 4 台设备。'),
+                    '在独立遥控页面输入 5 分钟一次性配对码。设备授权长期有效，直到你主动撤销；最多 4 台。浏览器清除 Cookie、使用无痕模式或系统清理网站数据时，仍需重新配对。'),
                 pair,E('div',{'style':'padding:12px;border-radius:9px;border:1px solid rgba(127,127,127,.35);margin-top:10px'},code),
                 codeHint,
-                revoke
+                E('h4',{'style':'margin-top:22px'},'已授权的家长设备'),
+                deviceList,
+                E('div',{'style':'margin-top:14px'},revoke)
             ]),
             E('p',{'class':'description'},
                 '注意：绝对不要在 Cloudflare Tunnel 中配置指向 LuCI 管理页面的公网路由。未来独立公网路由只允许指向 127.0.0.1:18765，并且应先配置 Cloudflare Access 家长身份策略。')
