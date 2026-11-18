@@ -68,7 +68,7 @@ exit 0
 SH
 
 chmod +x "$TMP/bin/uci" "$TMP/mock-action"
-for name in rpcd tvguard tvguardctl tvguard-agent-bridge tvguard-agent-bridge-setup; do
+for name in rpcd tvguard tvguardctl tvguard-remote tvguard-agent-bridge tvguard-agent-bridge-setup; do
     cp "$TMP/mock-action" "$TMP/$name"
 done
 
@@ -207,8 +207,150 @@ owned_state
 : > "$LOG"
 sh "$TMP/prerm" upgrade
 assert_proxy_section
-grep -q '^tvguard-agent-bridge stop$' "$LOG"
+grep -q '^tvguard-agent-bridge stop
+! grep -q '^tvguardctl enforce off$' "$LOG"
+! grep -q '^tvguard-fw remove$' "$LOG"
+! grep -q '^delete firewall\.tvguard$' "$LOG"
+grep -q '^firewall.tvguard=include$' "$STATE"
+
+# Foreign section on uninstall: never delete it.
+foreign_state
+cp "$STATE" "$TMP/foreign.before"
+: > "$LOG"
+sh "$TMP/prerm"
+cmp "$STATE" "$TMP/foreign.before"
+assert_proxy_section
+! grep -q '^delete firewall\.tvguard$' "$LOG"
+grep -q '^tvguardctl enforce off$' "$LOG"
 grep -q '^tvguard stop$' "$LOG"
+grep -q '^tvguard-fw remove$' "$LOG"
+
+# Failed firewall detach: abort uninstall, retain UCI, resume own daemon.
+owned_state
+cp "$STATE" "$TMP/owned.before"
+: > "$LOG"
+export TVG_FW_REMOVE_EXIT=9
+if sh "$TMP/prerm" >"$TMP/out" 2>"$TMP/err"; then
+    echo "FAIL: prerm ignored TV firewall detach failure" >&2
+    exit 1
+fi
+cmp "$STATE" "$TMP/owned.before"
+assert_proxy_section
+grep -q '^firewall.tvguard=include$' "$STATE"
+! grep -q '^delete firewall\.tvguard$' "$LOG"
+grep -q 'aborting uninstall' "$TMP/err"
+grep -q '^tvguardctl enforce off$' "$LOG"
+grep -q '^tvguard stop$' "$LOG"
+grep -q '^tvguard start$' "$LOG"
+export TVG_FW_REMOVE_EXIT=0
+
+# Successful uninstall: remove only owned TV Guard metadata; proxy survives.
+owned_state
+: > "$LOG"
+sh "$TMP/prerm"
+assert_proxy_section
+! grep -q '^firewall.tvguard=' "$STATE"
+grep -q '^delete firewall.tvguard$' "$LOG"
+grep -q '^commit firewall$' "$LOG"
+
+echo "PASS: package lifecycle preserves proxy UCI and aborts incomplete TVG detach safely"
+ "$LOG"
+grep -q '^tvguard-remote stop
+! grep -q '^tvguardctl enforce off$' "$LOG"
+! grep -q '^tvguard-fw remove$' "$LOG"
+! grep -q '^delete firewall\.tvguard$' "$LOG"
+grep -q '^firewall.tvguard=include$' "$STATE"
+
+# Foreign section on uninstall: never delete it.
+foreign_state
+cp "$STATE" "$TMP/foreign.before"
+: > "$LOG"
+sh "$TMP/prerm"
+cmp "$STATE" "$TMP/foreign.before"
+assert_proxy_section
+! grep -q '^delete firewall\.tvguard$' "$LOG"
+grep -q '^tvguardctl enforce off$' "$LOG"
+grep -q '^tvguard stop$' "$LOG"
+grep -q '^tvguard-fw remove$' "$LOG"
+
+# Failed firewall detach: abort uninstall, retain UCI, resume own daemon.
+owned_state
+cp "$STATE" "$TMP/owned.before"
+: > "$LOG"
+export TVG_FW_REMOVE_EXIT=9
+if sh "$TMP/prerm" >"$TMP/out" 2>"$TMP/err"; then
+    echo "FAIL: prerm ignored TV firewall detach failure" >&2
+    exit 1
+fi
+cmp "$STATE" "$TMP/owned.before"
+assert_proxy_section
+grep -q '^firewall.tvguard=include$' "$STATE"
+! grep -q '^delete firewall\.tvguard$' "$LOG"
+grep -q 'aborting uninstall' "$TMP/err"
+grep -q '^tvguardctl enforce off$' "$LOG"
+grep -q '^tvguard stop$' "$LOG"
+grep -q '^tvguard start$' "$LOG"
+export TVG_FW_REMOVE_EXIT=0
+
+# Successful uninstall: remove only owned TV Guard metadata; proxy survives.
+owned_state
+: > "$LOG"
+sh "$TMP/prerm"
+assert_proxy_section
+! grep -q '^firewall.tvguard=' "$STATE"
+grep -q '^delete firewall.tvguard$' "$LOG"
+grep -q '^commit firewall$' "$LOG"
+
+echo "PASS: package lifecycle preserves proxy UCI and aborts incomplete TVG detach safely"
+ "$LOG"
+grep -q '^tvguard stop
+! grep -q '^tvguardctl enforce off$' "$LOG"
+! grep -q '^tvguard-fw remove$' "$LOG"
+! grep -q '^delete firewall\.tvguard$' "$LOG"
+grep -q '^firewall.tvguard=include$' "$STATE"
+
+# Foreign section on uninstall: never delete it.
+foreign_state
+cp "$STATE" "$TMP/foreign.before"
+: > "$LOG"
+sh "$TMP/prerm"
+cmp "$STATE" "$TMP/foreign.before"
+assert_proxy_section
+! grep -q '^delete firewall\.tvguard$' "$LOG"
+grep -q '^tvguardctl enforce off$' "$LOG"
+grep -q '^tvguard stop$' "$LOG"
+grep -q '^tvguard-fw remove$' "$LOG"
+
+# Failed firewall detach: abort uninstall, retain UCI, resume own daemon.
+owned_state
+cp "$STATE" "$TMP/owned.before"
+: > "$LOG"
+export TVG_FW_REMOVE_EXIT=9
+if sh "$TMP/prerm" >"$TMP/out" 2>"$TMP/err"; then
+    echo "FAIL: prerm ignored TV firewall detach failure" >&2
+    exit 1
+fi
+cmp "$STATE" "$TMP/owned.before"
+assert_proxy_section
+grep -q '^firewall.tvguard=include$' "$STATE"
+! grep -q '^delete firewall\.tvguard$' "$LOG"
+grep -q 'aborting uninstall' "$TMP/err"
+grep -q '^tvguardctl enforce off$' "$LOG"
+grep -q '^tvguard stop$' "$LOG"
+grep -q '^tvguard start$' "$LOG"
+export TVG_FW_REMOVE_EXIT=0
+
+# Successful uninstall: remove only owned TV Guard metadata; proxy survives.
+owned_state
+: > "$LOG"
+sh "$TMP/prerm"
+assert_proxy_section
+! grep -q '^firewall.tvguard=' "$STATE"
+grep -q '^delete firewall.tvguard$' "$LOG"
+grep -q '^commit firewall$' "$LOG"
+
+echo "PASS: package lifecycle preserves proxy UCI and aborts incomplete TVG detach safely"
+ "$LOG"
 ! grep -q '^tvguardctl enforce off$' "$LOG"
 ! grep -q '^tvguard-fw remove$' "$LOG"
 ! grep -q '^delete firewall\.tvguard$' "$LOG"

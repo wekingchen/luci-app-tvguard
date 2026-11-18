@@ -4,6 +4,9 @@
 # Upgrades must not change enforcement, remove firewall hooks or reset
 # counters. The new postinst will restart both services.
 if [ "${1:-remove}" = upgrade ]; then
+    # 先停止独立家长 HTTP，避免旧 CGI 在会话迁移期间改写同一授权文件。
+    # postinst 会按 remote-enabled 原值恢复服务，不改变电视控制策略。
+    /etc/init.d/tvguard-remote stop 2>/dev/null || :
     /etc/init.d/tvguard-agent-bridge stop 2>/dev/null || :
     /etc/init.d/tvguard stop 2>/dev/null || :
     exit 0
