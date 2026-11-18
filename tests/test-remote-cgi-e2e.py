@@ -146,9 +146,9 @@ with tempfile.TemporaryDirectory(prefix="tvguard-api-e2e-") as directory:
 
     # 撤销后即使旧会话文件被并发写回，也必须因为代际不匹配而拒绝。
     old_record = session_path.read_text()
-    generation_file.write_text("c3" * 32 + "\\n")
+    generation_file.write_text("c3" * 32 + "\n")
     need("401", request(cookie=cookie), "pair_required")
-    generation_file.write_text(generation + "\\n")
+    generation_file.write_text(generation + "\n")
     session_path.write_text(old_record)
 
     # 公网 HTTPS Origin 经本机 HTTP 回源时，必须给登录 Cookie 加 Secure。
