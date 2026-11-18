@@ -3,128 +3,188 @@
 'require fs';
 'require ui';
 
-// 敏感 Token 只在本地 LuCI 管理会话中提交，绝不写入 UCI 或调用参数。
+// 仅管理 TVGuard 专用容器；Token 不进入 UCI、浏览器 URL 或 Docker 参数。
 var READ = '/usr/libexec/tvguard-tunnel-read';
 var MANAGE = '/usr/libexec/tvguard-tunnel-manage';
 var PENDING = '/tmp/tvguard-tunnel/token.pending';
+var STYLE = (typeof L !== 'undefined' && L.resource)
+    ? L.resource('view/tvguard/panel.css') : '/luci-static/resources/view/tvguard/panel.css';
+var PUBLIC_URL = 'https://tv.rqqr.de';
 
 function exec(script, args) {
     return fs.exec(script, args).then(function(r) {
-        if (r.code)
-            throw new Error(String(r.stderr || r.stdout || '执行失败').trim());
+        if (r.code) throw new Error(String(r.stderr || r.stdout || '执行失败').trim());
         return String(r.stdout || '').trim();
     });
 }
-function notice(message, level) {
-    ui.addNotification(null, E('p', {}, message), level || 'info');
+function button(text, callback, type) {
+    return E('button', { 'type': 'button',
+        'class': 'tvg-btn' + (type ? ' ' + type : ''), 'click': callback }, text);
 }
-function actionButton(label, kind, onClick) {
-    return E('button', {
-        'type': 'button',
-        'class': 'btn ' + (kind === 'danger' ? 'cbi-button-negative' : 'cbi-button-action'),
-        'style': 'min-height:38px;min-width:115px;',
-        'click': onClick
-    }, label);
+function badge(text, kind) {
+    return E('span', { 'class': 'tvg-pill' + (kind ? ' ' + kind : '') }, text);
+}
+function stat(label) {
+    var value = E('div', { 'class': 'tvg-stat-value' }, '—');
+    var detail = E('div', { 'class': 'tvg-stat-detail' }, '正在读取');
+    return { node: E('div', { 'class': 'tvg-stat' }, [
+        E('div', { 'class': 'tvg-stat-label' }, label), value, detail
+    ]), value: value, detail: detail };
+}
+function copyText(text, feedback) {
+    if (typeof navigator !== 'undefined' && navigator.clipboard && navigator.clipboard.writeText) {
+        return navigator.clipboard.writeText(text).then(function() {
+            feedback('地址已复制');
+        }).catch(function() { feedback('复制失败，请长按链接手动复制', true); });
+    }
+    feedback('浏览器暂不支持自动复制，请长按链接手动复制');
+    return Promise.resolve();
 }
 
 return view.extend({
     load: function() {
-        return exec(READ, ['status']).then(function(text) {
-            return JSON.parse(text);
-        }).catch(function() {
-            return null;
-        });
+        return exec(READ, ['status']).then(function(text) { return JSON.parse(text); })
+            .catch(function() { return null; });
     },
-
     render: function(initial) {
+        var connected = stat('专用容器'), tokenInfo = stat('Tunnel Token'),
+            metrics = stat('Metrics 安全');
+        var runBadge = badge('状态未知'), detailsBadge = badge('高级设置');
         var input = E('input', {
             'type': 'password',
-            'class': 'cbi-input-text',
+            'class': 'tvg-field',
             'autocomplete': 'new-password',
             'spellcheck': 'false',
-            'placeholder': '粘贴新建 Tunnel 的 Token',
-            'style': 'width:100%;max-width:620px;'
+            'placeholder': '更换 Token 时在此粘贴',
+            'aria-label': 'Cloudflare Tunnel Token'
         });
-        var summary = E('strong', {}, '正在读取状态…');
-        var details = E('div', { 'class': 'description', 'style': 'margin-top:6px;line-height:1.7;' }, '');
-        var logs = E('pre', {
-            'style': 'white-space:pre-wrap;overflow-wrap:anywhere;overflow:auto;max-height:360px;' +
-                'padding:12px;border-radius:8px;background:rgba(127,127,127,.10);' +
-                'font-size:12px;line-height:1.55;'
-        }, '尚未加载日志');
-        var busy = false;
-        var buttons = [];
+        var logs = E('pre', { 'class': 'tvg-log', 'aria-live': 'polite' },
+            '展开后点击“读取日志”，仅显示 TVGuard 专用容器的最近日志。');
+        var logPanel = E('details', { 'class': 'tvg-details' }, [
+            E('summary', {}, '查看最近运行日志'),
+            E('p', { 'class': 'tvg-card-desc', 'style': 'margin-top:12px' },
+                '只读取专用容器的最后 60 行日志，最多显示 16 KiB；不会操作其他 Docker 服务。'),
+            logs
+        ]);
+        var address = E('a', {
+            'href': PUBLIC_URL, 'class': 'tvg-url',
+            'target': '_blank', 'rel': 'noopener noreferrer'
+        }, PUBLIC_URL);
+        var busy = false, current = null, buttons = [],
+            summaryText = E('p', { 'class': 'tvg-card-desc' }, '读取 Tunnel 运行状态中…'),
+            inline = E('p', { 'class': 'tvg-message', 'role': 'status', 'aria-live': 'polite' }, '');
+        var tokenPanel = E('details', { 'class': 'tvg-details' }, []);
+        var start, stop, restart, save, refreshBtn, logButton;
 
-        function lockUI(value) {
-            busy = value;
-            buttons.forEach(function(b) { b.disabled = value; });
+        function inform(message, isError) {
+            inline.textContent = String(message || '');
+            inline.className = 'tvg-message' + (isError ? ' is-error' : '');
+            if (isError) ui.addNotification(null, E('p', {}, message), 'error');
         }
-        function applyState(s) {
+        function busyUI(value) {
+            busy = value;
+            applyButtons();
+        }
+        function applyButtons() {
+            buttons.forEach(function(b) { b.disabled = !!busy; });
+            if (!current || busy) return;
+            var running = current.container === 'running';
+            var ready = !!current.configured && !!current.storage_ready && !!current.docker_ready;
+            var owned = current.container !== 'foreign' && current.container !== 'unavailable';
+            start.disabled = running || !ready || !owned ||
+                (current.container === 'missing' && !current.image_present);
+            restart.disabled = !ready || !owned || current.container === 'missing';
+            stop.disabled = !running;
+            save.disabled = !current.storage_ready;
+            logButton.disabled = current.container === 'missing' || !owned;
+        }
+        function renderState(s) {
+            current = s;
             if (!s) {
-                summary.textContent = '状态读取失败';
-                details.textContent = '请检查 N1、rpcd 服务及当前账号的 LuCI 授权。';
+                connected.value.textContent = '读取失败';
+                connected.detail.textContent = '请检查 N1 / RPCD';
+                tokenInfo.value.textContent = '—';
+                tokenInfo.detail.textContent = '状态暂不可用';
+                metrics.value.textContent = '—';
+                metrics.detail.textContent = '状态暂不可用';
+                runBadge.textContent = '无法确认';
+                runBadge.className = 'tvg-pill is-warn';
+                summaryText.textContent = '无法读取状态，请刷新或检查路由器管理权限。';
+                applyButtons();
                 return;
             }
-            var names = {
-                running: '容器运行中（尚不代表 Tunnel 已连通）',
-                exited: '容器已停止', created: '容器已创建',
-                restarting: '正在重新连接', paused: '容器已暂停',
-                dead: '容器异常', missing: '尚未创建容器',
-                foreign: '发现同名非 TVGuard 容器，拒绝接管',
-                unavailable: 'Docker 服务不可用',
-                unknown: '状态未知'
+            var labels = {
+                running: '运行中', exited: '已停止', created: '已创建',
+                restarting: '正在重连', paused: '已暂停', dead: '异常',
+                missing: '未创建', foreign: '非 TVGuard 容器',
+                unavailable: 'Docker 不可用', unknown: '状态未知'
             };
-            summary.textContent = names[s.container] || '状态未知';
-            details.textContent =
-                'Token：' + (s.configured ? '已保存（不回显）' : '尚未配置') +
-                '　·　持久分区：' + (s.storage_ready ? '正常' : '未挂载 / 只读') +
-                '　·　Docker：' + (s.docker_ready ? '正常' : '不可用') +
-                '　·　镜像：' + (s.image_present ? '已安装' : '未安装') +
-                '　·　Metrics：' + (s.metrics_local ? '仅本机监听' : '配置需核查');
+            var state = labels[s.container] || '状态未知';
+            connected.value.textContent = state;
+            connected.detail.textContent = '容器：tvguard-cloudflared';
+            tokenInfo.value.textContent = s.configured ? '已保存' : '未配置';
+            tokenInfo.detail.textContent = s.configured ? '凭据仅保留在 N1 持久分区' : '需要先填写 Tunnel Token';
+            metrics.value.textContent = s.metrics_local ? '仅本机' : '需检查';
+            metrics.detail.textContent = s.metrics_local ?
+                '127.0.0.1:20241' : '运行参数不满足预期或容器未创建';
+            var running = s.container === 'running';
+            runBadge.textContent = running ? '容器运行中' : state;
+            runBadge.className = 'tvg-pill ' + (running ? 'is-good' :
+                s.container === 'foreign' || s.container === 'dead' || s.container === 'unavailable' ?
+                    'is-bad' : 'is-warn');
+            summaryText.textContent = running ?
+                'TVGuard Tunnel 容器正在运行。公网连通性以 Cloudflare 后台和手机实际访问为准。' :
+                s.container === 'foreign' ?
+                    '同名容器不属于 TVGuard，出于安全考虑拒绝接管。' :
+                    '只有专用容器的启停受本页管理，不影响电视计时、ZeroTier 或其他 Tunnel。';
+            detailsBadge.textContent = s.configured ? 'Token 已配置' : '需要 Token';
+            detailsBadge.className = 'tvg-pill ' + (s.configured ? 'is-good' : 'is-warn');
+            if (!s.configured) tokenPanel.open = true;
+            applyButtons();
         }
         function refresh() {
             return exec(READ, ['status']).then(function(text) {
-                applyState(JSON.parse(text));
+                renderState(JSON.parse(text));
+                inform('状态已更新');
             }).catch(function(err) {
-                applyState(null);
-                notice('读取 Tunnel 状态失败：' + String(err.message || err), 'error');
+                renderState(null);
+                inform('读取 Tunnel 状态失败：' + String(err.message || err), true);
             });
         }
         function refreshLogs() {
-            logs.textContent = '正在读取日志…';
+            if (busy) return;
+            logPanel.open = true;
+            logs.textContent = '正在读取…';
+            logButton.disabled = true;
             return exec(READ, ['logs']).then(function(text) {
                 logs.textContent = text || '容器暂无日志';
             }).catch(function(err) {
-                logs.textContent = '日志暂不可用：' + String(err.message || err);
-            });
+                logs.textContent = '日志读取失败：' + String(err.message || err);
+            }).finally(function() { applyButtons(); });
         }
         function runAction(name, confirmText) {
-            if (busy)
-                return;
-            if (confirmText && !window.confirm(confirmText))
-                return;
-            lockUI(true);
+            if (busy) return;
+            if (confirmText && !window.confirm(confirmText)) return;
+            busyUI(true);
+            inform('操作进行中…');
             return exec(MANAGE, [name]).then(function(msg) {
-                notice(msg);
-                return refresh();
-            }).then(refreshLogs).catch(function(err) {
-                notice(String(err.message || err), 'error');
-                return refresh();
-            }).finally(function() {
-                lockUI(false);
-            });
+                inform(msg || '操作已完成');
+                return exec(READ, ['status']).then(function(text) { renderState(JSON.parse(text)); });
+            }).catch(function(err) {
+                inform('操作失败：' + String(err.message || err), true);
+            }).finally(function() { busyUI(false); });
         }
         function saveToken() {
-            if (busy)
-                return;
+            if (busy) return;
             var value = String(input.value || '').trim();
             if (!/^[A-Za-z0-9_./+=-]{64,8192}$/.test(value)) {
-                notice('Token 应为 Cloudflare 提供的长字符串，不允许换行或其他特殊字符。', 'error');
+                inform('Token 格式不正确：请粘贴 Cloudflare Tunnel 提供的完整字符串，不能包含空格或换行。', true);
                 return;
             }
-            if (!window.confirm('保存或更换 Token？若容器正在运行，将自动重启该容器。'))
+            if (!window.confirm('确认保存或更换 Tunnel Token？运行中的专用容器会自动重启，外网可能短暂中断。'))
                 return;
-            lockUI(true);
+            busyUI(true);
+            inform('正在安全保存 Token…');
             return exec(MANAGE, ['prepare']).catch(function(err) {
                 throw new Error('准备临时目录失败：' + String(err.message || err));
             }).then(function() {
@@ -136,74 +196,116 @@ return view.extend({
                     throw new Error('保存到持久分区失败：' + String(err.message || err));
                 });
             }).then(function(msg) {
-                input.value = '';
-                value = '';
-                notice(msg);
-                return refresh();
-            }).then(refreshLogs).catch(function(err) {
-                notice('保存失败：' + String(err.message || err), 'error');
-                return refresh();
+                inform(msg || 'Tunnel Token 已更新');
+                return exec(READ, ['status']).then(function(text) { renderState(JSON.parse(text)); });
+            }).catch(function(err) {
+                inform('保存失败：' + String(err.message || err), true);
             }).finally(function() {
                 input.value = '';
                 value = '';
-                lockUI(false);
+                busyUI(false);
             });
         }
 
-        var save = actionButton('保存 / 更换 Token', 'normal', saveToken);
-        var start = actionButton('创建并启动 / 启动', 'normal', function() {
-            return runAction('start');
+        start = button('启动 Tunnel', function() { return runAction('start'); }, 'is-primary');
+        restart = button('重启', function() {
+            return runAction('restart', '重启 TVGuard Tunnel 会短暂中断外网访问，确定继续？');
         });
-        var restart = actionButton('重启', 'normal', function() {
-            return runAction('restart');
-        });
-        var stop = actionButton('停止', 'danger', function() {
-            return runAction('stop', '停止 TVGuard Tunnel 后，外网访问将中断。继续吗？');
-        });
-        var update = actionButton('刷新状态', 'normal', refresh);
-        var logButton = actionButton('刷新日志', 'normal', refreshLogs);
-        buttons = [save, start, restart, stop, update, logButton];
+        stop = button('停止 Tunnel', function() {
+            return runAction('stop', '停止 Tunnel 后家中 HTTP 不受影响，但外网家长遥控会中断。确定停止？');
+        }, 'is-danger');
+        refreshBtn = button('刷新状态', refresh);
+        logButton = button('读取日志', refreshLogs, 'is-small');
+        save = button('保存 / 更换 Token', saveToken, 'is-primary');
+        buttons = [start, restart, stop, refreshBtn, logButton, save];
 
-        var root = E('div', {'style':'max-width:930px;margin:0 auto;padding-bottom:18px'}, [
-            E('h2', {}, 'TV Guard · 远程访问'),
-            E('p', {'class':'description'},
-                '单独管理 TVGuard 的 cloudflared Docker 容器；不会操作 Vaultwarden、ntfy 或 TVGuard 的电视计时与防火墙规则。'),
-            E('section', {'class':'cbi-section'}, [
-                E('h3', {}, 'Cloudflare Tunnel · 配置'),
-                E('p', {'class':'description'}, [
-                    '先在 ', E('a', {
-                        'href':'https://one.dash.cloudflare.com/',
-                        'target':'_blank', 'rel':'noopener noreferrer'
-                    }, 'Cloudflare Zero Trust'), ' 创建 remotely-managed Tunnel，复制其中的 Token。'
-                ]),
-                E('div', {'style':'margin:12px 0'}, input),
-                save,
-                E('p', {'class':'description', 'style':'margin-top:10px;line-height:1.6'},
-                    'Token 保存到 N1 持久 XFS 分区的 root 限权文件，不进入 UCI、容器环境变量或 Docker 命令参数；需要已存在的 cloudflare/cloudflared:latest 镜像（版本至少 2025.4.0）。')
-            ]),
-            E('section', {'class':'cbi-section'}, [
-                E('h3', {}, '容器状态与操作'),
-                E('div', {'style':'margin-bottom:10px'}, [summary, details]),
-                E('div', {'style':'display:flex;gap:9px;flex-wrap:wrap;align-items:center'}, [
-                    start, restart, stop, update
-                ]),
-                E('p', {'class':'description','style':'margin-top:10px;line-height:1.6'},
-                    '使用固定容器名 tvguard-cloudflared；只有本模块创建并带有专属标签的容器可被操作。容器运行中不代表 Cloudflare 已连通，请查看日志及 Cloudflare 后台确认。')
-            ]),
-            E('section', {'class':'cbi-section'}, [
-                E('div', {'style':'display:flex;align-items:center;gap:12px;flex-wrap:wrap'}, [
-                    E('h3', {'style':'margin:0'}, '最近运行日志'),
-                    logButton
-                ]),
-                logs,
-                E('p', {'class':'description'}, '仅查询专用容器最近 60 行，最多显示 16 KiB。Docker 自动轮转日志，每个文件 2 MB、保留 3 个。')
-            ]),
-            E('p', {'class':'description'},
-                '安全提醒：在 TVGuard 家长控制面板与独立鉴权 API 完成前，不要在 Tunnel 中发布 LuCI 或 RPCD 的外网路由。')
+        tokenPanel = E('details', { 'class': 'tvg-details', 'open': false }, [
+            E('summary', {}, '凭据管理（高级）'),
+            E('div', { 'class': 'tvg-details-body' }, [
+                E('p', { 'class': 'tvg-card-desc' },
+                    'Token 已配置且 Tunnel 正常运行时无需操作。仅在更换 Cloudflare Tunnel 时填写，不会回显已保存的 Token。'),
+                E('div', { 'class': 'tvg-secret-wrap' }, [input, save]),
+                E('p', { 'class': 'tvg-caption' },
+                    '凭据写入 N1 的 XFS 持久分区，不进入 UCI 或 Docker 命令行。本页仅操作 tvguard-cloudflared。')
+            ])
         ]);
-        applyState(initial);
-        if (initial && initial.container !== 'missing' && initial.container !== 'unavailable')
-            refreshLogs();
-        return root;
+
+        var page = E('div', { 'class': 'tvg-console' }, [
+            E('link', { 'rel': 'stylesheet', 'href': STYLE + '?v=0.1.16-r15' }),
+            E('header', { 'class': 'tvg-header' }, [
+                E('div', {}, [
+                    E('div', { 'class': 'tvg-eyebrow' }, 'TVGUARD / REMOTE ACCESS'),
+                    E('h2', { 'class': 'tvg-title' }, '远程访问'),
+                    E('p', { 'class': 'tvg-intro' },
+                        '通过独立的 Cloudflare Tunnel 访问家长遥控，不开放 LuCI 管理界面。')
+                ]),
+                refreshBtn
+            ]),
+            E('div', { 'class': 'tvg-status-grid' }, [
+                connected.node, tokenInfo.node, metrics.node
+            ]),
+            E('div', { 'class': 'tvg-layout' }, [
+                E('section', { 'class': 'tvg-card' }, [
+                    E('div', { 'class': 'tvg-card-header' }, [
+                        E('h3', { 'class': 'tvg-card-title' }, '外网家长遥控'),
+                        badge('公网 HTTPS')
+                    ]),
+                    E('p', { 'class': 'tvg-card-desc' },
+                        '你已配置的 TVGuard 专用域名。家长手机从外部网络打开后，仍需经过设备配对认证。'),
+                    E('div', { 'class': 'tvg-address' }, [
+                        address,
+                        E('div', { 'class': 'tvg-address-actions' }, [
+                            button('复制', function() { return copyText(PUBLIC_URL, inform); }, 'is-small'),
+                            E('a', { 'class': 'tvg-btn is-primary is-small',
+                                'href': PUBLIC_URL, 'target': '_blank',
+                                'rel': 'noopener noreferrer' }, '打开')
+                        ])
+                    ]),
+                    E('p', { 'class': 'tvg-caption' },
+                        '容器运行状态不等于公网连通确认；可从手机蜂窝网络验证实际访问。'),
+                    E('div', { 'class': 'tvg-safety' },
+                        '当前方案未启用 Cloudflare Access。公网可以打开配对页面，控制操作仍需 TVGuard 自身授权。')
+                ]),
+                E('section', { 'class': 'tvg-card' }, [
+                    E('div', { 'class': 'tvg-card-header' }, [
+                        E('h3', { 'class': 'tvg-card-title' }, 'Tunnel 服务'),
+                        runBadge
+                    ]),
+                    summaryText,
+                    E('div', { 'class': 'tvg-controls' }, [start, restart, stop]),
+                    E('details', { 'class': 'tvg-details' }, [
+                        E('summary', {}, '运行环境与安全限制'),
+                        E('div', { 'class': 'tvg-details-body' }, [
+                            E('dl', { 'class': 'tvg-data' }, [
+                                E('dt', {}, '容器名'), E('dd', {}, 'tvguard-cloudflared'),
+                                E('dt', {}, 'Metrics'), E('dd', {}, '127.0.0.1:20241（仅本机）'),
+                                E('dt', {}, '回源'), E('dd', {}, 'http://localhost:18765'),
+                                E('dt', {}, '容器安全'), E('dd', {}, '专属标签、最小权限、独立日志轮转')
+                            ]),
+                            E('p', { 'class': 'tvg-caption' },
+                                '仅操作 TVGuard 专用容器，不接管 Vaultwarden、ntfy 或其它 Tunnel。')
+                        ])
+                    ])
+                ]),
+                E('section', { 'class': 'tvg-card tvg-card-wide' }, [
+                    E('div', { 'class': 'tvg-card-header' }, [
+                        E('h3', { 'class': 'tvg-card-title' }, '维护与诊断'),
+                        detailsBadge
+                    ]),
+                    E('p', { 'class': 'tvg-card-desc' },
+                        '正常使用无需操作。遇到 Tunnel 连接问题时查看日志；仅在凭据变更时编辑 Token。'),
+                    tokenPanel,
+                    E('div', { 'class': 'tvg-details' }, [
+                        logPanel,
+                        E('div', { 'class': 'tvg-controls' }, [logButton])
+                    ])
+                ])
+            ]),
+            inline,
+            E('p', { 'class': 'tvg-footer' },
+                '外网仅转发至家长遥控服务，不要发布 LuCI、SSH 或 RPCD。家中的 HTTP 访问可在「家长遥控」页面管理。')
+        ]);
+        renderState(initial);
+        return page;
     }
 });
