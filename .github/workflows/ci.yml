@@ -81,6 +81,8 @@ jobs:
         run: python3 tests/test-remote-cgi-e2e.py
       - name: Validate uhttpd CGI same-origin behavior
         run: python3 tests/test-remote-origin.py
+      - name: Exercise LuCI paired-device list and scoped revocation
+        run: node tests/test-remote-luci.js
       - name: Validate standalone parent remote safety
         run: python3 tests/test-parent-remote-safety.py
       - name: Validate Cloudflare Tunnel management permissions
