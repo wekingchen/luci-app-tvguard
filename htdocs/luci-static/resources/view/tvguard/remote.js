@@ -293,7 +293,7 @@ return view.extend({
         buttons = [enable, disable, enableLan, disableLan, pair, revoke, update];
 
         root = E('div', { 'class': 'tvg-console' }, [
-            E('link', { 'rel': 'stylesheet', 'href': STYLE + '?v=0.1.16-r21' }),
+            E('link', { 'rel': 'stylesheet', 'href': STYLE + '?v=0.1.16-r22' }),
             E('div', { 'class': 'tvg-header' }, [
                 E('div', {}, [
                     E('div', { 'class': 'tvg-page-heading', 'role': 'heading', 'aria-level': '1' }, 'TV Guard · 家长遥控'),
