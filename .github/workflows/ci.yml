@@ -62,6 +62,8 @@ jobs:
         run: node tests/test-settings-ui.js
       - name: Verify random generation without od/hexdump/xxd
         run: sh tests/test-remote-random.sh
+      - name: Validate remote admin issue and revocation lifecycle
+        run: python3 tests/test-remote-admin-e2e.py
       - name: Validate minimized remote status schema
         run: python3 tests/test-remote-status.py
       - name: Validate parent remote CGI end-to-end contract
