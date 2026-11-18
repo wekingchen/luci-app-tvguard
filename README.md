@@ -1,5 +1,15 @@
 # TV Guard · 家庭电视时间管理
 
+## 当前稳定版 · v0.1.16-r16
+
+- **N1 主包**：luci-app-tvguard_0.1.16-16_all.ipk；原有 Android 6 电视 Agent 0.3.7 保持固定签名，已安装则无需重复安装。
+- **真实验收**：儿童模式与正式控制、Adaptive 低码率计时和高可信暂停/首页免计时、Bark 日报、LuCI 两页桌面/手机 UI、家长配对与设备管理、家中直连和 tv.rqqr.de 外网 Tunnel 均已验证；用户于 2026-11-18 确认 N1 重启后功能正常。
+- **外网**：https://tv.rqqr.de（无需家庭公网 IP），当前未配置 Cloudflare Access；操作仍须 TVGuard 配对授权。不要发布 LuCI、RPCD、SSH、Docker Socket。
+- **iPhone 入口**：建议在 Safari 将 https://tv.rqqr.de 添加到主屏幕。该用户侧操作不需要 N1 软件新功能，尚未提供单独的桌面图标验收证据。
+- **维护**：以后以 Bug 修复与 OpenWrt/Agent 兼容为主；不再为优化单次样本放宽计时安全门槛。
+- [正式 Release 说明](docs/RELEASE_0.1.16.md) · [家长遥控](docs/PARENT_REMOTE.md) · [远程访问](docs/REMOTE_ACCESS.md) · [稳定性验收记录](docs/FINAL_STABILITY_REVIEW.md)
+
+
 ## v0.1.16-r16 · 标题遮挡修复与可编辑设备备注
 
 - r15 真机截图显示两页主标题被 LuCI 主题的全局 header/h2 样式覆盖，出现跨页面的蓝色遮挡栏。r16 将两页标题改为带 role=heading 的独立 div 元素，并收紧 CSS 作用域。
@@ -8,7 +18,7 @@
 - RPCD 只允许对合法设备标识执行 rename-device，服务器拒绝恶意字符、无效设备与过长名称；不会把改名能力开放给公网遥控 API。
 - 新增标题主题兼容、修改设备名、中文持久化、非法输入拒绝与撤销清理测试；本轮不修改计时、电视 Agent、Tunnel Token 和 Docker 逻辑。r16 的 LuCI UI 已于 2026-11-18 获用户真机确认正常。
 
-## v0.1.16-r15 · 家长遥控与远程访问 UI 产品化候选
+## v0.1.16-r15 · 家长遥控与远程访问 UI 产品化（历史阶段）
 
 - **已真机验收的功能基线（r14）**：N1 家中 HTTP 直连及 iPhone 配对/模式/奖励、Cloudflare Tunnel 公网 HTTPS `https://tv.rqqr.de` 均正常使用；当前方案不启用 Cloudflare Access，公网操作继续依赖 TVGuard 自身配对授权。
 - **r15 主要变化仅涉及 LuCI UI**：家长遥控与远程访问两页共享响应式视觉体系；桌面端卡片与摘要、手机端单栏/可点击的大按钮；状态、访问信息、配对设备、Token/日志维护合理分区。
@@ -27,7 +37,7 @@
 - r6：Metrics 强制为 127.0.0.1:20241，并移除真机已迁移完成的一次性安全重建入口。
 - 此前 r3-r5 Cloudflare Tunnel 管理与容器隔离演进记录保留在历史提交中；家长控制的具体使用与安全边界以当前文档为准。
 
-## v0.1.15-r11 · 多 App 泛化与独立 App 首页画像（当前开发候选）
+## v0.1.15-r11 · 多 App 泛化与独立 App 首页画像（历史版本）
 
 - N1 主包：`luci-app-tvguard 0.1.15-11`，build-id：`v0.1.15-r11-standalone-app-home-profile`；Bridge/Fusion 已整合进主包，不再单独安装 Bridge IPK。
 - 电视 Agent：`0.3.7` / versionCode 20，沿用固定签名；Accessibility 自恢复、UI Structure、TVG5 诊断与 bounded-RAM 约束保持不变。
@@ -71,7 +81,7 @@
 
 面向 OpenWrt/LEDE 的电视使用时间管理。当前优先适配 **Phicomm N1 / LEDE R26.11.3 / fw3 / iptables-legacy** 的单网口旁路由环境。
 
-> **状态：v0.1.15-r11 多 App 泛化开发候选，已完成三款视频 App 的核心真机计费回归。** 当前 LuCI 顶部页签为“概览 / 设置”；N1 主包已整合 Bridge，首次从 v0.1.13-r21 + 独立 Bridge 升级到单主包的真机迁移已通过。 v0.1.1 已通过 N1 的基础安装、LuCI、RAW 出站计数验证；v0.1.5 完成代理隔离硬化，v0.1.6 完成 LuCI 信息架构重构，v0.1.7 将家长模式明确为持续模式，并把孩子临时多看的需求统一归入奖励时间。 v0.1.8 根据 iPhone 深色主题实机截图重新收紧移动端响应式布局：顶部状态固定 2×2、模式/奖励按钮规则化、卡片改为深浅主题兼容的透明层级，并去掉 Argon 下过重的嵌套标题块。v0.1.9 进一步把 LuCI 顶部导航改成明确的“概览 / 时间规则”双 tab，去掉单独悬着的“时间规则”导航块。v0.1.10 收口移动端文案与视觉：顶部改为“儿童剩余”，家长模式摘要压缩，观察/家长状态提示改为轻量边框样式，减少深色主题中的高饱和色块。 v0.1.11 仅收口操作记录：奖励撤销日志记录具体分钟数，并兼容隐藏旧版本内部事件编号。2026-11-09 用户确认 v0.1.11 在 N1 完成日志、手机端界面与代理兼容检查的真机验收；同日第一轮正式锁定实测也通过：`TVG_GATE=DROP` 时电视实际断网，而手机、电脑保持正常联网。正式锁定测试结束后的安全收尾也已验证：恢复为 `enforce=0 / armed=0 / gate=allowed`，且 `tvguard-compat-check` 再次 `PASS`、`proxy_rules_unchanged=1`。v0.1.12 又完成了正式控制完整手动链路真机验证：`locked` 时 `TVG_GATE=DROP` 且电视断网，不关闭 enforce 直接切换 `parent` 后 gate 原位恢复为 `RETURN`、电视恢复联网；最终退出正式控制后兼容检查仍 `PASS`。儿童额度自动控制也已真机通过：额度耗尽自动 `DROP`，+15 分钟奖励立即恢复 `RETURN`，撤销奖励再次 `DROP`，家长模式可随时放行；最终兼容检查仍 `PASS`。TV Guard 自身 service reload 也已真机通过：daemon PID 不变，locked 时继续 `DROP`，parent 时继续 `RETURN`，最终兼容检查仍 `PASS`。全局 fw3/firewall reload 也已真机通过：fw3 清空并重建 raw 表后，TV Guard include 能按当前持久状态恢复目标电视 hook，locked 继续 `DROP`、parent 继续 `RETURN`，daemon PID 不变，最终兼容检查仍 `PASS`。N1 整机重启持久恢复也已真机通过：parent 模式跨重启恢复 `RETURN`，locked 模式跨重启恢复 `DROP`，已用额度保持不变，开机自启和代理兼容检查均正常。至此 v0.1.12 的**控制执行层**（模式、额度封禁、奖励恢复、reload/reboot、代理隔离）已完成真机闭环并作为稳定基线发布；但它仍按网络活动扣儿童时间，尚未完成最初要求的“系统首页/App 首页/明确暂停不计时”。v0.1.13 开始把经过保守验证的闲置识别正式接入儿童计时。实验性回程观测仍默认关闭。正式恢复链路复测时又暴露 N1 BusyBox `sleep` 不接受 `0.1` 的锁竞争兼容问题；v0.1.12 将锁等待改为整数秒重试并新增回归测试。默认 `enforce=0`、`allow_enforcement=0`、`observe_reply=0`。
+> **当前稳定版本：v0.1.16-r16。** 详细历史验收记录保留在下文，实际使用和安装以顶部稳定版说明、正式 Release 为准。
 
 ## 已实现的基础能力
 
