@@ -121,6 +121,16 @@ for asset in ("style.css", "app.js"):
     expected_url = f"/{asset}?v={asset_version}"
     assert expected_url in index_html, f"stale PWA asset key: expected {expected_url}"
 assert "远程连接正常" in app_js, "short iPhone remote-connection status missing"
+# Verify the actual installed LuCI payload, not only the source snapshot.
+luci_css = data["www/luci-static/resources/view/tvguard/panel.css"][1].decode("utf-8")
+luci_remote = data["www/luci-static/resources/view/tvguard/remote.js"][1].decode("utf-8")
+luci_tunnel = data["www/luci-static/resources/view/tvguard/tunnel.js"][1].decode("utf-8")
+assert "color: #f7faff !important" in luci_css, "dark pairing code contrast missing from IPK"
+assert "background: transparent !important" in luci_css, "theme header reset missing from IPK"
+for view_source in (luci_remote, luci_tunnel):
+    assert f"STYLE + '?v={asset_version}'" in view_source, "LuCI CSS cache version mismatch"
+    assert "'role': 'heading', 'aria-level': '2'" in view_source, "accessible card headings missing"
+
 assert "etc/tvguard/agent-bridge.key" not in data, "key must never be packaged"
 assert "conffiles" in control and b"agent-bridge.key" not in control["conffiles"][1]
 print(f"PASS: OpenWrt gzip-tar IPK, root ownership, package metadata, control and payload ({len(raw)} bytes)")
