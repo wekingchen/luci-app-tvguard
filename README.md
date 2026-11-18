@@ -1,5 +1,12 @@
 # TV Guard · 家庭电视时间管理
 
+## v0.1.16-r4 · 独立家长遥控预览（未真机验收）
+
+- 默认关闭的 localhost-only uhttpd 服务、5 分钟一次性配对、30 天可撤销会话、家长 PWA 和白名单 API。
+- LuCI 新增「家长遥控」页，支持启停、配对和全部授权撤销；计时、Agent 与 RAW 规则不变。
+- 家中 Wi-Fi HTTPS 入口与 Cloudflare Access 入口尚未完成，不得公开 LuCI。详见 [家长遥控器](docs/PARENT_REMOTE.md)。
+
+
 ## v0.1.16-r3 · Cloudflare Tunnel LuCI 管理（未真机验收候选）
 
 - r3 增加 metrics 本机监听 `127.0.0.1:20241`、带回滚的容器安全重建及状态显示。原有容器需要在 LuCI 中执行一次安全重建。

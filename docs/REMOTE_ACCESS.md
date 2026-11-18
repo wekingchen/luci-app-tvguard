@@ -33,3 +33,7 @@ v0.1.16-r3 新创建的专用容器统一使用 `--metrics 127.0.0.1:20241`。�
 ## 公网开放前尚需完成
 
 先开发专用家长控制页面及限权 API，再接入设备配对、会话超时、CSRF 防护、操作审计与 Cloudflare Access 认证。Cloudflare Tunnel 只允许连接到专用 TVGuard 服务，不应直接转发 LuCI、rpcd、SSH。最终统一域名能否在家走局域网、在外走 Tunnel，还需实测 DNS 分流和 HTTPS 证书配置。
+
+## 家长遥控预览
+
+v0.1.16-r4 引入默认禁用且仅监听 127.0.0.1:18765 的独立家长控制服务，LuCI 可生成一次性配对码和撤销会话。当前尚未配置 LAN HTTPS 或 Cloudflare Access，请勿对外发布未经验收的入口。详情参见 PARENT_REMOTE.md。
