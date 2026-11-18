@@ -104,8 +104,13 @@ status() {
     else
         state=unavailable
     fi
-    printf '{"storage_ready":%s,"configured":%s,"docker_ready":%s,"image_present":%s,"container":"%s"}\n' \
-        "$storage" "$configured" "$dockerd" "$image" "$state"
+    metrics_local=false
+    if [ "$dockerd" = true ] && container_exists && managed &&
+       docker inspect -f '{{json .Config.Cmd}}' "$NAME" 2>/dev/null | grep -Fq '127.0.0.1:20241'; then
+        metrics_local=true
+    fi
+    printf '{"storage_ready":%s,"configured":%s,"docker_ready":%s,"image_present":%s,"container":"%s","metrics_local":%s}\n' \
+        "$storage" "$configured" "$dockerd" "$image" "$state" "$metrics_local"
 }
 logs() {
     require_docker
@@ -115,6 +120,20 @@ logs() {
     docker logs --timestamps --tail 60 "$NAME" 2>&1 |
         grep -Ev 'TUNNEL_TOKEN|--token[ =]|eyJ[A-Za-z0-9_./+=-]{20}' |
         tail -c 16384 || :
+}
+create_container() {
+    docker run -d \
+        --name "$NAME" \
+        --label org.tvguard.owner=luci-app-tvguard \
+        --restart unless-stopped \
+        --network host \
+        --user 0:0 \
+        --cap-drop ALL \
+        --security-opt no-new-privileges:true \
+        --log-opt max-size=2m \
+        --log-opt max-file=3 \
+        --mount "type=bind,src=$DATA,dst=/etc/tvguard,readonly" \
+        "$IMAGE" tunnel --no-autoupdate --metrics 127.0.0.1:20241 run --token-file /etc/tvguard/token >/dev/null
 }
 start() {
     require_storage
@@ -131,20 +150,10 @@ start() {
         return
     fi
     require_image
-    docker run -d \
-        --name "$NAME" \
-        --label org.tvguard.owner=luci-app-tvguard \
-        --restart unless-stopped \
-        --network host \
-        --user 0:0 \
-        --cap-drop ALL \
-        --security-opt no-new-privileges:true \
-        --log-opt max-size=2m \
-        --log-opt max-file=3 \
-        --mount "type=bind,src=$DATA,dst=/etc/tvguard,readonly" \
-        "$IMAGE" tunnel --no-autoupdate --metrics 127.0.0.1:20241 run --token-file /etc/tvguard/token >/dev/null
+    create_container || die "Docker 创建 TVGuard Tunnel 容器失败"
     echo "TVGuard Tunnel 已创建并启动；连通性请查看日志及 Cloudflare 后台"
 }
+
 stop() {
     require_docker
     guard_container
@@ -165,6 +174,45 @@ restart() {
     fi
     echo "TVGuard Tunnel 已重新启动"
 }
+rebuild() {
+    require_storage
+    require_token
+    require_docker
+    guard_container
+    container_exists || die "TVGuard 容器未创建"
+    require_image
+    # 保留原容器以便故障回滚；不触碰 Vaultwarden 或 ntfy。
+    backup=tvguard-cloudflared-rebuild-backup
+    docker container inspect "$backup" >/dev/null 2>&1 &&
+        die "已有重建备份容器，请先人工检查，拒绝覆盖"
+    running="$(docker inspect -f '{{.State.Running}}' "$NAME")"
+    docker stop "$NAME" >/dev/null || die "无法停止原容器"
+    if ! docker rename "$NAME" "$backup"; then
+        [ "$running" != true ] || docker start "$NAME" >/dev/null 2>&1 || :
+        die "保留旧容器失败，未进行重建"
+    fi
+    # 新容器仅在 Docker 报告运行时才替换原容器，否则恢复。
+    success=0
+    if create_container; then
+        if [ "$(docker inspect -f '{{.State.Running}}' "$NAME" 2>/dev/null || :)" = true ]; then
+            success=1
+        fi
+    fi
+    if [ "$success" = 1 ]; then
+        docker rm "$backup" >/dev/null || :
+        echo "重建成功：Metrics 限制到 127.0.0.1:20241，请确认 Tunnel Healthy"
+        return 0
+    fi
+    # 创建失败时保留原容器的原始配置与状态。
+    if container_exists; then
+        docker rm -f "$NAME" >/dev/null 2>&1 || :
+    fi
+    docker rename "$backup" "$NAME" || die "自动回滚失败，请检查备用容器"
+    if [ "$running" = true ]; then
+        docker start "$NAME" >/dev/null || die "旧容器已恢复但启动失败"
+    fi
+    die "新容器未能正常运行，已恢复旧容器"
+}
 case "${1:-}" in
     prepare) prepare ;;
     save-token) save_token ;;
@@ -173,5 +221,6 @@ case "${1:-}" in
     start) start ;;
     stop) stop ;;
     restart) restart ;;
+    rebuild) rebuild ;;
     *) exit 2 ;;
 esac
