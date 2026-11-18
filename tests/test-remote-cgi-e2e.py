@@ -89,7 +89,7 @@ with tempfile.TemporaryDirectory(prefix="tvguard-api-e2e-") as directory:
     assert (state / "sessions").exists()
     assert cookie_match.group(1) not in (state / "sessions").read_text(), "明文 Token 被保存在服务端"
 
-    need("401", request("POST", "pair", body=("code="+code).encode()), "pair_not_available")
+    need("403", request("POST", "pair", body=("code="+code).encode()), "pair_not_available")
     need("200", request(cookie=cookie), '"mode":"child"')
     need("403", request("POST", "mode-child", cookie=cookie, origin="https://evil.invalid"), "origin_rejected")
     assert not action_log.exists(), "跨站请求触发了实际控制指令"
