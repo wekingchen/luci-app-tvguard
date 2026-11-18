@@ -1,5 +1,13 @@
 # TVGuard · iPhone 主屏 Web App 视觉修复（r17）
 
+## r21 · 依据概览风格精修 Web App
+
+- 本轮不重新设计路由器 LuCI，而是将其已统一的「概览」视觉规范扩展到独立家长遥控 Web App：透明细边面板、灰阶软底统计块、紧凑标题/信息密度、轻量状态边框和按钮。
+- PWA 保留独立运行和手机触控的合理差异：最小按钮 44px；最大宽度 680px；独立主屏的 88px 安全区回退与底部 Home Indicator 留白维持不变。
+- 模式选中态与锁定颜色清晰，家长模式隐藏观看进度；深色模式明确指定文字颜色，不使用 LuCI 外部 CSS。
+- 只更新 CSS 设计和 HTML 中的资源缓存键 `0.1.16-r21`，不修改 `app.js` 的 API、授权、配对、错误防重试或网络分流行为。
+- CI 使用 `test-remote-pwa.js`、`test-remote-pwa-layout.js` 和 `test-pwa-overview-consistency.js` 测试交互、安全区、视觉 Token、颜色对比度与资源版本；IPK 实物验证检查新 CSS。视觉结果待 iPhone 主屏实机验收。
+
 ## r18 · iOS 主屏缓存版本修复（2026-11-18）
 
 用户在 r17 强制覆盖安装后提供第二张 iPhone 主屏截图：顶部安全区和深色布局正常，但连接状态仍显示「Cloudflare Tunnel · 在线」，最后一个「线」被换行。仓库源码的 `connectionState()` 已精简为「远程连接正常」，原因尚不能仅凭截图确认（可能是浏览器持有旧 JS，也可能是 N1 实际静态文件未更新）。

@@ -108,6 +108,14 @@ for name in (
 # app.js query key, so iOS could continue displaying old Cloudflare Tunnel text.
 index_html = data["usr/share/tvguard-remote/www/index.html"][1].decode("utf-8")
 app_js = data["usr/share/tvguard-remote/www/app.js"][1].decode("utf-8")
+pwa_css = data["usr/share/tvguard-remote/www/style.css"][1].decode("utf-8")
+assert "--line: rgba(127,127,127,.42)" in pwa_css, "overview-aligned Web App panel border missing from IPK"
+assert "--tile-line: rgba(127,127,127,.32)" in pwa_css, "overview-aligned Web App metric border missing from IPK"
+assert "--soft: rgba(127,127,127,.08)" in pwa_css, "overview-aligned Web App metric background missing from IPK"
+assert ".progress.is-unlimited { display: none; }" in pwa_css, "parent progress visibility regressed"
+assert "min-height: 44px" in pwa_css and "max(88px" in pwa_css, "Web App tap targets or safe area regressed"
+assert "@media (prefers-color-scheme: dark)" in pwa_css, "Web App dark mode missing"
+
 # Integration tests deliberately build current source with a historical package
 # metadata version (0.1.15-11). Asset URLs must follow the actual source
 # revision from Makefile, not the test's synthetic package control version.
