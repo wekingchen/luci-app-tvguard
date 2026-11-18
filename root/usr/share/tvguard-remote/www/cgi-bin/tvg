@@ -152,7 +152,7 @@ pair_device() {
             esac
             ;;
     esac
-    printf 'Set-Cookie: tvguard_auth=%s; Path=/; HttpOnly; SameSite=Strict; Max-Age=2592000%s\r\n' "$session" "$secure"
+    printf 'Set-Cookie: tvguard_auth=%s; Path=/cgi-bin/tvg; HttpOnly; SameSite=Strict; Max-Age=2592000%s\r\n' "$session" "$secure"
     printf '\r\n{"ok":true,"paired":true}\n'
 }
 # 只允许本机 Cloudflare 回源或通过 br-lan 同网段路由返回的 IPv4 客户端。

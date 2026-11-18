@@ -37,6 +37,7 @@ assert 'app.js?v=0.1.16-r11' in html
 assert "HTTP_X_TVGUARD_ACTION" in cgi and "SameSite=Strict" in cgi
 assert '[ "$HTTP_X_TVGUARD_ACTION" = 1 ]' not in cgi
 assert "HttpOnly" in cgi and "Max-Age=2592000" in cgi
+assert "Path=/cgi-bin/tvg" in cgi
 assert 'claim="$PAIR.claim.$"' in cgi and 'mv "$PAIR" "$claim"' in cgi
 assert 'trap \'rm -f "$claim"\' EXIT' in cgi
 assert 'pair.lock' not in cgi

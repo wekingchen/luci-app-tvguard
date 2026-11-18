@@ -86,6 +86,7 @@ with tempfile.TemporaryDirectory(prefix="tvguard-api-e2e-") as directory:
     pair_headers, payload = need("200", request("POST", "pair", body=("code="+code).encode()), '"paired":true')
     assert not pair_file.exists(), "成功后没有消耗一次性配对码"
     assert "HttpOnly" in pair_headers and "SameSite=Strict" in pair_headers
+    assert "Path=/cgi-bin/tvg" in pair_headers, "session cookie must not leak to LuCI paths"
     cookie_match = re.search(r"tvguard_auth=([a-f0-9]{64})", pair_headers)
     assert cookie_match, pair_headers
     cookie = "tvguard_auth=" + cookie_match.group(1)

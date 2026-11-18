@@ -75,3 +75,7 @@
 - **处理原则**：P0 全部关闭前保持 PR Draft，不合并 main，不发布正式 Release。不得删除失败的测试以凑绿色。
 
 仓库 tools/tvguard-remote-preflight.sh 提供只读现场检查，但不能替代真实 iPhone 和 Cloudflare Access 测试。
+
+## r12 增补：Cookie 路径隔离
+
+浏览器 Cookie 默认不按 TCP 端口隔离。N1 的局域网 IP 可能同时承载 LuCI 80/443 和 TVGuard 18765；若 TVGuard 会话 Cookie 使用 Path=/，浏览器可能在同一 IP 上访问 LuCI 时也发送该 Cookie。为降低跨服务泄漏风险，TVGuard 家长授权 Cookie 固定 Path=/cgi-bin/tvg，仅随其专用 CGI 请求发送。Cookie 在 HTTP 局域网内仍为明文，不能因此消除局域网窃听风险。
