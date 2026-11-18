@@ -77,7 +77,8 @@ return view.extend({
             summaryText = E('p', { 'class': 'tvg-card-desc' }, '读取 Tunnel 运行状态中…'),
             inline = E('p', { 'class': 'tvg-message', 'role': 'status', 'aria-live': 'polite' }, '');
         var tokenPanel = E('details', { 'class': 'tvg-details' }, []);
-        var start, stop, restart, save, refreshBtn, logButton;
+        var imageInfo = E('p', { 'class': 'tvg-card-desc' }, '正在检查 N1 已下载的 cloudflared 镜像…');
+        var start, stop, restart, save, refreshBtn, logButton, applyImage;
 
         function inform(message, isError) {
             inline.textContent = String(message || '');
@@ -103,6 +104,8 @@ return view.extend({
             stop.disabled = !running;
             save.disabled = !current.storage_ready;
             logButton.disabled = current.container === 'missing' || !owned;
+            applyImage.disabled = !running || !ready || !owned || !current.image_present ||
+                current.transport !== 'http2' || current.image_update !== 'available';
         }
         function renderState(s) {
             current = s;
@@ -113,6 +116,7 @@ return view.extend({
                 tokenInfo.detail.textContent = '状态暂不可用';
                 metrics.value.textContent = '—';
                 metrics.detail.textContent = '状态暂不可用';
+                imageInfo.textContent = '无法获取镜像对比结果';
                 runBadge.textContent = '无法确认';
                 runBadge.className = 'tvg-pill is-warn';
                 summaryText.textContent = '无法读取状态，请刷新或检查路由器管理权限。';
@@ -137,6 +141,10 @@ return view.extend({
             metrics.value.textContent = s.metrics_local ? '仅本机' : '需检查';
             metrics.detail.textContent = s.metrics_local ?
                 '127.0.0.1:20241' : '运行参数不满足预期或容器未创建';
+            imageInfo.textContent = s.image_update === 'available' ?
+                '检测到 N1 本地 latest 镜像与当前容器镜像不同，可确认应用。' :
+                s.image_update === 'current' ? '当前容器已使用 N1 本地最新镜像，无须重建。' :
+                '暂时无法比较镜像 ID，请确认容器及本地镜像状态。';
             var running = s.container === 'running';
             runBadge.textContent = running ? '容器运行中' : state;
             runBadge.className = 'tvg-pill ' + (running ? 'is-good' :
@@ -234,7 +242,21 @@ return view.extend({
         logButton = button('读取日志', refreshLogs, 'is-small');
         logActions.appendChild(logButton);
         save = button('保存 / 更换 Token', saveToken, 'is-primary');
-        buttons = [start, restart, stop, refreshBtn, logButton, save];
+        applyImage = button('应用本地最新镜像', function() {
+            return runAction('apply-image',
+                '将使用 Portainer 已下载到 N1 的 cloudflare/cloudflared:latest 重新创建 TVGuard 专用 Tunnel。外网会短暂中断；新 HTTP/2 连接建立失败将恢复旧容器。确认继续？');
+        }, 'is-primary');
+        buttons = [start, restart, stop, refreshBtn, logButton, save, applyImage];
+
+        var imagePanel = E('details', { 'class': 'tvg-details' }, [
+            E('summary', {}, '本地镜像更新（高级）'),
+            E('div', { 'class': 'tvg-details-body' }, [
+                imageInfo,
+                E('div', { 'class': 'tvg-controls' }, [applyImage]),
+                E('p', { 'class': 'tvg-caption' },
+                    '不联网拉取镜像。只更新 tvguard-cloudflared；会保留旧容器直到新 HTTP/2 连接注册成功，失败自动回退。不影响 ntfy、Vaultwarden 或家长授权。')
+            ])
+        ]);
 
         tokenPanel = E('details', { 'class': 'tvg-details' }, [
             E('summary', {}, '凭据管理（高级）'),
@@ -248,7 +270,7 @@ return view.extend({
         ]);
 
         var page = E('div', { 'class': 'tvg-console' }, [
-            E('link', { 'rel': 'stylesheet', 'href': STYLE + '?v=0.1.16-r23' }),
+            E('link', { 'rel': 'stylesheet', 'href': STYLE + '?v=0.1.16-r24' }),
             E('div', { 'class': 'tvg-header' }, [
                 E('div', {}, [
                     E('div', { 'class': 'tvg-page-heading', 'role': 'heading', 'aria-level': '1' }, 'TV Guard · 远程访问'),
@@ -310,7 +332,8 @@ return view.extend({
                         detailsBadge
                     ]),
                     E('p', { 'class': 'tvg-card-desc' },
-                        '正常使用无需操作。遇到 Tunnel 连接问题时查看日志；仅在凭据变更时编辑 Token。'),
+                        '正常使用无需操作。已通过 Portainer 拉取镜像时，可在此应用本地最新版本；Token 修改与日志分别管理。'),
+                    imagePanel,
                     tokenPanel,
                     logPanel
                 ])

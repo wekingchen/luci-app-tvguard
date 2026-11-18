@@ -153,6 +153,7 @@ jobs:
           - r21 将相同视觉规范扩展到独立家长遥控 Web App：透明细边卡片、灰阶统计块、紧凑层级、深浅色可读性与 44px 触控目标；保留 iPhone 安全区和原控制逻辑。
           - r22 统一家长遥控右上角连接标签格式：内网直连 · 在线 / 远程连接 · 在线；待配对、连接异常和操作待确认也使用「连接方式 · 状态」，控制与授权不变。
           - r23 TVGuard 专用 cloudflared 固定 HTTP/2（TCP 7844）；只对运行中、所有权匹配的旧容器升级，连接成功后清理暂存旧容器，失败恢复旧容器；保持 Token、容器隔离与其它 Tunnel 不变。
+          - r24 允许在 LuCI「远程访问」应用 Portainer 已拉取的本地最新 cloudflared 镜像。比较当前容器与本地 latest 的不可变镜像 ID；只更新 TVGuard 专用运行容器，保留旧容器备份，待新 HTTP/2 边缘注册且镜像 ID 核验通过后清理，失败自动恢复。无需再 docker pull，不动其它 Tunnel。
 
           ## 真机与发布验证
           - 用户已确认 N1 上正式控制、计时、局域网家长遥控及 https://tv.rqqr.de 外网访问正常。
@@ -227,7 +228,8 @@ jobs:
             feat/v0.1.16-r20-overview-ui-unification \
             feat/v0.1.16-r21-pwa-overview-polish \
             fix/v0.1.16-r22-connection-status-format \
-            fix/v0.1.16-r23-cloudflared-http2; do
+            fix/v0.1.16-r23-cloudflared-http2 \
+            feat/v0.1.16-r24-apply-local-cloudflared-image; do
             encoded="${branch//\//%2F}"
             # Best-effort cleanup only; release success must not depend on an
             # already-deleted development branch.

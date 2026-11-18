@@ -1,11 +1,20 @@
-# TVGuard v0.1.16-r23 · 交付与验收记录
+# TVGuard v0.1.16-r24 · 交付与验收记录
 
 ## 交付内容
 
-- **N1**：`luci-app-tvguard_0.1.16-23_all.ipk`，Build ID `v0.1.16-r23-cloudflared-http2`。
+- **N1**：`luci-app-tvguard_0.1.16-24_all.ipk`，Build ID `v0.1.16-r24-apply-local-cloudflared-image`。
 - **小米电视 Agent**：保持固定签名 `0.3.7`（versionCode 20）；原先已装同版本且权限正常，无需重复安装。
 - **GitHub Release**：正式版标签 `v0.1.16`，同时提供 N1 主 IPK 与已验证固定签名的 Agent APK；Bridge/Fusion 已包含在 N1 主包。
 - **受控的数据与服务**：家长设备授权/备注、TVGuard 计时和学习数据、Bark 设置、Cloudflare Tunnel Token 均在 N1 保留；软件升级不要求重新配对或重建 Docker 容器。
+
+## r24 · 仅应用 N1 已下载的 cloudflared 镜像（待 N1 真机验收）
+
+- 前提：Portainer 已把 `cloudflare/cloudflared:latest` 下载到 N1 的本地 Docker 镜像存储。r24 **不访问 Docker Hub/Cloudflare Registry、不调用 docker pull**。
+- LuCI「远程访问 → 维护与诊断」新增「本地镜像更新（高级）」，比较当前容器 `.Image` 和本地 latest `.Id`，无更新时按钮禁用且不触发任何 Docker 改动；有本地新镜像时需要用户确认才进行切换。
+- `apply-image` 仅在 Token 已配置、XFS 可写、容器为 TVGuard 所有、HTTP/2 正在运行、镜像及其最低版本校验通过时启用；停止的容器和 foreign 同名容器不得触碰。
+- 安全更新沿用 r23 已测试事务：停止旧容器，改名备份为 `tvguard-cloudflared-before-local-image`，用本地 latest 建立全新 HTTP/2 容器；检查实际边缘注册日志和新容器镜像 ID 与预期一致，成功才删除备份。失败按原容器 ID、配置及运行状态恢复。独立备份名防止覆盖 r23 历史迁移备份。
+- CI 模拟真实控制脚本与 Docker 命令，覆盖没有新镜像、成功更新、失败回退、未知容器、停用态、备份冲突、不触碰其它 Tunnel，并测试 LuCI 按钮权限与 IPK 实物。
+- 安装 r24 本身**不会自动替换 HTTP/2 容器镜像**。需在 LuCI 手动点击「应用本地最新镜像」；验证镜像 ID、4 条 `protocol=http2` 注册日志以及 iPhone 外网访问。
 
 ## r23 · 仅 TVGuard Tunnel 使用 HTTP/2（待 N1 真机稳定性验证）
 

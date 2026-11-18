@@ -1,6 +1,6 @@
 # TVGuard · 远程访问（Cloudflare Tunnel）
 
-当前稳定版本：**v0.1.16-r23**。LuCI 远程访问页的 UI 已于 2026-11-18 获用户真机确认正常。N1 上原有专用 Tunnel 已由用户完成真实配置，iPhone 蜂窝网络通过 `https://tv.rqqr.de` 访问与控制正常。r15 仅改 LuCI 远程访问页面的视觉和交互。
+当前稳定版本：**v0.1.16-r24**。LuCI 远程访问页的 UI 已于 2026-11-18 获用户真机确认正常。N1 上原有专用 Tunnel 已由用户完成真实配置，iPhone 蜂窝网络通过 `https://tv.rqqr.de` 访问与控制正常。r15 仅改 LuCI 远程访问页面的视觉和交互。
 
 ## 页面结构
 
@@ -58,3 +58,12 @@ docker logs --since 10m tvguard-cloudflared 2>&1 | grep -E 'Registered tunnel co
 ```
 
 若状态依旧 `auto`，先检查迁移错误和备份容器 `tvguard-cloudflared-before-http2`，不要手动删除未知容器。HTTP/2 仅改变 cloudflared 到 Cloudflare 边缘的出站传输协议，不会让内网 HTTP 回源变为 HTTPS。
+
+## r24 · Portainer 已下载镜像后的安全重建
+
+- 在 Portainer 中拉取 `cloudflare/cloudflared:latest` 之后，**现有容器不会自动升级**；`docker restart`、LuCI「重启」与停止再启动均复用容器原镜像。
+- 安装 r24 IPK 后，LuCI「远程访问 → 维护与诊断 → 本地镜像更新（高级）」会只读比较 `docker inspect -f '{{.Image}}' tvguard-cloudflared` 与 `docker image inspect -f '{{.Id}}' cloudflare/cloudflared:latest`。不同才允许「应用本地最新镜像」。
+- 点击前确认：这是**替换运行中的 TVGuard 专用容器**，导致外网短暂中断；家中 HTTP 与儿童控制仍由独立进程维护。若 Tunnel 停止或权限/Token 不符合要求，不执行更新。
+- 执行期间先暂存旧容器 `tvguard-cloudflared-before-local-image`，用 Portainer 已拉取的本地最新镜像创建新容器，继承 TVGuard 预定启动参数 `--protocol http2`、持久只读 Token、Metrics 127.0.0.1:20241、日志轮转和所有权标签。只在新 HTTP/2 边缘连接注册成功且新镜像 ID 匹配后删除旧容器；否则尝试原样恢复旧容器。
+- **不联网拉取，不影响 ntfy/Vaultwarden，且不把 cloudflared 程序自动更新交给容器内部**。r24 仅增加显式更新操作，不改变安装后既有稳定镜像。
+- 实际验收：点击后观察页面状态「当前容器已使用 N1 本地最新镜像」，`docker logs --since 10m tvguard-cloudflared` 记录 `protocol=http2`，iPhone 5G 下 `https://tv.rqqr.de/` 能完成状态刷新。

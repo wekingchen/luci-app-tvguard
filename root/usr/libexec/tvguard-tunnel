@@ -8,6 +8,7 @@ NAME=tvguard-cloudflared
 # Only this TVGuard-owned container is reconciled. Keep the previous container
 # intact until the new HTTP/2 tunnel has registered a real edge connection.
 ROLLBACK=tvguard-cloudflared-before-http2
+IMAGE_ROLLBACK=tvguard-cloudflared-before-local-image
 IMAGE=cloudflare/cloudflared:latest
 MOUNT=/mnt/mmcblk2p4
 DATA="$MOUNT/tvguard-cloudflared"
@@ -95,6 +96,7 @@ save_token() {
 status() {
     storage=false; configured=false; dockerd=false; image=false; state=missing
     transport=unknown
+    image_update=unknown
     storage_ready && storage=true
     if [ "$storage" = true ] && [ -f "$SECRET" ] && [ ! -L "$SECRET" ] && [ -s "$SECRET" ]; then
         configured=true
@@ -107,6 +109,19 @@ status() {
                 state="$(docker inspect -f '{{.State.Status}}' "$NAME" 2>/dev/null || echo unknown)"
                 case "$state" in running|exited|created|restarting|paused|dead) :;; *) state=unknown;; esac
                 if uses_http2; then transport=http2; else transport=auto; fi
+                # Compare the running container's immutable image ID with the
+                # local latest tag only. No registry calls or Docker pulls.
+                if [ "$image" = true ]; then
+                    current_id="$(docker inspect -f '{{.Image}}' "$NAME" 2>/dev/null || :)"
+                    latest_id="$(docker image inspect -f '{{.Id}}' "$IMAGE" 2>/dev/null || :)"
+                    if [ -n "$current_id" ] && [ -n "$latest_id" ]; then
+                        if [ "$current_id" = "$latest_id" ]; then
+                            image_update=current
+                        else
+                            image_update=available
+                        fi
+                    fi
+                fi
             else
                 state=foreign
             fi
@@ -119,8 +134,8 @@ status() {
        docker inspect -f '{{json .Config.Cmd}}' "$NAME" 2>/dev/null | grep -Fq '127.0.0.1:20241'; then
         metrics_local=true
     fi
-    printf '{"storage_ready":%s,"configured":%s,"docker_ready":%s,"image_present":%s,"container":"%s","metrics_local":%s,"transport":"%s"}\n' \
-        "$storage" "$configured" "$dockerd" "$image" "$state" "$metrics_local" "$transport"
+    printf '{"storage_ready":%s,"configured":%s,"docker_ready":%s,"image_present":%s,"container":"%s","metrics_local":%s,"transport":"%s","image_update":"%s"}\n' \
+        "$storage" "$configured" "$dockerd" "$image" "$state" "$metrics_local" "$transport" "$image_update"
 }
 logs() {
     require_docker
@@ -201,7 +216,9 @@ migrate_http2() {
         fi
         die "旧容器备份改名失败；未进行协议迁移"
     fi
-    if create_container && wait_for_http2_edge; then
+    if create_container && wait_for_http2_edge &&
+       { [ -z "${expected_image_id:-}" ] ||
+         [ "$(docker inspect -f '{{.Image}}' "$NAME" 2>/dev/null || :)" = "$expected_image_id" ]; }; then
         # Release the fixed name only after an actual HTTP/2 edge handshake.
         # A cleanup failure preserves the stopped backup for manual review.
         if managed_name "$ROLLBACK"; then
@@ -216,6 +233,38 @@ migrate_http2() {
         restore_previous
         die "HTTP/2 连接未在限定窗口内成功建立；已恢复旧 Tunnel 容器"
     fi
+}
+# Apply only an image which has ALREADY been pulled to the N1 Docker
+# engine (e.g. by Portainer). The old container is retained until the new
+# image has started and an HTTP/2 edge connection is registered.
+apply_image() {
+    require_storage
+    require_token
+    require_docker
+    guard_container
+    container_exists || die "TVGuard Tunnel 容器不存在，请先创建并启动"
+    [ "$(docker inspect -f '{{.State.Running}}' "$NAME")" = true ] ||
+        die "当前 Tunnel 已停止，拒绝因镜像更新而擅自启动"
+    uses_http2 || die "当前 Tunnel 尚未使用 HTTP/2，请先使用「启动/重启」完成协议迁移"
+    require_image
+
+    current_image_id="$(docker inspect -f '{{.Image}}' "$NAME" 2>/dev/null || :)"
+    expected_image_id="$(docker image inspect -f '{{.Id}}' "$IMAGE" 2>/dev/null || :)"
+    case "$current_image_id:$expected_image_id" in
+        sha256:*:sha256:*) : ;;
+        *) die "无法核实当前容器和本地镜像 ID，拒绝执行更新" ;;
+    esac
+    if [ "$current_image_id" = "$expected_image_id" ]; then
+        echo "当前容器已使用本地 cloudflare/cloudflared:latest，无须重建"
+        return 0
+    fi
+
+    # Reuse the existing tested stop → rename → create → verified-edge
+    # → cleanup / rollback transaction, but use a separate collision-safe
+    # backup name to avoid overwriting any previous HTTP/2 migration backup.
+    ROLLBACK="$IMAGE_ROLLBACK"
+    migrate_http2
+    echo "TVGuard 已应用本地最新 cloudflared 镜像，并确认 HTTP/2 连接成功"
 }
 start() {
     require_storage
@@ -270,5 +319,6 @@ case "${1:-}" in
     start) start ;;
     stop) stop ;;
     restart) restart ;;
+    apply-image) apply_image ;;
     *) exit 2 ;;
 esac

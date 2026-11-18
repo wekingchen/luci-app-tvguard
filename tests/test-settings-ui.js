@@ -101,7 +101,7 @@ const page = factory(view, form, uci, mockFs, mockUi, E);
     const root = await page.render();
     assert.equal(root.attrs.class, 'tvg-settings-root');
     assert.equal(root.children[0].tag, 'link');
-    assert.match(root.children[0].attrs.href, /panel\.css\?v=0\.1\.16-r23$/);
+    assert.match(root.children[0].attrs.href, /panel\.css\?v=0\.1\.16-r24$/);
     assert.equal(root.children[1].attrs.class, 'tvg-settings-header');
     assert.equal(root.children[1].children[0].attrs.role, 'heading');
     const map = root.children[2];
