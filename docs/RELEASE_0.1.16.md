@@ -1,11 +1,18 @@
-# TVGuard v0.1.16-r21 · 交付与验收记录
+# TVGuard v0.1.16-r22 · 交付与验收记录
 
 ## 交付内容
 
-- **N1**：`luci-app-tvguard_0.1.16-21_all.ipk`，Build ID `v0.1.16-r21-pwa-overview-polish`。
+- **N1**：`luci-app-tvguard_0.1.16-22_all.ipk`，Build ID `v0.1.16-r22-connection-status-format`。
 - **小米电视 Agent**：保持固定签名 `0.3.7`（versionCode 20）；原先已装同版本且权限正常，无需重复安装。
 - **GitHub Release**：正式版标签 `v0.1.16`，同时提供 N1 主 IPK 与已验证固定签名的 Agent APK；Bridge/Fusion 已包含在 N1 主包。
 - **受控的数据与服务**：家长设备授权/备注、TVGuard 计时和学习数据、Bark 设置、Cloudflare Tunnel Token 均在 N1 保留；软件升级不要求重新配对或重建 Docker 容器。
+
+## r22 · 家长遥控在线状态文案统一（待 iPhone 实机确认）
+
+- 修复同一状态标签格式不一致：内网原为「内网直连 · 在线」，外网原为「远程连接正常」，现外网统一为「远程连接 · 在线」。
+- 其它状态统一为「连接方式 · 待配对/连接异常/操作待确认」；仅修改 `app.js` 中的文本拼装，保留连接识别、接口、配对与控制逻辑。
+- HTML/CSS/JS 缓存键更新到 `0.1.16-r22`；LuCI 仅同步 CSS 缓存查询参数，页面外观和行为均不改变。
+- 测试覆盖实际 PWA DOM/fetch 状态及 IPK 实物文案；正式发布完成不等于新文本已通过 iPhone 真机验收。
 
 ## r21 · 独立家长遥控 Web App 精修（待 iPhone 实机视觉验收）
 
