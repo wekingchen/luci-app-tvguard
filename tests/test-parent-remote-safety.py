@@ -64,3 +64,6 @@ for unsafe in ("iptables ","nft ","uci set","docker ","eval ","ubus "):
 assert "credentials: 'same-origin'" in frontend and "X-TVGuard-Action" not in frontend
 assert "window.confirm" in frontend
 print("PASS: gated local-only remote PWA, CGI actions and ACL separation")
+
+assert 'id="reloadPage"' in html
+assert "window.location.reload()" in frontend

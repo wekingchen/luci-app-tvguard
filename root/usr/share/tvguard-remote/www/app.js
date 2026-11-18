@@ -7,8 +7,8 @@ const fmt = s => {
     const m = Math.ceil(n / 60);
     return m >= 60 ? Math.floor(m / 60) + ' 小时 ' + (m % 60) + ' 分钟' : m + ' 分钟';
 };
-function error(msg) { $('errorBox').textContent = msg; $('errorBox').classList.remove('hidden'); }
-function clearError() { $('errorBox').classList.add('hidden'); $('errorBox').textContent = ''; }
+function error(msg) { $('errorBox').textContent = msg; $('errorBox').classList.remove('hidden'); $('reloadPage').classList.remove('hidden'); }
+function clearError() { $('errorBox').classList.add('hidden'); $('reloadPage').classList.add('hidden'); $('errorBox').textContent = ''; }
 async function request(method, action, body) {
     const headers = {};
     if (method === 'POST') {
@@ -19,7 +19,7 @@ async function request(method, action, body) {
         cache: 'no-store', redirect: 'error'
     });
     let json;
-    try { json = await resp.json(); } catch (_) { throw Error('设备返回的数据格式不正确'); }
+    try { json = await resp.json(); } catch (_) { throw Error('设备返回的数据格式不正确；外网使用时请重新打开页面以完成 Cloudflare Access 登录'); }
     if (!resp.ok) {
         if (resp.status === 401) { showPair(); throw Error('设备授权已失效，请重新配对'); }
         throw Error('操作未完成：' + (json.error || 'HTTP ' + resp.status));
@@ -102,6 +102,7 @@ async function pair() {
 document.addEventListener('DOMContentLoaded', () => {
     $('pairButton').addEventListener('click', pair);
     $('refresh').addEventListener('click', refresh);
+    $('reloadPage').addEventListener('click', () => window.location.reload());
     document.querySelectorAll('[data-action]').forEach(b => b.addEventListener('click', () => action(b.dataset.action)));
     refresh();
     window.setInterval(() => { if (!busy && !document.hidden) refresh(); }, 15000);

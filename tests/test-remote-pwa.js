@@ -18,7 +18,7 @@ function node(id) {
   };
 }
 const ids = ['main','pair','network','mode','watched','remaining','quota','bar','control',
-             'bonus','updated','errorBox','pairCode','pairButton','refresh'];
+             'bonus','updated','errorBox','pairCode','pairButton','refresh','reloadPage'];
 const els = Object.fromEntries(ids.map(id => [id, node(id)]));
 const controls = ['mode-child','mode-parent','mode-locked','bonus-15','bonus-30',
                   'bonus-60','bonus-undo'].map(name => {
@@ -34,7 +34,8 @@ const document = {
     query === 'button' ? [...controls,els.pairButton,els.refresh] : []; },
   addEventListener(event, fn) { if (event === 'DOMContentLoaded') onLoad = fn; }
 };
-const window = { confirm: () => true, setInterval: () => 1 };
+let reloaded = 0;
+const window = { confirm: () => true, setInterval: () => 1, location: {reload: () => {reloaded++;}} };
 async function fetch(url, opts) {
   calls.push({url,opts});
   assert(queue.length, 'missing response for ' + url);
@@ -77,11 +78,15 @@ const nextTick = () => new Promise(resolve => setImmediate(resolve));
   await call("action('bonus-15')");
   assert.strictEqual(els.network.textContent,'操作待确认');
   assert(els.errorBox.textContent.includes('防止重复奖励'));
+  assert(!els.reloadPage.classList.contains('hidden'));
+  els.reloadPage.handlers.click();
+  assert.strictEqual(reloaded,1);
   assert(controls.every(c => c.disabled),'uncertain outcome must freeze all buttons');
 
   reply(200,status);
   await call('refresh()');
   assert.strictEqual(els.network.textContent,'已连接');
+  assert(els.reloadPage.classList.contains('hidden'));
   assert(!controls.find(c => c.dataset.action === 'bonus-15').disabled);
 
   queue.push({error:'offline'});
