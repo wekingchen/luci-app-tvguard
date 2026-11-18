@@ -38,7 +38,7 @@
 - 页面标题 1.45rem/700（手机 1.28rem）；面板标题 1.12rem/700（手机 1.05rem）；说明文本低一档、但深色模式仍需清晰。
 - 模式、奖励操作沿用已有语义与确认弹窗；按钮至少 **44px** 触控高度。Web App 不加载 LuCI CSS，使用独立的 CSS 变量匹配同一视觉层级。
 - 保持 iPhone 独立模式顶部 `max(88px, env(safe-area-inset-top) + 18px)` 的安全回退以及底部 Home Indicator 留白。局域网 HTTP 与外网 HTTPS 依旧是独立 Cookie 来源，不改快捷指令的单一入口工作流。
-- 状态标签保持单行，不回退到过长的 Cloudflare Tunnel 名称。儿童/锁定模式显示观看额度进度，家长模式隐藏；离线和未确认 POST 仍禁用危险重复操作。
+- 状态标签保持单行，**统一显示「连接方式 · 状态」**（内网直连 · 在线 / 远程连接 · 在线），不回退到过长的 Cloudflare Tunnel 名称。儿童/锁定模式显示观看额度进度，家长模式隐藏；离线和未确认 POST 仍禁用危险重复操作。
 - `?v=0.1.16-r21` 与 IPK 修订号一致，避免 iOS 主屏启动仍命中旧的 CSS/JS 缓存。资源不引入 Service Worker、远端字体或第三方脚本。
 - 新增 `tests/test-pwa-overview-consistency.js`，比较 LuCI 概览基准、PWA 视觉 Token、深浅色对比度、PWA 安全区和触控尺寸。外观最终仍需 iPhone 主屏的真机截图验收。
 

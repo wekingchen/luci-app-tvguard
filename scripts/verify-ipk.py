@@ -128,7 +128,9 @@ asset_version = f"{source_version.group(1)}-r{source_release.group(1)}"
 for asset in ("style.css", "app.js"):
     expected_url = f"/{asset}?v={asset_version}"
     assert expected_url in index_html, f"stale PWA asset key: expected {expected_url}"
-assert "远程连接正常" in app_js, "short iPhone remote-connection status missing"
+assert "const label = path === 'Cloudflare Tunnel' ? '远程连接' : path;" in app_js, "short remote label missing"
+assert "label + ' · ' + state" in app_js, "consistent connection-status format missing"
+assert "远程连接正常" not in app_js, "legacy remote-only online label must not remain"
 # Verify the actual installed LuCI payload, not only the source snapshot.
 luci_css = data["www/luci-static/resources/view/tvguard/panel.css"][1].decode("utf-8")
 luci_remote = data["www/luci-static/resources/view/tvguard/remote.js"][1].decode("utf-8")
