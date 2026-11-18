@@ -55,7 +55,11 @@ function paint(s) {
 }
 async function refresh() {
     try { const s = await request('GET','status'); clearError(); paint(s); }
-    catch(e) { $('network').textContent = '连接异常'; if (!String(e.message).includes('重新配对')) error(e.message || String(e)); }
+    catch(e) {
+        $('network').textContent = '连接异常';
+        document.querySelectorAll('[data-action]').forEach(b => { b.disabled = true; });
+        if (!String(e.message).includes('重新配对')) error(e.message || String(e));
+    }
 }
 async function action(a) {
     if (busy) return;
@@ -67,9 +71,20 @@ async function action(a) {
     if (confirmations[a] && !window.confirm(confirmations[a])) return;
     busy = true;
     document.querySelectorAll('button').forEach(x => { x.disabled = true; });
-    try { const s=await request('POST',a);clearError();paint(s); }
-    catch(e) { error(e.message || String(e)); }
-    finally {busy=false;if(session) paint(session);}
+    let verified = false;
+    try {
+        const s = await request('POST', a);
+        clearError();
+        session = s;
+        verified = true;
+    } catch(e) {
+        error((e.message || String(e)) + '。为防止重复奖励，请先刷新状态再操作。');
+        $('network').textContent = '操作待确认';
+    } finally {
+        busy = false;
+        if (verified && session) paint(session);
+        // 结果无法确认时，按钮继续锁定，直到一次成功的 GET status。
+    }
 }
 async function pair() {
     if (busy) return;
