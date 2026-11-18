@@ -39,3 +39,7 @@ v0.1.16-r3 至 r5 曾提供一次性的「安全重建（限制 Metrics）」迁
 ## 家长遥控预览
 
 v0.1.16-r5 引入默认禁用且仅监听 127.0.0.1:18765 的独立家长控制服务，LuCI 可生成一次性配对码和撤销会话。当前尚未配置 LAN HTTPS 或 Cloudflare Access，请勿对外发布未经验收的入口。详情参见 PARENT_REMOTE.md。
+
+## r7 家庭 HTTP 访问
+
+局域网改为 LuCI 显式启用 HTTP，绑定 br-lan 的私有 IPv4:18765，同时保留 127.0.0.1:18765 供 Tunnel 回源。Cloudflare 公网仍必须使用 Access 和 HTTPS，不允许把 LuCI 公开。不同协议、域名对应不同浏览器 Origin；若要一个桌面入口，后续通过 iOS 快捷指令按当前网络选择 URL。
