@@ -171,7 +171,7 @@ esac
 authenticated || error_json '401 Unauthorized' 'pair_required'
 case "$REQUEST_METHOD:$QUERY_STRING" in
     GET:action=status)
-        state="$(/usr/libexec/tvguard-status status 2>/dev/null)" ||
+        state="$(/usr/libexec/tvguard-remote-status 2>/dev/null)" ||
             error_json '503 Service Unavailable' 'tvguard_unavailable'
         response '200 OK'
         printf '\r\n%s\n' "$state"
@@ -191,7 +191,7 @@ case "$REQUEST_METHOD:$QUERY_STRING" in
         esac
         /usr/libexec/tvguardctl "$@" >/dev/null 2>&1 ||
             error_json '409 Conflict' 'action_rejected'
-        state="$(/usr/libexec/tvguard-status status 2>/dev/null)" ||
+        state="$(/usr/libexec/tvguard-remote-status 2>/dev/null)" ||
             error_json '503 Service Unavailable' 'tvguard_unavailable'
         response '200 OK'
         printf '\r\n%s\n' "$state"

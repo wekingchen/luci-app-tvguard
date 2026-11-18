@@ -32,7 +32,7 @@ function paint(s) {
     session = s;
     const names = {child:'儿童模式', parent:'家长模式', locked:'已锁定'};
     $('mode').textContent = names[s.mode] || '未知状态';
-    $('watched').textContent = fmt(s.watch_seconds || s.used_seconds);
+    $('watched').textContent = fmt(s.watch_seconds);
     $('remaining').textContent = s.mode === 'parent' ? '不限时' :
         (s.mode === 'locked' ? '已锁定' : fmt(s.remaining_seconds));
     $('quota').textContent = '当日额度 ' + fmt(s.quota_seconds) + ' · 奖励 ' + fmt(s.bonus_seconds);
@@ -55,7 +55,7 @@ function paint(s) {
 }
 async function refresh() {
     try { const s = await request('GET','status'); clearError(); paint(s); }
-    catch(e) { if (!String(e.message).includes('重新配对')) error(e.message || String(e)); }
+    catch(e) { $('network').textContent = '连接异常'; if (!String(e.message).includes('重新配对')) error(e.message || String(e)); }
 }
 async function action(a) {
     if (busy) return;
