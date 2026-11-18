@@ -12,12 +12,11 @@ function connectionPath() {
     if (window.location.protocol === 'https:') return 'Cloudflare Tunnel';
     return '连接来源未知';
 }
-// 保留内外网检测逻辑，但外网正常状态用适合 iPhone 窄屏的家长友好文案。
+// 内外网统一显示「连接方式 · 状态」，不改变实际连接判断或授权。
 function connectionState(state) {
     const path = connectionPath();
-    $('network').textContent = path === 'Cloudflare Tunnel'
-        ? (state === '在线' ? '远程连接正常' : '远程连接 · ' + state)
-        : path + ' · ' + state;
+    const label = path === 'Cloudflare Tunnel' ? '远程连接' : path;
+    $('network').textContent = label + ' · ' + state;
 }
 const fmt = s => {
     const n = Math.max(0, Number(s) || 0);
