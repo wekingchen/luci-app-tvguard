@@ -45,6 +45,8 @@ enable_remote() {
     echo '家长遥控服务已启动：仅监听 127.0.0.1:18765'
 }
 disable_remote() {
+    mkdir -p /etc/tvguard
+    chmod 700 /etc/tvguard
     printf '0\n' > "$ENABLED"
     "$INIT" stop; "$INIT" disable
     echo '家长遥控服务已停止，不影响电视控制核心'

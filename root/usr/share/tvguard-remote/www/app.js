@@ -68,7 +68,7 @@ async function action(a) {
     if (confirmations[a] && !window.confirm(confirmations[a])) return;
     busy = true;
     document.querySelectorAll('button').forEach(x => { x.disabled = true; });
-    try { const s=await request('POST',a,'confirm=1');clearError();paint(s); }
+    try { const s=await request('POST',a);clearError();paint(s); }
     catch(e) { error(e.message || String(e)); }
     finally {busy=false;if(session) paint(session);}
 }
