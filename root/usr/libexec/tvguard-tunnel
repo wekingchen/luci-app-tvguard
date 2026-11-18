@@ -195,14 +195,21 @@ migrate_http2() {
             die "旧容器停止失败，未进行协议迁移"
     fi
     if ! docker rename "$NAME" "$ROLLBACK" >/dev/null; then
-        if [ "$was_running" = true ]; then docker start "$NAME" >/dev/null || :; fi
+        if [ "$was_running" = true ]; then
+            docker start "$NAME" >/dev/null ||
+                die "旧容器改名失败且未能重新启动；请检查容器日志"
+        fi
         die "旧容器备份改名失败；未进行协议迁移"
     fi
     if create_container && wait_for_http2_edge; then
         # Release the fixed name only after an actual HTTP/2 edge handshake.
         # A cleanup failure preserves the stopped backup for manual review.
-        if ! docker rm "$ROLLBACK" >/dev/null; then
-            echo "HTTP/2 已连通，但旧容器清理失败：$ROLLBACK" >&2
+        if managed_name "$ROLLBACK"; then
+            if ! docker rm "$ROLLBACK" >/dev/null; then
+                echo "HTTP/2 已连通，但旧容器清理失败：$ROLLBACK" >&2
+            fi
+        else
+            echo "HTTP/2 已连通，但旧容器所有权异常，保留 $ROLLBACK" >&2
         fi
         echo "TVGuard Tunnel 已切换 HTTP/2（TCP 7844），Cloudflare 边缘连接已注册"
     else
