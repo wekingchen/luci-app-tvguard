@@ -87,6 +87,13 @@ function nodeWithClass(root, name) {
     assert(nodeWithClass(p.tree,'tvg-stat').length === 3);
     assert(nodeWithClass(p.tree,'tvg-card').length === 4);
     assert(find(p.tree,'link').attrs.href.includes('panel.css'));
+    assert(find(p.tree,'link').attrs.href.includes('?v=0.1.16-r19'), 'LuCI parent CSS cache key stale');
+    const code = nodeWithClass(p.tree,'tvg-code')[0];
+    assert(code && code.tag === 'code', 'pairing code must remain selectable code');
+    const parentHeadings = nodeWithClass(p.tree,'tvg-card-title');
+    assert(parentHeadings.length === 4, 'parent card title count changed');
+    assert(parentHeadings.every(x => x.tag === 'div' && x.attrs.role === 'heading' && x.attrs['aria-level'] === '2'),
+      'avoid theme-global h3 selectors while keeping accessible card headings');
     assert(all(p.tree,x=>x.tag==='header'||x.tag==='h2').length===0,'theme global selectors must not cover page title');
     assert(all(p.tree,x=>x.className==='tvg-page-heading'&&strings(x).includes('家长遥控')).length===1);
     assert(strings(p.tree).includes('192.168.101.99:18765'));
@@ -116,6 +123,11 @@ function nodeWithClass(root, name) {
     assert(all(t.tree,x=>x.className==='tvg-page-heading'&&strings(x).includes('远程访问')).length===1);
     assert(nodeWithClass(t.tree,'tvg-stat').length === 3);
     assert(nodeWithClass(t.tree,'tvg-card').length === 3);
+    assert(find(t.tree,'link').attrs.href.includes('?v=0.1.16-r19'), 'LuCI tunnel CSS cache key stale');
+    const tunnelHeadings = nodeWithClass(t.tree,'tvg-card-title');
+    assert(tunnelHeadings.length === 3 && tunnelHeadings.every(x =>
+        x.tag === 'div' && x.attrs.role === 'heading' && x.attrs['aria-level'] === '2'),
+        'tunnel title strips must avoid theme h3 styling');
     assert(strings(t.tree).includes('tv.rqqr.de'));
     assert(strings(t.tree).includes('127.0.0.1:20241'));
     assert(strings(t.tree).includes('Token 已配置'));
