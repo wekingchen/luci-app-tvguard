@@ -88,3 +88,7 @@ assert '"label":' not in admin or 'label' in admin
 assert 'rename-device' in manage
 assert 'tvg-page-heading' in (p/"htdocs/luci-static/resources/view/tvguard/remote.js").read_text()
 assert 'tvg-page-heading' in (p/"htdocs/luci-static/resources/view/tvguard/tunnel.js").read_text()
+
+assert 'rename_device()' in admin and 'safe_alias()' in admin
+assert 'device-names' in admin and 'rename-device' in manage
+assert 'rename-device)' in admin
