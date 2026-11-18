@@ -2,6 +2,9 @@
 const $ = id => document.getElementById(id);
 let busy = false;
 let session = null;
+// 兼容 iOS Safari 旧式 navigator.standalone，避免主屏运行时顶部标题落入状态栏。
+if (window.navigator && window.navigator.standalone === true && document.documentElement)
+    document.documentElement.classList.add('pwa-standalone');
 function connectionPath() {
     const host = String(window.location.hostname || '').toLowerCase();
     if (/^(10\.|192\.168\.|127\.|172\.(1[6-9]|2[0-9]|3[01])\.)/.test(host) || host === 'localhost')
@@ -32,7 +35,7 @@ async function request(method, action, body) {
         if (json === null || typeof json !== 'object' || Array.isArray(json)) throw Error('non_object_json');
     } catch (_) {
         const e = Error(window.location.protocol === 'https:' ?
-            '设备响应无法解析；如外网 Access 会话过期，请重新打开页面' :
+            '外网响应无法解析，请重新打开页面确认会话状态' :
             '设备响应无法解析，请刷新状态确认是否已经成功');
         e.invalidResponse = true;
         e.httpStatus = resp.status;
@@ -56,15 +59,30 @@ function paint(s) {
     $('quota').textContent = '当日额度 ' + fmt(s.quota_seconds) + ' · 奖励 ' + fmt(s.bonus_seconds);
     const quota = Math.max(0, Number(s.quota_seconds) || 0);
     const used = Math.max(0, Number(s.watch_seconds) || 0);
-    $('bar').style.width = (quota ? Math.min(100, used * 100 / quota) : (used ? 100 : 0)) + '%';
-    $('control').textContent = !Number(s.enforce) ?
+    // 家长模式不受儿童额度限制，隐藏没有意义的空进度条；其它模式仍展示真实累计比例。
+    const progress = $('watchProgress');
+    const unlimited = s.mode === 'parent';
+    const percent = quota ? Math.min(100, Math.round(used * 100 / quota)) : (used ? 100 : 0);
+    progress.classList[unlimited ? 'add' : 'remove']('is-unlimited');
+    progress.setAttribute('aria-valuenow', String(unlimited ? 0 : percent));
+    $('bar').style.width = (unlimited ? 0 : percent) + '%';
+    const control = $('control');
+    control.textContent = !Number(s.enforce) ?
         '当前仅观察，不会正式断网' :
         (Number(s.blocked) ? '电视网络已被 TVGuard 限制' : '正式控制已启用');
+    control.classList.remove('is-observing');
+    control.classList.remove('is-blocked');
+    if (!Number(s.enforce)) control.classList.add('is-observing');
+    else if (Number(s.blocked)) control.classList.add('is-blocked');
     $('bonus').textContent = '今日已奖励 ' + fmt(s.bonus_seconds) + ' / ' + fmt(s.bonus_limit_seconds);
     $('updated').textContent = '上次更新：' + new Date().toLocaleTimeString('zh-CN',{hour:'2-digit',minute:'2-digit'});
     document.querySelectorAll('[data-action]').forEach(b => {
         const a = b.dataset.action;
-        b.disabled = busy || a === 'mode-' + s.mode ||
+        const selected = a === 'mode-' + s.mode;
+        if (selected) b.classList.add('is-current');
+        else b.classList.remove('is-current');
+        if (a.startsWith('mode-')) b.setAttribute('aria-pressed', selected ? 'true' : 'false');
+        b.disabled = busy || selected ||
             (a === 'bonus-undo' && !Number(s.bonus_undo_available)) ||
             (a.startsWith('bonus-') && a !== 'bonus-undo' &&
                 (Number(s.bonus_seconds) + Number(a.slice(6)) * 60 > Number(s.bonus_limit_seconds)));
