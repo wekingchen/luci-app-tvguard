@@ -83,6 +83,13 @@ set_auth_cookie() {
             esac
             ;;
     esac
+    # 外网 HTTPS 回源落在 N1 本机回环地址；无 Origin/Referer 的 GET 不得降级 Secure。
+    if [ -z "$secure" ] && [ "$SERVER_ADDR" = 127.0.0.1 ]; then
+        case "$HTTP_HOST" in
+            127.0.0.1:*|localhost:*) : ;;
+            *.*) secure='; Secure' ;;
+        esac
+    fi
     printf 'Set-Cookie: tvguard_auth=%s; Path=/cgi-bin/tvg; HttpOnly; SameSite=Strict; Max-Age=31536000%s\r\n' "$1" "$secure"
 }
 read_post() {
