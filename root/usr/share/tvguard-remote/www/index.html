@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#111827">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="TVGuard">
+<meta name="referrer" content="no-referrer">
+<title>TVGuard · 家长遥控</title>
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" href="/icon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/style.css">
+<script src="/app.js" defer></script>
+</head>
+<body>
+<main class="shell">
+ <header><div class="logo">▣</div><div><h1>TVGuard</h1><p>家长遥控器</p></div><span id="network" class="pill">连接中</span></header>
+ <section id="pair" class="panel hidden">
+  <h2>首次连接 · 配对家长设备</h2>
+  <p>在路由器 LuCI 的「电视时间管理 → 家长遥控」生成一次性配对码。配对后设备可在有效期内直接使用，无需每次进入路由器后台。</p>
+  <label for="pairCode">一次性配对码</label>
+  <input id="pairCode" type="password" autocomplete="off" spellcheck="false" maxlength="32" placeholder="粘贴 32 位配对码">
+  <button id="pairButton" class="primary full">配对此设备</button>
+  <p class="muted">请只在可信任的设备上配对。当前开发版服务仅在 N1 本机开放，尚未提供局域网 HTTPS 入口。</p>
+ </section>
+ <div id="main" class="hidden">
+  <section class="summary">
+   <div class="tile"><span>当前模式</span><strong id="mode">—</strong></div>
+   <div class="tile"><span>今日剩余</span><strong id="remaining">—</strong></div>
+   <div class="tile wide"><span>今日已观看</span><strong id="watched">—</strong><p id="quota">—</p><div class="progress"><div id="bar"></div></div></div>
+  </section>
+  <section class="panel"><h2>模式切换</h2><div class="grid three">
+   <button data-action="mode-child">儿童模式</button>
+   <button data-action="mode-parent">家长模式</button>
+   <button data-action="mode-locked" class="danger">立即锁定</button>
+  </div><p id="control" class="muted">—</p></section>
+  <section class="panel"><h2>奖励观看时间</h2><div class="grid three">
+   <button data-action="bonus-15">+15 分钟</button>
+   <button data-action="bonus-30">+30 分钟</button>
+   <button data-action="bonus-60">+60 分钟</button>
+  </div><div class="inline"><span id="bonus">—</span><button data-action="bonus-undo" class="text">撤销上次奖励</button></div></section>
+  <div class="inline bottom"><span id="updated">—</span><button id="refresh" class="text">刷新状态</button></div>
+ </div>
+ <section id="errorBox" class="panel hidden error" role="alert"></section>
+ <footer>仅用于家长控制 · 不提供路由器管理功能</footer>
+</main>
+</body>
+</html>
