@@ -33,7 +33,10 @@ assert 'name="referrer" content="same-origin"' in (p/"root/usr/share/tvguard-rem
 assert "HTTP_X_TVGUARD_ACTION" in cgi and "SameSite=Strict" in cgi
 assert '[ "$HTTP_X_TVGUARD_ACTION" = 1 ]' not in cgi
 assert "HttpOnly" in cgi and "Max-Age=2592000" in cgi
-assert "pair.lock" in cgi and 'rm -f "$PAIR"' in cgi
+assert 'claim="$PAIR.claim.$"' in cgi and 'mv "$PAIR" "$claim"' in cgi
+assert 'trap \'rm -f "$claim"\' EXIT' in cgi
+assert 'pair.lock' not in cgi
+assert cgi.index("device_limit") < cgi.index('mv "$PAIR" "$claim"')
 assert "new_random" in cgi and "tvguard-random-hex" in cgi
 admin=(p/"root/usr/libexec/tvguard-remote-admin").read_text()
 assert 'tvguard-random-hex "$1"' in admin

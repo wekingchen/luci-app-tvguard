@@ -123,6 +123,24 @@ with tempfile.TemporaryDirectory(prefix="tvguard-api-e2e-") as directory:
     session_path.unlink()
     need("401", request(cookie=cookie), "pair_required")
 
+    # 已满四台设备时，一次性码必须仍保留，管理员撤销后可继续使用。
+    for idx in range(4):
+        token_hash = hashlib.sha256(f"device{idx}".encode()).hexdigest()
+        with session_path.open("a") as out:
+            out.write(f"{token_hash}|{now+300}\n")
+    pair_file.write_text(f"{digest}|{now + 300}\n")
+    need("403", request("POST", "pair", body=("code="+code).encode()), "device_limit")
+    assert pair_file.exists(), "device_limit consumed valid pairing code"
+    session_path.unlink()
+
+    # 并发领取：两个相同的有效配对请求最多一个成功。
+    from concurrent.futures import ThreadPoolExecutor
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        pair_results = list(pool.map(lambda _: request("POST", "pair", body=("code="+code).encode()), range(2)))
+    success_count = sum("Status: 200" in header for header, _ in pair_results)
+    assert success_count == 1, pair_results
+    assert not pair_file.exists()
+
     # 公网 HTTPS Origin 经本机 HTTP 回源时，必须给登录 Cookie 加 Secure。
     pair_file.write_text(f"{digest}|{now + 300}\n")
     secure_headers, _ = need("200", request("POST", "pair", host="tv.example.org",
