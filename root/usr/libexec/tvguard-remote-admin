@@ -70,13 +70,26 @@ enable_lan() {
         { echo 'br-lan 没有可用的私有 IPv4，拒绝开放 LAN' >&2; exit 1; }
     mkdir -p /etc/tvguard; chmod 700 /etc/tvguard
     printf '1\n' > "$LAN_ENABLED"; chmod 600 "$LAN_ENABLED"
-    if ! "$INIT" restart; then
+    started=0
+    if "$INIT" restart; then
+        tries=0
+        while [ "$tries" -lt 5 ]; do
+            status_code="$(curl --noproxy '*' --max-time 2 -s -o /dev/null -w '%{http_code}' "http://$addr:18765/" 2>/dev/null || :)"
+            if [ "$status_code" = 200 ]; then
+                started=1
+                break
+            fi
+            tries=$((tries + 1))
+            sleep 1
+        done
+    fi
+    if [ "$started" != 1 ]; then
         printf '0\n' > "$LAN_ENABLED"
         "$INIT" restart >/dev/null 2>&1 || :
-        echo '局域网监听失败，已回退为仅本机访问' >&2
+        echo '局域网 HTTP 未能正常监听，已回退为仅本机访问' >&2
         exit 1
     fi
-    echo "已启用局域网 HTTP：http://$addr:18765/"
+    echo "局域网 HTTP 已就绪：http://$addr:18765/"
 }
 disable_lan() {
     mkdir -p /etc/tvguard; chmod 700 /etc/tvguard
