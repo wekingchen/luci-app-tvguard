@@ -19,12 +19,10 @@ function button(label, callback, type) {
     return E('button', { 'type': 'button',
         'class': 'tvg-btn' + (type ? ' ' + type : ''), 'click': callback }, label);
 }
-function block(title, right, description) {
-    return E('div', { 'class': 'tvg-card-header' }, [
-        E('h3', { 'class': 'tvg-card-title' }, title),
-        right || E('span'),
-        description || E('span')
-    ]);
+function block(title, right) {
+    var children = [E('h3', { 'class': 'tvg-card-title' }, title)];
+    if (right) children.push(right);
+    return E('div', { 'class': 'tvg-card-header' }, children);
 }
 function pill(label, kind) {
     return E('span', { 'class': 'tvg-pill' + (kind ? ' ' + kind : '') }, label);
