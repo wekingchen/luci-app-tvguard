@@ -18,11 +18,11 @@ LuCI「电视时间管理 → 家长遥控」在电脑宽屏显示三个状态�
 
 | 使用网络 | 地址 | 认证 |
 | --- | --- | --- |
-| 家庭 Wi-Fi | \`http://192.168.101.99:18765/\` | TVGuard 一次性配对 |
-| 外出公网 | \`https://tv.rqqr.de/\` | TVGuard 一次性配对（当前未启用 Cloudflare Access） |
-| N1 本机 CGI | \`127.0.0.1:18765\` | 受限 API，不对外作为 LuCI 入口 |
+| 家庭 Wi-Fi | `http://192.168.101.99:18765/` | TVGuard 一次性配对 |
+| 外出公网 | `https://tv.rqqr.de/` | TVGuard 一次性配对（当前未启用 Cloudflare Access） |
+| N1 本机 CGI | `127.0.0.1:18765` | 受限 API，不对外作为 LuCI 入口 |
 
-外网使用现有 TVGuard 专用 Cloudflare Tunnel 的 Published application route，回源 \`http://localhost:18765\`。Tunnel Docker 使用 host 网络，因此指向 N1 localhost；不得配置指向 LuCI、SSH、RPCD 或 Docker socket 的公开路由。
+外网使用现有 TVGuard 专用 Cloudflare Tunnel 的 Published application route，回源 `http://localhost:18765`。Tunnel Docker 使用 host 网络，因此指向 N1 localhost；不得配置指向 LuCI、SSH、RPCD 或 Docker socket 的公开路由。
 
 家里使用明文 HTTP，**无法防御同网段抓包与中间人攻击**；只在可信家庭 Wi-Fi 使用，不做 WAN 端口映射。外网虽然有 Cloudflare 提供的 HTTPS，但因未启用 Access，网页可被公众打开；实际控制权限由独立配对码与 Cookie 保护。若怀疑授权泄露，在 LuCI 撤销设备。
 

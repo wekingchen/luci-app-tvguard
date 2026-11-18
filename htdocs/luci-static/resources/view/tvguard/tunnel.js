@@ -228,7 +228,7 @@ return view.extend({
         save = button('保存 / 更换 Token', saveToken, 'is-primary');
         buttons = [start, restart, stop, refreshBtn, logButton, save];
 
-        tokenPanel = E('details', { 'class': 'tvg-details', 'open': false }, [
+        tokenPanel = E('details', { 'class': 'tvg-details' }, [
             E('summary', {}, '凭据管理（高级）'),
             E('div', { 'class': 'tvg-details-body' }, [
                 E('p', { 'class': 'tvg-card-desc' },
