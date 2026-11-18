@@ -8,6 +8,9 @@
         ],
         "/usr/libexec/tvguard-tunnel-read": [
           "exec"
+        ],
+        "/usr/libexec/tvguard-remote-read": [
+          "exec"
         ]
       },
       "uci": [
@@ -24,6 +27,9 @@
         ],
         "/tmp/tvguard-tunnel/token.pending": [
           "write"
+        ],
+        "/usr/libexec/tvguard-remote-manage": [
+          "exec"
         ]
       },
       "uci": [
