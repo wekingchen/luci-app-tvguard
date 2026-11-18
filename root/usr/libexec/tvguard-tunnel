@@ -142,7 +142,7 @@ start() {
         --log-opt max-size=2m \
         --log-opt max-file=3 \
         --mount "type=bind,src=$DATA,dst=/etc/tvguard,readonly" \
-        "$IMAGE" tunnel --no-autoupdate run --token-file /etc/tvguard/token >/dev/null
+        "$IMAGE" tunnel --no-autoupdate --metrics 127.0.0.1:20241 run --token-file /etc/tvguard/token >/dev/null
     echo "TVGuard Tunnel 已创建并启动；连通性请查看日志及 Cloudflare 后台"
 }
 stop() {
