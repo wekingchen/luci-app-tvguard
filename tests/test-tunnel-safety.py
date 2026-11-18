@@ -14,7 +14,7 @@ conf = (root / "root/etc/config/tvguard").read_text()
 permissions = acl["luci-app-tvguard"]
 
 assert 'status|logs)' in reader and 'start)' not in reader
-assert 'prepare|save-token|start|stop|restart)' in writer
+assert 'prepare|save-token|start|stop|restart|apply-image)' in writer
 assert permissions["read"]["file"]["/usr/libexec/tvguard-tunnel-read"] == ["exec"]
 assert "/usr/libexec/tvguard-tunnel-manage" not in permissions["read"]["file"]
 assert permissions["write"]["file"]["/usr/libexec/tvguard-tunnel-manage"] == ["exec"]
@@ -43,6 +43,15 @@ assert "Registered tunnel connection .*protocol=http2" in src
 assert "restore_previous" in src
 assert 'docker container inspect "$ROLLBACK"' in src
 assert "docker pull" not in src
+assert "IMAGE_ROLLBACK=tvguard-cloudflared-before-local-image" in src
+assert 'apply-image) apply_image ;;' in src
+assert '"image_update":"%s"' in src
+assert "docker image inspect -f '{{.Id}}'" in src
+assert "docker inspect -f '{{.Image}}'" in src
+assert 'expected_image_id=' in src
+assert 'wait_for_http2_edge' in src and 'restore_previous' in src
+assert "exec(MANAGE, [name])" in page
+assert "应用本地最新镜像" in page
 assert "rebuild" not in writer
 assert "安全重建" not in page
 assert "--cap-drop ALL" in src
