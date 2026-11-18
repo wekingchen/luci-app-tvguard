@@ -1,8 +1,8 @@
-# TVGuard v0.1.16-r16 · 稳定版交付记录
+# TVGuard v0.1.16-r17 · 稳定版交付记录
 
 ## 交付内容
 
-- **N1**：`luci-app-tvguard_0.1.16-16_all.ipk`，Build ID `v0.1.16-r16-title-and-device-labels`。
+- **N1**：`luci-app-tvguard_0.1.16-17_all.ipk`，Build ID `v0.1.16-r17-iphone-pwa-safearea`。
 - **小米电视 Agent**：保持固定签名 `0.3.7`（versionCode 20）；原先已装同版本且权限正常，无需重复安装。
 - **GitHub Release**：正式版标签 `v0.1.16`，同时提供 N1 主 IPK 与已验证固定签名的 Agent APK；Bridge/Fusion 已包含在 N1 主包。
 - **受控的数据与服务**：家长设备授权/备注、TVGuard 计时和学习数据、Bark 设置、Cloudflare Tunnel Token 均在 N1 保留；软件升级不要求重新配对或重建 Docker 容器。
@@ -17,16 +17,22 @@
 | 家中 HTTP 遥控 | `http://192.168.101.99:18765/`：访问、配对与控制正常 |
 | 外网 Cloudflare Tunnel | `https://tv.rqqr.de/`：公网访问、配对与控制正常 |
 | LuCI 两页 UI | 桌面与手机显示、标题遮挡修复、设备改名已获用户确认正常 |
+| iPhone 独立 Web App | r17 真机截图确认 TVGuard 标题、副标题及主卡片均正常可见，剩余在线标签断行以代码微修复 |
 | N1 正常重启 | 用户反馈“重启后 ok”，作为本次正常重启恢复验收 |
 | GitHub 自动化 | LuCI/CGI/BusyBox、包安全、控制器、Bridge 与 Android 6 Agent 工作流均成功 |
 
 ## 使用方式
 
-1. N1 已安装并稳定使用 r16，无需重复安装主包。
-2. iPhone 在 Safari 打开 `https://tv.rqqr.de/`，通过“添加到主屏幕”制作唯一入口（是否完成此个人设置尚待用户自行决定）。
+1. 基线 r16 已由用户完成多项真机验收；升级 r17 只需 N1 主 IPK，不需要更新已安装的同版电视 Agent。
+2. iPhone 已通过 Safari 添加 `https://tv.rqqr.de/` 至主屏幕，并提交 r17 真实界面截图；标题状态栏遮挡已修复。
 3. 家里和外面均使用同一公网域名，可避免快捷指令和分流 DNS；如有需要，可保留局域网 HTTP 作为备用。
 4. 已配对授权默认长期有效，清除浏览器 Cookie/无痕模式仍可能导致重配；LuCI 可单台撤销或撤销全部。
 5. 当前不启用 Cloudflare Access。外网配对页面可被公众打开，**控制操作必须通过 TVGuard 配对授权**；禁止公开 LuCI/RPCD/SSH/Docker Socket。
+
+## 本轮 r17 页面收尾
+
+- 远程正常状态显示为「远程连接正常」，内网仍显示「内网直连 · 在线」；待配对、离线、操作待确认仍有明确状态。
+- 不修改已验收的顶部 88px 安全留白，不改变正式控制或计时逻辑；标签文案调整不等于完成新版按钮/深色模式的真机回归。
 
 ## 限制与维护
 

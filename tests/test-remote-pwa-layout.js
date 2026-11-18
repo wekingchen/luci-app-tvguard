@@ -1,0 +1,38 @@
+// TVGuard standalone iPhone PWA layout contracts, including iOS safe-area title protection.
+'use strict';
+const assert = require('assert');
+const fs = require('fs');
+const base = 'root/usr/share/tvguard-remote/www/';
+const html = fs.readFileSync(base+'index.html','utf8');
+const css = fs.readFileSync(base+'style.css','utf8');
+const js = fs.readFileSync(base+'app.js','utf8');
+const manifest = JSON.parse(fs.readFileSync(base+'manifest.webmanifest','utf8'));
+
+assert(html.includes('viewport-fit=cover'), 'missing safe area viewport');
+assert(html.includes('apple-mobile-web-app-capable'), 'missing home screen app setting');
+assert(html.includes('class="app-header"'), 'header must have isolated style class');
+assert(html.includes('class="brand-copy"') && html.includes('<h1>TVGuard</h1>'));
+assert(html.includes('id="network"') && html.includes('aria-live="polite"'));
+assert(html.includes('id="watchProgress"') && html.includes('aria-valuenow="0"'));
+assert(html.includes('class="mode-note"'), 'status notice missing');
+assert(html.includes('/style.css?v=0.1.16-r17'), 'PWA CSS cache-busting missing');
+assert(html.includes('/app.js?v=0.1.16-r17'), 'PWA JS cache-busting missing');
+assert(html.includes('目前未启用 Cloudflare Access'), 'external access wording must be honest');
+assert(!html.includes('Tunnel + Access'), 'must not claim Access is required');
+assert(css.includes('(display-mode: standalone)'), 'standalone media query missing');
+assert(css.includes('env(safe-area-inset-top'), 'iOS status bar safety missing');
+assert(css.includes('max(88px'), 'safe area fallback for iOS 27 zero-inset missing');
+assert(css.includes('html.pwa-standalone .shell'), 'legacy iOS standalone fallback missing');
+assert(css.includes('env(safe-area-inset-bottom'), 'home indicator safety missing');
+assert(css.includes('.app-header') && css.includes('.brand-copy h1'));
+assert(css.includes('.is-current:disabled'), 'selected mode must not look inactive');
+assert(css.includes('.progress.is-unlimited'), 'parent unlimited mode bar must be omitted');
+assert(css.includes('@media (prefers-color-scheme: dark)'), 'dark mode must remain');
+assert(css.includes('@media (prefers-reduced-motion: reduce)'), 'reduced-motion fallback missing');
+assert(js.includes("window.navigator.standalone === true"), 'iOS legacy standalone marker missing');
+assert(js.includes("progress.classList[unlimited ? 'add' : 'remove']"), 'child vs parent progress behavior missing');
+assert(js.includes("a.startsWith('mode-')"), 'accessible mode toggles missing');
+assert(js.includes("state === '在线' ? '远程连接正常'"), 'short remote online label missing');
+assert.strictEqual(manifest.display,'standalone');
+assert.strictEqual(manifest.theme_color,'#f4f6fa');
+console.log('PASS: iPhone PWA top safe area, header, responsiveness, semantics, and status styling');
