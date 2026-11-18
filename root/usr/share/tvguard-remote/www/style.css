@@ -1,20 +1,28 @@
-/* TVGuard 独立家长遥控 Web App：所有样式只作用于独立页面，不引入外部 CSS。 */
+/* TVGuard 家长遥控 Web App · r21
+ * 以 LuCI「概览」为唯一视觉基准：透明细边卡片、灰阶 8% 统计块、
+ * 紧凑字体层级、轻量状态提示。独立 PWA 仍保留 44px 触控目标与 iOS 安全区。
+ * 不加载 LuCI CSS / 外部资源，也不依赖浏览器扩展。
+ */
 :root {
   color-scheme: light;
   font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", sans-serif;
   font-synthesis: none;
   -webkit-text-size-adjust: 100%;
   --page: #f4f6fa;
-  --card: #fff;
-  --ink: #19263c;
-  --muted: #64748b;
-  --border: #dce3ee;
-  --blue: #4165e4;
-  --blue-soft: #eef3ff;
-  --red: #bc3d4a;
-  --red-soft: #fff3f4;
-  --green: #15936f;
-  --track: #e4eaf3;
+  --surface: #fff;
+  --ink: #202b3c;
+  --muted: #5c6b80;
+  --line: rgba(127,127,127,.42);
+  --tile-line: rgba(127,127,127,.32);
+  --soft: rgba(127,127,127,.08);
+  --accent: #4165d1;
+  --accent-ink: #3055c3;
+  --accent-soft: #eaf0ff;
+  --red: #b83c4b;
+  --red-soft: #fff0f2;
+  --green: #148264;
+  --warning: #b37c23;
+  --track: #dce4ee;
   background: var(--page);
   color: var(--ink);
 }
@@ -23,145 +31,155 @@ html, body { min-height: 100%; }
 body { margin: 0; min-height: 100svh; background: var(--page); }
 button, input { font: inherit; }
 button {
-  min-height: 48px;
-  border: 1px solid #cdd6e4;
-  border-radius: 13px;
-  padding: 12px 9px;
-  background: var(--card);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+  min-height: 44px;
+  border: 1px solid var(--tile-line);
+  border-radius: 9px;
+  padding: 10px 11px;
+  background: var(--surface);
   color: var(--ink);
   font-size: 14px;
-  font-weight: 680;
-  line-height: 1.25;
+  font-weight: 650;
+  line-height: 1.3;
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
   touch-action: manipulation;
-  transition: background .16s, border-color .16s, box-shadow .16s, transform .13s;
+  transition: background .15s, border-color .15s, box-shadow .15s, transform .13s;
 }
-button:active:not(:disabled) { transform: scale(.975); }
+button:hover:not(:disabled) { border-color: var(--accent); }
+button:active:not(:disabled) { transform: scale(.98); }
 button:focus-visible, input:focus-visible {
-  outline: 3px solid rgba(65, 101, 228, .3);
+  outline: 3px solid var(--accent);
   outline-offset: 2px;
 }
-button:disabled { opacity: .44; cursor: not-allowed; }
-button.primary { color: #fff; background: var(--blue); border-color: var(--blue); }
-button.danger { color: var(--red); border-color: #f0c2c8; background: #fff; }
+button:disabled { opacity: .5; cursor: not-allowed; }
+button.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+button.danger { color: var(--red); border-color: var(--tile-line); background: transparent; }
 button.text {
+  color: var(--accent-ink);
   border: 0;
-  color: var(--blue);
   background: transparent;
-  min-height: 40px;
-  padding: 8px 5px;
+  padding: 8px 4px;
+  min-height: 44px;
+  font-size: 13px;
   font-weight: 650;
 }
 button[data-action^="mode-"].is-current:disabled {
   opacity: 1;
-  color: #3056c7;
-  background: var(--blue-soft);
-  border-color: #9fb3f2;
-  box-shadow: inset 0 0 0 1px rgba(65,101,228,.12);
+  color: var(--accent-ink);
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  box-shadow: inset 0 0 0 1px rgba(65,101,209,.10);
 }
 button[data-action="mode-locked"].is-current:disabled {
   color: var(--red);
-  border-color: #efb2bb;
   background: var(--red-soft);
+  border-color: var(--red);
 }
 .shell {
   width: 100%;
-  max-width: 620px;
+  max-width: 680px;
   min-height: 100svh;
   margin: 0 auto;
-  padding: 18px 16px max(28px, calc(env(safe-area-inset-bottom, 0px) + 20px));
+  padding: 16px 16px max(28px, calc(env(safe-area-inset-bottom, 0px) + 20px));
 }
-/* iOS 主屏独立模式 + black-translucent 会把网页铺到系统状态栏下方。
-   设定安全上边距下限，兼容部分 iOS 27 Web App 报告 inset=0 的情况。
-   同时支持旧 iOS navigator.standalone 回退；普通 Safari 不加此留白。 */
+/* 已经由 iPhone 真机验收的 P0：独立主屏 Web App 不能被状态栏遮住。
+ * 部分 iOS 27 standalone 报告 top inset=0，所以保留 88px 回退。
+ * 普通浏览器页面不使用这段顶部留白。
+ */
 @media (display-mode: standalone), (display-mode: fullscreen) {
   .shell { padding-top: max(88px, calc(env(safe-area-inset-top, 0px) + 18px)); }
 }
 html.pwa-standalone .shell {
   padding-top: max(88px, calc(env(safe-area-inset-top, 0px) + 18px));
 }
+/* 与概览 1.45rem/700 的页标题层级一致；品牌图标适合单一主屏入口。 */
 .app-header {
   display: flex;
   align-items: center;
-  gap: 11px;
+  gap: 10px;
   min-width: 0;
-  margin: 0 0 17px;
-  min-height: 56px;
+  min-height: 50px;
+  margin: 0 0 14px;
 }
-.brand { display: flex; gap: 10px; align-items: center; min-width: 0; flex: 1; }
+.brand { display: flex; align-items: center; gap: 9px; min-width: 0; flex: 1; }
 .brand-copy { min-width: 0; }
 .brand-copy h1 {
-  margin: 0;
-  font-size: 21px;
+  margin: 0 0 4px;
+  font-size: 1.45rem;
+  font-weight: 700;
+  line-height: 1.25;
   letter-spacing: -.02em;
-  line-height: 1.23;
-  font-weight: 780;
 }
-.brand-copy p { margin: 4px 0 0; color: var(--muted); font-size: 12px; line-height: 1.3; }
+.brand-copy p { margin: 0; color: var(--muted); font-size: .85rem; line-height: 1.4; }
 .logo {
   flex: 0 0 auto;
   display: grid;
   place-items: center;
-  width: 43px;
-  height: 43px;
-  border-radius: 13px;
-  background: var(--blue-soft);
-  color: var(--blue);
-  font-size: 25px;
-  font-weight: 760;
+  width: 40px;
+  height: 40px;
+  border: 1px solid var(--tile-line);
+  border-radius: 10px;
+  background: var(--soft);
+  color: var(--accent);
+  font-size: 23px;
+  font-weight: 700;
 }
 .pill {
-  flex: 0 0 auto;
-  max-width: 144px;
-  border: 1px solid #c6d8ed;
+  flex: 0 1 auto;
+  max-width: min(48%, 180px);
+  min-width: 0;
+  padding: 6px 10px;
+  border: 1px solid var(--line);
   border-radius: 999px;
-  background: #edf6ff;
-  color: #335b94;
-  padding: 7px 10px;
-  font-size: 11px;
+  background: var(--soft);
+  color: var(--ink);
+  font-size: .75rem;
+  font-weight: 600;
   line-height: 1.35;
-  font-weight: 660;
-  white-space: normal;
-  overflow-wrap: anywhere;
   text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
+/* 概览的统计块基准：灰阶软底 + 32% 细边框，主面板保持透明。 */
 .summary {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0,1fr));
   gap: 10px;
   margin-bottom: 14px;
 }
-.tile, .panel {
-  min-width: 0;
-  background: var(--card);
-  border: 1px solid var(--border);
-  border-radius: 18px;
-  box-shadow: 0 3px 18px rgba(21, 42, 70, .025);
+.tile, .panel { min-width: 0; box-shadow: none; }
+.tile {
+  padding: 13px;
+  border: 1px solid var(--tile-line);
+  border-radius: 10px;
+  background: var(--soft);
 }
-.tile { padding: 18px 18px 17px; }
 .tile span {
   display: block;
-  margin-bottom: 8px;
+  margin-bottom: 5px;
   color: var(--muted);
-  font-size: 12px;
-  font-weight: 550;
+  font-size: .85rem;
+  font-weight: 600;
 }
 .tile strong {
   display: block;
-  font-size: clamp(22px, 5vw, 27px);
-  letter-spacing: -.025em;
-  line-height: 1.22;
-  font-weight: 780;
+  font-size: 1.25rem;
+  font-weight: 700;
+  line-height: 1.3;
   overflow-wrap: anywhere;
 }
-.tile.wide { grid-column: 1 / -1; padding-bottom: 17px; }
-.tile.wide strong { font-size: 25px; }
-.tile p { margin: 8px 0 12px; color: var(--muted); font-size: 12px; line-height: 1.5; }
+.tile.wide { grid-column: 1/-1; }
+.tile.wide strong { font-size: 1.45rem; }
+.tile p { margin: 6px 0 10px; color: var(--muted); font-size: .85rem; line-height: 1.45; }
 .progress {
+  height: 8px;
   width: 100%;
-  height: 9px;
-  border-radius: 99px;
+  border-radius: 999px;
   overflow: hidden;
   background: var(--track);
 }
@@ -169,95 +187,124 @@ html.pwa-standalone .shell {
   width: 0;
   height: 100%;
   border-radius: inherit;
-  background: linear-gradient(90deg, #73a2f5, #466fe4);
+  background: var(--accent);
   transition: width .3s ease;
 }
 .progress.is-unlimited { display: none; }
-.panel { padding: 20px 18px; margin-bottom: 14px; }
-.panel h2 { font-size: 16px; font-weight: 760; margin: 0 0 15px; letter-spacing: -.01em; }
-.panel p { font-size: 13px; line-height: 1.6; color: var(--muted); }
-.grid { display: grid; gap: 9px; }
-.grid.three { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.panel {
+  margin-bottom: 14px;
+  padding: 15px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: transparent;
+}
+.panel h2 {
+  margin: 0 0 12px;
+  font-size: 1.12rem;
+  font-weight: 700;
+  line-height: 1.3;
+}
+.panel p { font-size: .9rem; line-height: 1.55; color: var(--muted); }
+.grid { display: grid; gap: 8px; }
+.grid.three { grid-template-columns: repeat(3,minmax(0,1fr)); }
 .mode-note {
-  margin: 15px 0 0;
-  border-radius: 10px;
+  margin: 12px 0 0;
   padding: 9px 11px;
-  background: #eef7f3;
-  color: #317961 !important;
-  font-size: 12px !important;
+  border: 1px solid var(--tile-line);
+  border-left: 3px solid var(--green);
+  border-radius: 9px;
+  background: var(--soft);
+  color: var(--ink) !important;
+  font-size: .85rem !important;
+  line-height: 1.5 !important;
 }
-.mode-note.is-observing {
-  background: #fff7e9;
-  color: #906521 !important;
-}
-.mode-note.is-blocked { background: #fff0f2; color: #ac3344 !important; }
+.mode-note.is-observing { border-left-color: var(--warning); }
+.mode-note.is-blocked { border-left-color: var(--red); }
 .inline {
   display: flex;
   flex-wrap: wrap;
   justify-content: space-between;
   align-items: center;
-  gap: 7px 11px;
-  margin-top: 14px;
-  font-size: 12px;
-  line-height: 1.55;
+  gap: 6px 10px;
+  margin-top: 10px;
+  font-size: .85rem;
+  line-height: 1.5;
 }
-.muted { color: var(--muted); font-size: 12px; }
-.bottom { margin: 12px 2px 0; }
+.muted { color: var(--muted); font-size: .85rem; }
+.bottom { margin: 6px 2px 0; }
 .hidden { display: none !important; }
-.error { color: var(--red); border-color: #eab7bf; font-size: 13px; }
+.error { color: var(--red); border-color: var(--red); font-size: .9rem; }
 input {
   display: block;
   width: 100%;
-  min-height: 48px;
-  border: 1px solid #cbd5e1;
-  border-radius: 11px;
-  background: var(--card);
+  min-height: 44px;
+  padding: 10px 12px;
+  margin: 8px 0 12px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--surface);
   color: var(--ink);
-  padding: 13px;
-  margin: 9px 0 14px;
 }
-label { font-size: 13px; font-weight: 660; }
+label { font-size: .9rem; font-weight: 650; }
 .full { width: 100%; }
 footer {
-  padding: 22px 0 12px;
-  font-size: 11px;
-  color: #8c9bad;
+  padding: 16px 0 8px;
   text-align: center;
+  color: var(--muted);
+  font-size: .75rem;
   line-height: 1.5;
 }
+@media (max-width: 700px) {
+  .shell { padding-left: 14px; padding-right: 14px; }
+  .brand-copy h1 { font-size: 1.28rem; }
+  .panel { padding: 12px; border-radius: 10px; margin-bottom: 12px; }
+  .summary { gap: 8px; margin-bottom: 12px; }
+  .tile { padding: 10px; }
+  .tile strong { font-size: 1.15rem; }
+  .tile.wide strong { font-size: 1.32rem; }
+  .panel h2 { font-size: 1.05rem; margin-bottom: 10px; }
+}
 @media (max-width: 370px) {
-  .shell { padding-left: 13px; padding-right: 13px; }
-  .brand-copy h1 { font-size: 19px; }
-  .pill { max-width: 125px; font-size: 10px; }
-  .tile { padding: 15px 14px; }
-  .tile strong { font-size: 21px; }
-  .panel { padding: 17px 14px; }
-  .grid { gap: 7px; }
-  .grid.three button { padding: 10px 5px; font-size: 12px; }
-}
-@media (min-width: 600px) {
-  .shell { padding-left: 22px; padding-right: 22px; }
-  .panel { padding: 22px 24px; }
-}
-@media (prefers-reduced-motion: reduce) {
-  button, .progress div { transition: none; }
+  .shell { padding-left: 12px; padding-right: 12px; }
+  .logo { width: 36px; height: 36px; }
+  .brand-copy h1 { font-size: 1.2rem; }
+  .pill { max-width: 45%; font-size: .69rem; padding: 6px 7px; }
+  .grid { gap: 6px; }
+  .grid.three button { padding: 8px 4px; font-size: 12px; }
+  .tile { padding: 9px; }
 }
 @media (prefers-color-scheme: dark) {
   :root {
     color-scheme: dark;
-    --page: #101a2a; --card: #1a273b; --ink: #f0f4fa;
-    --muted: #a2b1c6; --border: #364963; --blue: #85a0ff;
-    --blue-soft: #263a62; --track: #31435d;
+    --page: #101a2a;
+    --surface: #202e43;
+    --ink: #f1f5ff;
+    --muted: #c4d0e4;
+    --accent: #90a7ff;
+    --accent-ink: #afc0ff;
+    --accent-soft: #293d66;
+    --red: #ffbdc8;
+    --red-soft: #442f3a;
+    --green: #79d7b5;
+    --warning: #f2d18f;
+    --track: #34465e;
   }
-  button, input { background: #22324a; color: var(--ink); border-color: #435772; }
-  button.primary { background: #4d66c9; color: #fff; border-color: #4d66c9; }
-  button.danger { background: #292d42; color: #ffc2ca; border-color: #795261; }
-  button[data-action^="mode-"].is-current:disabled { background: #293d67; border-color: #577bd4; color: #c7d5ff; }
-  button[data-action="mode-locked"].is-current:disabled { background: #493341; border-color: #ad6570; color: #ffd3dc; }
-  .pill { background: #243955; border-color: #395777; color: #c1d6f8; }
-  .mode-note { background: #1f3d38; color: #a6e4c9 !important; }
-  .mode-note.is-observing { background: #45391f; color: #f2d79f !important; }
-  .mode-note.is-blocked { background: #4b2934; color: #ffbdc8 !important; }
-  button.text { color: #9bb2ff; }
-  footer { color: #98a8bc; }
+  button, input { background: var(--surface); color: var(--ink); }
+  button.primary { background: #4e66cd; border-color: #4e66cd; color: #fff; }
+  button.danger { background: transparent; color: var(--red); }
+  button.text { color: var(--accent-ink); }
+  button[data-action^="mode-"].is-current:disabled {
+    opacity: 1; background: var(--accent-soft);
+    color: #d4dfff; border-color: var(--accent);
+  }
+  button[data-action="mode-locked"].is-current:disabled {
+    color: #ffd0d8; background: var(--red-soft); border-color: var(--red);
+  }
+  .logo { color: var(--accent-ink); }
+  .pill { color: var(--ink); }
+  .mode-note { color: var(--ink) !important; }
+  .error { color: var(--red); }
+}
+@media (prefers-reduced-motion: reduce) {
+  button, .progress div { transition: none; }
 }
