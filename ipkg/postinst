@@ -137,6 +137,8 @@ else
 fi
 
 /usr/libexec/tvguard-data prepare 2>/dev/null || :
+# 仅迁移尚有效的家长会话，升级前已失效的令牌不可复活。
+/usr/libexec/tvguard-remote-admin migrate >/dev/null 2>&1 || :
 if [ -f /tmp/tvguard-config-restore-needed ]; then
     /usr/libexec/tvguard-data restore-config 2>/dev/null || :
     rm -f /tmp/tvguard-config-restore-needed
