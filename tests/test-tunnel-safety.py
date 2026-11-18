@@ -28,13 +28,31 @@ assert "--token-file /etc/tvguard/token" in src
 assert '--mount "type=bind,src=$DATA,dst=/etc/tvguard,readonly"' in src
 assert "--metrics 127.0.0.1:20241" in src
 assert "rebuild)" not in src
-assert "docker rm" not in src
-assert "docker rename" not in src
+# Replacing the running legacy QUIC container is now deliberately supported,
+# but *only* under a fixed TVGuard label and with a rollback container kept
+# until a real HTTP/2 edge registration is observed.
+assert "--protocol http2" in src
+assert "org.tvguard.owner=luci-app-tvguard" in src
+assert 'managed_name "$ROLLBACK"' in src
+assert 'managed || die' in src
+assert 'docker rename "$NAME" "$ROLLBACK"' in src
+assert 'docker rename "$ROLLBACK" "$NAME"' in src
+assert 'docker rm "$NAME"' in src and 'docker rm "$ROLLBACK"' in src
+assert "wait_for_http2_edge" in src
+assert "Registered tunnel connection .*protocol=http2" in src
+assert "restore_previous" in src
+assert 'docker container inspect "$ROLLBACK"' in src
+assert "docker pull" not in src
 assert "rebuild" not in writer
 assert "安全重建" not in page
 assert "--cap-drop ALL" in src
 assert "no-new-privileges:true" in src
 assert "image inspect" in src and "docker pull" not in src
+postinst = (root / "ipkg/postinst").read_text()
+assert "docker container inspect tvguard-cloudflared" in postinst
+assert "org.tvguard.owner" in postinst
+assert "/usr/libexec/tvguard-tunnel start" in postinst
+assert "old Tunnel should remain" in postinst
 assert "storage_ready" in src and '"/mnt/mmcblk2p4"' in src
 assert 'chmod 600 "$tmp"' in src and 'chmod 700 "$DATA"' in src
 assert "fs.write(PENDING, value)" in page
