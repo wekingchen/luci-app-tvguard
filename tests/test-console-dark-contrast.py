@@ -36,6 +36,8 @@ assert "background: #283c5a" in dark, "pairing code background missing"
 assert "background: transparent !important" in dark, "theme title background reset missing"
 assert ".tvg-console .tvg-details summary { color: #d1dfff; }" in dark
 assert "font-family: ui-monospace" in css, "pair code should use legible monospaced glyphs"
+assert "background: transparent; box-shadow: none" in css, "overview-style card background missing"
+assert ".tvg-settings-root .cbi-section" in css, "settings form theme missing"
 
 for name, foreground, background in [
     ("pairing code", "#f7faff", "#283c5a"),
