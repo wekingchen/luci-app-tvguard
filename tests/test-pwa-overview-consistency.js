@@ -58,7 +58,8 @@ assert(html.includes('id="network"') && html.includes('aria-live="polite"'), 'co
 assert(html.includes('id="pairCode"') && html.includes('data-action="bonus-undo"'), 'pairing and reward controls must remain');
 assert(manifest.display === 'standalone' && manifest.start_url === '/', 'standalone icon launch changed');
 assert(app.includes('window.navigator.standalone === true'), 'legacy iOS standalone compatibility removed');
-assert(app.includes("state === '在线' ? '远程连接正常'"), 'verified concise connection wording removed');
+assert(app.includes("const label = path === 'Cloudflare Tunnel' ? '远程连接' : path;"), 'short remote source name missing');
+assert(app.includes("label + ' · ' + state"), 'source and status must use a unified format');
 
 function contrast(foreground, background) {
   function lum(color) {
