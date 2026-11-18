@@ -19,6 +19,11 @@ const calls=[];
 const exec={exec:async(path,args)=>{
     calls.push({path,args});
     if(path.includes('-manage')){
+        if(args[0]==='rename-device'){
+            assert.strictEqual(args.length,3);
+            assert(/^[0-9a-f]{16}$/.test(args[1]));
+            state={...state,devices:state.devices.map(d=>d.id===args[1]?{...d,label:args[2]}:d)};
+        }
         if(args[0]==='revoke-device'){
             assert.strictEqual(args.length,2);
             assert(/^[0-9a-f]{16}$/.test(args[1]));
@@ -50,6 +55,19 @@ function texts(root){
     assert(texts(dom).some(x=>x.includes('长期有效')));
     assert(texts(dom).some(x=>x.includes('iPhone Chrome')));
     assert(texts(dom).some(x=>x.includes('0123456789abcdef')));
+    const editors=gather(dom,x=>x.tag==='button'&&texts(x).includes('修改名称'));
+    assert.strictEqual(editors.length,2);
+    await editors[0].attrs.click();
+    const input=gather(dom,x=>x.tag==='input'&&x.attrs['aria-label']==='自定义设备名称')[0];
+    assert(input,'device name editor missing');
+    input.value='妙妙的 iPhone';
+    const save=gather(dom,x=>x.tag==='button'&&texts(x).includes('保存名称'))[0];
+    await save.attrs.click();
+    assert(calls.some(c=>c.path==='/usr/libexec/tvguard-remote-manage'&&
+        c.args.length===3&&c.args[0]==='rename-device'&&c.args[1]==='0123456789abcdef'&&
+        c.args[2]==='妙妙的 iPhone'));
+    assert(texts(dom).some(x=>x.includes('妙妙的 iPhone')));
+    assert(texts(dom).some(x=>x.includes('iPhone Chrome')));
     const controls=gather(dom,x=>x.tag==='button'&&texts(x).includes('撤销此设备'));
     assert.strictEqual(controls.length,2);
     await controls[0].attrs.click();
@@ -59,5 +77,5 @@ function texts(root){
     assert(!texts(dom).some(x=>x.includes('0123456789abcdef')));
     const after=gather(dom,x=>x.tag==='button'&&texts(x).includes('撤销此设备'));
     assert.strictEqual(after.length,1);
-    console.log('PASS: LuCI device list and individually scoped revocation via allowlisted RPC');
+    console.log('PASS: LuCI rename and per-device revocation use allowlisted RPC, preserving other sessions');
 })().catch(e=>{console.error(e);process.exitCode=1});
