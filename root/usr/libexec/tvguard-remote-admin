@@ -6,6 +6,7 @@ PATH=/usr/sbin:/usr/bin:/sbin:/bin
 export PATH
 ROOT=/mnt/mmcblk2p4/tvguard-remote
 SESSIONS="$ROOT/sessions"
+GENERATION="$ROOT/generation"
 PAIR_DIR=/tmp/tvguard-remote
 PAIR="$PAIR_DIR/pair"
 ENABLED=/etc/tvguard/remote-enabled
@@ -15,11 +16,28 @@ INIT=/etc/init.d/tvguard-remote
 require_storage() {
     awk '$2=="/mnt/mmcblk2p4" && $3=="xfs" && index(","$4",",",rw,"){ok=1} END{exit !ok}' /proc/mounts ||
         { echo '持久 XFS 分区未挂载，拒绝启用遥控器' >&2; exit 1; }
-    [ ! -L "$ROOT" ] && [ ! -L "$SESSIONS" ] || exit 1
+    [ ! -L "$ROOT" ] && [ ! -L "$SESSIONS" ] && [ ! -L "$GENERATION" ] || exit 1
     mkdir -p "$ROOT"
     chmod 700 "$ROOT"
 }
 random_hex() { /usr/libexec/tvguard-random-hex "$1"; }
+rotate_generation() {
+    require_storage
+    next="$(random_hex 32)"
+    [ "$(printf '%s' "$next" | wc -c)" -eq 64 ] || exit 1
+    tmp="$ROOT/generation.$"
+    printf '%s\n' "$next" > "$tmp"
+    chmod 600 "$tmp"
+    mv -f "$tmp" "$GENERATION"
+}
+ensure_generation() {
+    if [ ! -s "$GENERATION" ]; then
+        rotate_generation
+    fi
+    value="$(cat "$GENERATION")"
+    [ "$(printf '%s' "$value" | wc -c)" -eq 64 ] || exit 1
+    case "$value" in *[!0-9a-f]*) exit 1 ;; esac
+}
 status() {
     enabled=false; listener=false; count=0
     [ -f "$ENABLED" ] && [ "$(cat "$ENABLED")" = 1 ] && enabled=true
@@ -27,8 +45,9 @@ status() {
         code="$(curl --max-time 2 -s -o /dev/null -w '%{http_code}' http://127.0.0.1:18765/ || :)"
         [ "$code" = 200 ] && listener=true
     fi
-    if [ -f "$SESSIONS" ]; then
-        count="$(awk -F'|' -v now="$(date +%s)" '$2>now {n++} END {print n+0}' "$SESSIONS")"
+    if [ -f "$SESSIONS" ] && [ -s "$GENERATION" ] && [ ! -L "$GENERATION" ]; then
+        current="$(cat "$GENERATION")"
+        count="$(awk -F'|' -v now="$(date +%s)" -v gen="$current" '$2>now && $3==gen {n++} END {print n+0}' "$SESSIONS")"
     fi
     lan_enabled=false; lan_url=''
     if [ -f "$LAN_ENABLED" ] && [ "$(cat "$LAN_ENABLED")" = 1 ]; then
@@ -101,18 +120,20 @@ disable_lan() {
 }
 issue_pair() {
     require_storage
+    ensure_generation
     mkdir -p "$PAIR_DIR"; chmod 700 "$PAIR_DIR"
     [ ! -L "$PAIR" ] || exit 1
     code="$(random_hex 16)"
     [ "$(printf '%s' "$code" | wc -c)" -eq 32 ] || exit 1
     digest="$(printf '%s' "$code" | sha256sum | cut -d' ' -f1)"
     end=$(( $(date +%s) + 300 ))
-    printf '%s|%s\n' "$digest" "$end" > "$PAIR.tmp"
+    printf '%s|%s|%s\n' "$digest" "$end" "$value" > "$PAIR.tmp"
     chmod 600 "$PAIR.tmp"; mv -f "$PAIR.tmp" "$PAIR"
     printf '一次性配对码（5 分钟内有效）：%s\n' "$code"
 }
 revoke_all() {
     require_storage
+    rotate_generation
     rm -f "$SESSIONS" "$PAIR"
     echo '已撤销所有已配对设备和未使用配对码'
 }

@@ -6,6 +6,7 @@ PATH=/usr/sbin:/usr/bin:/sbin:/bin
 export PATH
 ROOT=/mnt/mmcblk2p4/tvguard-remote
 SESSIONS="$ROOT/sessions"
+GENERATION="$ROOT/generation"
 PAIR=/tmp/tvguard-remote/pair
 NOW="$(date +%s)"
 new_random() { /usr/libexec/tvguard-random-hex "$1"; }
@@ -25,7 +26,7 @@ error_json() {
 }
 storage_ok() {
     awk '$2=="/mnt/mmcblk2p4" && $3=="xfs" && index(","$4",",rw,"){ok=1} END{exit !ok}' /proc/mounts &&
-    [ -d "$ROOT" ] && [ ! -L "$ROOT" ] && [ ! -L "$SESSIONS" ]
+    [ -d "$ROOT" ] && [ ! -L "$ROOT" ] && [ ! -L "$SESSIONS" ] && [ ! -L "$GENERATION" ] && [ -s "$GENERATION" ]
 }
 valid_hex() {
     [ "$(printf '%s' "$1" | wc -c)" -eq "$2" ] &&
@@ -64,8 +65,10 @@ authenticated() {
         sed -n 's/^ *tvguard_auth=\([0-9a-f]*\)$/\1/p' | head -n 1)"
     valid_hex "$token" 64 || return 1
     hash="$(digest "$token")"
-    awk -F'|' -v key="$hash" -v now="$NOW" \
-        '$1==key && $2>now {ok=1} END {exit !ok}' "$SESSIONS"
+    gen="$(cat "$GENERATION")"
+    valid_hex "$gen" 64 || return 1
+    awk -F'|' -v key="$hash" -v now="$NOW" -v gen="$gen" \
+        '$1==key && $2>now && $3==gen {ok=1} END {exit !ok}' "$SESSIONS"
 }
 read_post() {
     case "$CONTENT_TYPE" in
@@ -88,18 +91,20 @@ pair_device() {
         *) error_json '400 Bad Request' 'invalid_pair_code' ;;
     esac
     valid_hex "$code" 32 || error_json '400 Bad Request' 'invalid_pair_code'
+    gen="$(cat "$GENERATION")"
+    valid_hex "$gen" 64 || error_json '503 Service Unavailable' 'generation_invalid'
     [ -f "$PAIR" ] && [ ! -L "$PAIR" ] ||
         error_json '403 Forbidden' 'pair_not_available'
 
     # 先检查设备上限，避免上限已满时浪费仍有效的一次性配对码。
     if [ -f "$SESSIONS" ]; then
-        count="$(awk -F'|' -v now="$NOW" '$2>now {n++} END{print n+0}' "$SESSIONS")"
+        count="$(awk -F'|' -v now="$NOW" -v gen="$gen" '$2>now && $3==gen {n++} END{print n+0}' "$SESSIONS")"
         [ "$count" -lt 4 ] || error_json '403 Forbidden' 'device_limit'
     fi
 
     hash="$(digest "$code")"
-    if ! awk -F'|' -v key="$hash" -v now="$NOW" \
-        '$1==key && $2>now {ok=1} END {exit !ok}' "$PAIR"; then
+    if ! awk -F'|' -v key="$hash" -v now="$NOW" -v gen="$gen" \
+        '$1==key && $2>now && $3==gen {ok=1} END {exit !ok}' "$PAIR"; then
         error_json '403 Forbidden' 'pair_code_expired_or_invalid'
     fi
 
@@ -114,13 +119,14 @@ pair_device() {
     trap 'exit 143' TERM
 
     # 防止 LuCI 在本次领取前刚好重发配对码，必须对领取的实际内容再核验。
-    if ! awk -F'|' -v key="$hash" -v now="$NOW" \
-        '$1==key && $2>now {ok=1} END {exit !ok}' "$claim"; then
+    if ! awk -F'|' -v key="$hash" -v now="$NOW" -v gen="$gen" \
+        '$1==key && $2>now && $3==gen {ok=1} END {exit !ok}' "$claim"; then
         if [ ! -e "$PAIR" ] && [ ! -L "$PAIR" ]; then
             mv "$claim" "$PAIR" 2>/dev/null || :
         fi
         error_json '403 Forbidden' 'pair_code_expired_or_invalid'
     fi
+    [ "$(cat "$GENERATION")" = "$gen" ] || error_json '403 Forbidden' 'pair_revoked'
     session="$(new_random 32)"
     valid_hex "$session" 64 || error_json '503 Service Unavailable' 'random_failed'
     until_at=$((NOW + 2592000))
@@ -131,8 +137,9 @@ pair_device() {
     else
         : > "$tmp"
     fi
-    printf '%s|%s\n' "$(digest "$session")" "$until_at" >> "$tmp"
+    printf '%s|%s|%s\n' "$(digest "$session")" "$until_at" "$gen" >> "$tmp"
     chmod 600 "$tmp"; mv -f "$tmp" "$SESSIONS"
+    [ "$(cat "$GENERATION")" = "$gen" ] || error_json '403 Forbidden' 'pair_revoked'
     response '200 OK'
     # uhttpd 默认不向 CGI 转发 X-Forwarded-Proto；
     # 以已严格验证过的浏览器 Origin/Referer 判定 HTTPS Cookie。

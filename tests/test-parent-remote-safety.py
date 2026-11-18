@@ -38,6 +38,9 @@ assert 'trap \'rm -f "$claim"\' EXIT' in cgi
 assert 'pair.lock' not in cgi
 assert cgi.index("device_limit") < cgi.index('mv "$PAIR" "$claim"')
 assert "new_random" in cgi and "tvguard-random-hex" in cgi
+assert 'GENERATION="$ROOT/generation"' in cgi
+assert '$3==gen' in cgi
+assert 'rotate_generation' in (p/"root/usr/libexec/tvguard-remote-admin").read_text()
 admin=(p/"root/usr/libexec/tvguard-remote-admin").read_text()
 assert 'tvguard-random-hex "$1"' in admin
 helper=(p/"root/usr/libexec/tvguard-random-hex").read_text()

@@ -16,6 +16,9 @@ with tempfile.TemporaryDirectory(prefix="tvguard-api-e2e-") as directory:
     state = work / "state"
     state.mkdir()
     pair_file = work / "pair"
+    generation_file = state / "generation"
+    generation = "b2" * 32
+    generation_file.write_text(generation + "\n")
     action_log = work / "actions"
     status_path = work / "status"
     ctl_path = work / "ctl"
@@ -70,7 +73,7 @@ with tempfile.TemporaryDirectory(prefix="tvguard-api-e2e-") as directory:
     code = "a1" * 16
     digest = hashlib.sha256(code.encode()).hexdigest()
 
-    pair_file.write_text(f"{digest}|{now + 300}\n")
+    pair_file.write_text(f"{digest}|{now + 300}|{generation}\n")
     need("403", request("POST", "pair", origin="https://evil.invalid", body=("code="+code).encode()), "origin_rejected")
     # 跨域失败不能消耗正确配对码。
     assert pair_file.exists()
@@ -116,7 +119,7 @@ with tempfile.TemporaryDirectory(prefix="tvguard-api-e2e-") as directory:
     # 服务端会话到期后失效、删除后立即失效。
     session_path = state / "sessions"
     session_data = session_path.read_text()
-    session_path.write_text(session_data.split("|")[0] + "|" + str(now - 60) + "\n")
+    session_path.write_text(session_data.split("|")[0] + "|" + str(now - 60) + "|" + generation + "\n")
     need("401", request(cookie=cookie), "pair_required")
     session_path.write_text(session_data)
     need("200", request(cookie=cookie), '"mode":"child"')
@@ -127,8 +130,8 @@ with tempfile.TemporaryDirectory(prefix="tvguard-api-e2e-") as directory:
     for idx in range(4):
         token_hash = hashlib.sha256(f"device{idx}".encode()).hexdigest()
         with session_path.open("a") as out:
-            out.write(f"{token_hash}|{now+300}\n")
-    pair_file.write_text(f"{digest}|{now + 300}\n")
+            out.write(f"{token_hash}|{now+300}|{generation}\n")
+    pair_file.write_text(f"{digest}|{now + 300}|{generation}\n")
     need("403", request("POST", "pair", body=("code="+code).encode()), "device_limit")
     assert pair_file.exists(), "device_limit consumed valid pairing code"
     session_path.unlink()
@@ -141,8 +144,15 @@ with tempfile.TemporaryDirectory(prefix="tvguard-api-e2e-") as directory:
     assert success_count == 1, pair_results
     assert not pair_file.exists()
 
+    # 撤销后即使旧会话文件被并发写回，也必须因为代际不匹配而拒绝。
+    old_record = session_path.read_text()
+    generation_file.write_text("c3" * 32 + "\\n")
+    need("401", request(cookie=cookie), "pair_required")
+    generation_file.write_text(generation + "\\n")
+    session_path.write_text(old_record)
+
     # 公网 HTTPS Origin 经本机 HTTP 回源时，必须给登录 Cookie 加 Secure。
-    pair_file.write_text(f"{digest}|{now + 300}\n")
+    pair_file.write_text(f"{digest}|{now + 300}|{generation}\n")
     secure_headers, _ = need("200", request("POST", "pair", host="tv.example.org",
                                          server="127.0.0.1", origin="https://tv.example.org",
                                          body=("code="+code).encode()), '"paired":true')
