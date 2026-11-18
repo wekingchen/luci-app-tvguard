@@ -8,7 +8,8 @@ function node(id) {
   const classes = new Set(id === 'pair' || id === 'main' || id === 'errorBox' ? ['hidden'] : []);
   return {
     id, textContent: '', value: '', disabled: false, style: {},
-    dataset: {}, handlers: {},
+    dataset: {}, handlers: {}, attributes: {},
+    setAttribute(key, value) { this.attributes[key] = String(value); },
     classList: {
       add(c) { classes.add(c); },
       remove(c) { classes.delete(c); },
@@ -17,7 +18,7 @@ function node(id) {
     addEventListener(event, fn) { this.handlers[event] = fn; },
   };
 }
-const ids = ['main','pair','network','mode','watched','remaining','quota','bar','control',
+const ids = ['main','pair','network','mode','watched','remaining','quota','bar','watchProgress','control',
              'bonus','updated','errorBox','pairCode','pairButton','refresh','reloadPage'];
 const els = Object.fromEntries(ids.map(id => [id, node(id)]));
 const controls = ['mode-child','mode-parent','mode-locked','bonus-15','bonus-30',
@@ -29,13 +30,14 @@ const calls = [];
 let onLoad = null;
 const document = {
   hidden: false,
+  documentElement: node('html'),
   getElementById(id) { assert(els[id], 'missing id ' + id); return els[id]; },
   querySelectorAll(query) { return query === '[data-action]' ? controls :
     query === 'button' ? [...controls,els.pairButton,els.refresh] : []; },
   addEventListener(event, fn) { if (event === 'DOMContentLoaded') onLoad = fn; }
 };
 let reloaded = 0;
-const window = { confirm: () => true, setInterval: () => 1, location: {reload: () => {reloaded++;},hostname:'192.168.101.99',protocol:'http:'} };
+const window = { confirm: () => true, setInterval: () => 1, navigator: {standalone:true}, location: {reload: () => {reloaded++;},hostname:'192.168.101.99',protocol:'http:'} };
 async function fetch(url, opts) {
   calls.push({url,opts});
   assert(queue.length, 'missing response for ' + url);
@@ -47,6 +49,7 @@ async function fetch(url, opts) {
 const context = vm.createContext({document,window,fetch,Date,Math,Number,String,Error,encodeURIComponent});
 vm.runInContext(fs.readFileSync('root/usr/share/tvguard-remote/www/app.js','utf8'),context);
 assert(onLoad);
+assert(document.documentElement.classList.contains('pwa-standalone'), 'iOS standalone fallback marker missing');
 function reply(status,body) { queue.push({status,body}); }
 function call(expr) { return vm.runInContext(expr,context); }
 const status = {mode:'child', watch_seconds:0, remaining_seconds:3600,quota_seconds:3600,
@@ -64,8 +67,20 @@ const nextTick = () => new Promise(resolve => setImmediate(resolve));
   assert.strictEqual(els.remaining.textContent,'1 小时 0 分钟');
   assert.strictEqual(els.network.textContent,'内网直连 · 在线');
   assert(controls.find(c => c.dataset.action === 'mode-child').disabled,'current mode must be disabled');
+  assert(controls.find(c => c.dataset.action === 'mode-child').classList.contains('is-current'), 'selected mode must remain visually highlighted');
+  assert.strictEqual(controls.find(c => c.dataset.action === 'mode-child').attributes['aria-pressed'],'true');
+  assert.strictEqual(controls.find(c => c.dataset.action === 'mode-parent').attributes['aria-pressed'],'false');
+  assert(!els.watchProgress.classList.contains('is-unlimited'), 'child mode should show quota progress');
   assert(controls.find(c => c.dataset.action === 'bonus-undo').disabled,'undo with zero should be disabled');
 
+  reply(200,{...status,mode:'parent',bonus_seconds:0});
+  await call('refresh()');
+  assert(els.watchProgress.classList.contains('is-unlimited'), 'parent mode must hide meaningless child quota bar');
+  assert(controls.find(c=>c.dataset.action === 'mode-parent').classList.contains('is-current'));
+  assert(!controls.find(c=>c.dataset.action === 'mode-child').classList.contains('is-current'));
+  reply(200,status);
+  await call('refresh()');
+  assert(!els.watchProgress.classList.contains('is-unlimited'), 'child quota bar must recover');
   reply(200,{...status,bonus_seconds:900,bonus_undo_available:1});
   await call("action('bonus-15')");
   assert.strictEqual(calls.at(-1).url,'/cgi-bin/tvg?action=bonus-15');
