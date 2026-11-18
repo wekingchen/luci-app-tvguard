@@ -88,21 +88,38 @@ pair_device() {
         *) error_json '400 Bad Request' 'invalid_pair_code' ;;
     esac
     valid_hex "$code" 32 || error_json '400 Bad Request' 'invalid_pair_code'
-    mkdir /tmp/tvguard-remote/pair.lock 2>/dev/null ||
-        error_json '429 Too Many Requests' 'pair_busy'
-    trap 'rmdir /tmp/tvguard-remote/pair.lock 2>/dev/null || :' EXIT
     [ -f "$PAIR" ] && [ ! -L "$PAIR" ] ||
         error_json '403 Forbidden' 'pair_not_available'
+
+    # 先检查设备上限，避免上限已满时浪费仍有效的一次性配对码。
+    if [ -f "$SESSIONS" ]; then
+        count="$(awk -F'|' -v now="$NOW" '$2>now {n++} END{print n+0}' "$SESSIONS")"
+        [ "$count" -lt 4 ] || error_json '403 Forbidden' 'device_limit'
+    fi
+
     hash="$(digest "$code")"
     if ! awk -F'|' -v key="$hash" -v now="$NOW" \
         '$1==key && $2>now {ok=1} END {exit !ok}' "$PAIR"; then
         error_json '403 Forbidden' 'pair_code_expired_or_invalid'
     fi
-    # 用过即失效，防止配对码重复使用。
-    rm -f "$PAIR"
-    if [ -f "$SESSIONS" ]; then
-        count="$(awk -F'|' -v now="$NOW" '$2>now {n++} END{print n+0}' "$SESSIONS")"
-        [ "$count" -lt 4 ] || error_json '403 Forbidden' 'device_limit'
+
+    # 以同目录原子改名领取配对码；不使用可能因 CGI 被强杀而永久残留的锁目录。
+    claim="$PAIR.claim.$"
+    if ! mv "$PAIR" "$claim" 2>/dev/null; then
+        error_json '409 Conflict' 'pair_already_claimed'
+    fi
+    trap 'rm -f "$claim"' EXIT
+    trap 'exit 129' HUP
+    trap 'exit 130' INT
+    trap 'exit 143' TERM
+
+    # 防止 LuCI 在本次领取前刚好重发配对码，必须对领取的实际内容再核验。
+    if ! awk -F'|' -v key="$hash" -v now="$NOW" \
+        '$1==key && $2>now {ok=1} END {exit !ok}' "$claim"; then
+        if [ ! -e "$PAIR" ] && [ ! -L "$PAIR" ]; then
+            mv "$claim" "$PAIR" 2>/dev/null || :
+        fi
+        error_json '403 Forbidden' 'pair_code_expired_or_invalid'
     fi
     session="$(new_random 32)"
     valid_hex "$session" 64 || error_json '503 Service Unavailable' 'random_failed'
