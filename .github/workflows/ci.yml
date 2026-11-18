@@ -65,7 +65,9 @@ jobs:
       - name: Exercise iPhone parent PWA control and offline behavior
         run: node tests/test-remote-pwa.js
       - name: Verify standalone iPhone PWA safe area and visual hierarchy
-        run: node tests/test-remote-pwa-layout.js
+        run: |
+          node tests/test-remote-pwa-layout.js
+          node tests/test-pwa-overview-consistency.js
       - name: Exercise parent service lifecycle and failed startup rollback
         run: python3 tests/test-remote-lifecycle.py
       - name: Validate remote admin issue and revocation lifecycle
