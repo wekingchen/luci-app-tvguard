@@ -44,6 +44,9 @@ assert "exec(MANAGE, ['save-token'])" in page
 assert "uci.set" not in page
 assert "tunnel_token" not in conf
 assert menu["admin/services/tvguard/tunnel"]["action"]["path"] == "tvguard/tunnel"
-for unsafe in ("iptables ", "nft ", "uci set", "/etc/init.d/firewall", "docker rm", "docker pull"):
+assert 'docker rm "$backup"' in src
+assert 'docker rm -f "$NAME"' in src
+assert 'backup=tvguard-cloudflared-rebuild-backup' in src
+for unsafe in ("iptables ", "nft ", "uci set", "/etc/init.d/firewall", "docker pull"):
     assert unsafe not in src, f"unexpected privileged operation: {unsafe}"
 print("PASS: Tunnel ACL separation, fixed container ownership, secret file and firewall isolation")
