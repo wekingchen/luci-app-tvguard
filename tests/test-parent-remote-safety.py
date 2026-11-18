@@ -33,7 +33,7 @@ assert 'name="referrer" content="same-origin"' in (p/"root/usr/share/tvguard-rem
 html=(p/"root/usr/share/tvguard-remote/www/index.html").read_text()
 assert 'Content-Security-Policy' in html and "connect-src 'self'" in html
 assert "object-src 'none'" in html and "base-uri 'none'" in html
-assert 'app.js?v=0.1.16-r12' in html
+assert 'app.js?v=0.1.16-r13' in html
 assert "HTTP_X_TVGUARD_ACTION" in cgi and "SameSite=Strict" in cgi
 assert '[ "$HTTP_X_TVGUARD_ACTION" = 1 ]' not in cgi
 assert "HttpOnly" in cgi and "Max-Age=2592000" in cgi
@@ -67,3 +67,10 @@ print("PASS: gated local-only remote PWA, CGI actions and ACL separation")
 
 assert 'id="reloadPage"' in html
 assert "window.location.reload()" in frontend
+
+assert 'index("," $4 ",", ",rw,")' in cgi
+assert 'index(","$4",",rw,")' not in cgi
+assert 'index("," $4 ",", ",rw,")' in admin
+assert 'tmp="$ROOT/generation.$$"' in admin
+assert 'pair_tmp="$PAIR.tmp.$$"' in admin
+assert 'storage_ok() { [ -d "$ROOT" ]; }' not in (p/"tests/test-remote-cgi-e2e.py").read_text()

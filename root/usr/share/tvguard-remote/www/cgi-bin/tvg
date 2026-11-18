@@ -25,7 +25,7 @@ error_json() {
     exit 0
 }
 storage_ok() {
-    awk '$2=="/mnt/mmcblk2p4" && $3=="xfs" && index(","$4",",rw,"){ok=1} END{exit !ok}' /proc/mounts &&
+    awk '$2=="/mnt/mmcblk2p4" && $3=="xfs" && index("," $4 ",", ",rw,"){ok=1} END{exit !ok}' /proc/mounts &&
     [ -d "$ROOT" ] && [ ! -L "$ROOT" ] && [ ! -L "$SESSIONS" ] && [ ! -L "$GENERATION" ] && [ -s "$GENERATION" ]
 }
 valid_hex() {

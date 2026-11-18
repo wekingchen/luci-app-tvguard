@@ -37,7 +37,10 @@ with tempfile.TemporaryDirectory(prefix="tvguard-api-e2e-") as directory:
     script = script.replace("/tmp/tvguard-remote/pair.lock", str(lock_path))
     script = script.replace("/usr/libexec/tvguard-remote-status", str(status_path))
     script = script.replace("/usr/libexec/tvguardctl", str(ctl_path))
-    script = re.sub(r"(?ms)^storage_ok\(\) \{\n.*?^\}", 'storage_ok() { [ -d "$ROOT" ]; }', script, count=1)
+    # 必须执行源代码中真正的 storage_ok 函数，只替换 /proc/mounts 为受控挂载表。
+    fake_mounts = work / "mounts"
+    fake_mounts.write_text("device /mnt/mmcblk2p4 xfs rw,relatime 0 0\n")
+    script = script.replace("/proc/mounts", str(fake_mounts))
     script = re.sub(r"(?ms)^client_allowed\(\) \{\n.*?^\}", 'client_allowed() { [ "$REMOTE_ADDR" = 127.0.0.1 ]; }', script, count=1)
     script = re.sub(r"(?m)^new_random\(\) \{.*\}$", "new_random() { printf '%064d\\n' 0; }", script, count=1)
     script_path.write_text(script)
@@ -74,6 +77,11 @@ with tempfile.TemporaryDirectory(prefix="tvguard-api-e2e-") as directory:
     digest = hashlib.sha256(code.encode()).hexdigest()
 
     pair_file.write_text(f"{digest}|{now + 300}|{generation}\n")
+    # 真实存储检查必须拒绝只读 XFS，且拒绝时不消耗配对码。
+    fake_mounts.write_text("device /mnt/mmcblk2p4 xfs ro,relatime 0 0\n")
+    need("503", request("POST", "pair", body=("code="+code).encode()), "storage_unavailable")
+    assert pair_file.exists()
+    fake_mounts.write_text("device /mnt/mmcblk2p4 xfs rw,relatime 0 0\n")
     need("403", request("POST", "pair", origin="https://evil.invalid", body=("code="+code).encode()), "origin_rejected")
     # 跨域失败不能消耗正确配对码。
     assert pair_file.exists()

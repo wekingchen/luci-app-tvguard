@@ -21,7 +21,10 @@ with tempfile.TemporaryDirectory(prefix="tvguard-admin-e2e-") as temp:
     script=source.replace("ROOT=/mnt/mmcblk2p4/tvguard-remote",f"ROOT={persistent}").replace(
         "PAIR_DIR=/tmp/tvguard-remote",f"PAIR_DIR={pending}").replace(
         "/usr/libexec/tvguard-random-hex",str(random_file))
-    script=re.sub(r"(?ms)^require_storage\(\) \{\n.*?^\}", f'require_storage() {{ mkdir -p "{persistent}"; }}',script,count=1)
+    # 管理员测试同样保留真实 require_storage，只把挂载表映射为隔离夹具。
+    fake_mounts=base/"mounts"
+    fake_mounts.write_text("device /mnt/mmcblk2p4 xfs rw,relatime 0 0\n")
+    script=script.replace("/proc/mounts",str(fake_mounts))
     admin.write_text(script)
     admin.chmod(0o700)
 

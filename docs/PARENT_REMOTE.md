@@ -1,6 +1,6 @@
 # TVGuard 家长遥控器 · 受限预览版
 
-状态：v0.1.16-r12 开发候选；尚未经过 N1 真机验收。新增家长控制端完全独立，默认关闭。
+状态：v0.1.16-r13 开发候选；尚未经过 N1 真机验收。新增家长控制端完全独立，默认关闭。
 
 ## 第一阶段已开发
 
@@ -47,3 +47,7 @@ OpenWrt uhttpd 的 CGI 默认只转发特定 HTTP 头（Host/Origin/Referer/Cook
 ## r12 受限 Cookie 与 Access 会话恢复
 
 家长授权 Cookie Path=/cgi-bin/tvg（浏览器 Cookie 不按 TCP 端口隔离），尽量避免请求同主机 LuCI 时发送。保留 HttpOnly、SameSite=Strict；外网 HTTPS 按严格 Origin/Referer 判定设置 Secure。Access 会话失效时，手机页面提供「重新打开页面」按钮，触发顶层导航以便完成 Cloudflare Access 登录。HTTP 家庭链路仍不是加密连接，不能防止同网段窃取 Cookie。
+
+
+## r13：存储检查真机故障修复
+N1 r12 上配对时报 storage_unavailable，但生成配对码及 XFS 检查正常。代码审计定位到 CGI 里的 awk index 传参缺少引号，导致存储检查表达式无法可靠执行；管理员端的对应表达式则不同。原测试通过替换 storage_ok 函数掩盖了这个缺陷。r13 将两端统一成 index("," $4 ",", ",rw,")，使只读挂载无法误判；新增真实 BusyBox awk、XFS 读写状态、generation 文件缺失/符号链接等反向测试，并将 CGI、管理员端测试改为运行真实存储函数。修正此前误写成单美元号的临时文件进程号，不改 TVGuard 核心或 Tunnel。

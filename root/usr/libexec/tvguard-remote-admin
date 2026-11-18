@@ -14,7 +14,7 @@ LAN_ENABLED=/etc/tvguard/remote-lan-enabled
 LAN_HELPER=/usr/libexec/tvguard-remote-lan-ip
 INIT=/etc/init.d/tvguard-remote
 require_storage() {
-    awk '$2=="/mnt/mmcblk2p4" && $3=="xfs" && index(","$4",",",rw,"){ok=1} END{exit !ok}' /proc/mounts ||
+    awk '$2=="/mnt/mmcblk2p4" && $3=="xfs" && index("," $4 ",", ",rw,"){ok=1} END{exit !ok}' /proc/mounts ||
         { echo '持久 XFS 分区未挂载，拒绝启用遥控器' >&2; exit 1; }
     [ ! -L "$ROOT" ] && [ ! -L "$SESSIONS" ] && [ ! -L "$GENERATION" ] || exit 1
     mkdir -p "$ROOT"
@@ -143,8 +143,9 @@ issue_pair() {
     [ "$(printf '%s' "$code" | wc -c)" -eq 32 ] || exit 1
     digest="$(printf '%s' "$code" | sha256sum | cut -d' ' -f1)"
     end=$(( $(date +%s) + 300 ))
-    printf '%s|%s|%s\n' "$digest" "$end" "$value" > "$PAIR.tmp"
-    chmod 600 "$PAIR.tmp"; mv -f "$PAIR.tmp" "$PAIR"
+    pair_tmp="$PAIR.tmp.$"
+    printf '%s|%s|%s\n' "$digest" "$end" "$value" > "$pair_tmp"
+    chmod 600 "$pair_tmp"; mv -f "$pair_tmp" "$PAIR"
     printf '一次性配对码（5 分钟内有效）：%s\n' "$code"
 }
 revoke_all() {
