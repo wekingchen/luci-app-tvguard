@@ -103,6 +103,15 @@ for name in (
         raise SystemExit(f"FAIL: missing installed file {name}")
     if name.startswith("usr/libexec/") or name.startswith("etc/init.d/") or name.startswith("www/cgi-bin/") or name == "usr/share/tvguard-remote/www/cgi-bin/tvg":
         assert data[name][0].mode & 0o111, f"{name} is not executable"
+# Protect iPhone standalone Web App updates from accidental reused asset URLs.
+# The initial r17 candidate and its later status-label fix shared the same
+# app.js query key, so iOS could continue displaying old Cloudflare Tunnel text.
+index_html = data["usr/share/tvguard-remote/www/index.html"][1].decode("utf-8")
+app_js = data["usr/share/tvguard-remote/www/app.js"][1].decode("utf-8")
+for asset in ("style.css", "app.js"):
+    expected_url = f"/{asset}?v={version}-r{release}"
+    assert expected_url in index_html, f"stale PWA asset key: expected {expected_url}"
+assert "远程连接正常" in app_js, "short iPhone remote-connection status missing"
 assert "etc/tvguard/agent-bridge.key" not in data, "key must never be packaged"
 assert "conffiles" in control and b"agent-bridge.key" not in control["conffiles"][1]
 print(f"PASS: OpenWrt gzip-tar IPK, root ownership, package metadata, control and payload ({len(raw)} bytes)")
