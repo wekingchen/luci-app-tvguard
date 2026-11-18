@@ -14,7 +14,7 @@ conf = (root / "root/etc/config/tvguard").read_text()
 permissions = acl["luci-app-tvguard"]
 
 assert 'status|logs)' in reader and 'start)' not in reader
-assert 'prepare|save-token|start|stop|restart)' in writer
+assert 'prepare|save-token|start|stop|restart|rebuild)' in writer
 assert permissions["read"]["file"]["/usr/libexec/tvguard-tunnel-read"] == ["exec"]
 assert "/usr/libexec/tvguard-tunnel-manage" not in permissions["read"]["file"]
 assert permissions["write"]["file"]["/usr/libexec/tvguard-tunnel-manage"] == ["exec"]
@@ -26,6 +26,9 @@ assert "managed || die" in src
 assert "container_exists" in src
 assert "--token-file /etc/tvguard/token" in src
 assert '--mount "type=bind,src=$DATA,dst=/etc/tvguard,readonly"' in src
+assert "--metrics 127.0.0.1:20241" in src
+assert 'docker rename' in src
+assert "runAction('rebuild'" in page
 assert "--cap-drop ALL" in src
 assert "no-new-privileges:true" in src
 assert "image inspect" in src and "docker pull" not in src
