@@ -20,7 +20,7 @@ function button(label, callback, type) {
         'class': 'tvg-btn' + (type ? ' ' + type : ''), 'click': callback }, label);
 }
 function block(title, right) {
-    var children = [E('h3', { 'class': 'tvg-card-title' }, title)];
+    var children = [E('div', { 'class': 'tvg-card-title', 'role': 'heading', 'aria-level': '2' }, title)];
     if (right) children.push(right);
     return E('div', { 'class': 'tvg-card-header' }, children);
 }
@@ -291,7 +291,7 @@ return view.extend({
         buttons = [enable, disable, enableLan, disableLan, pair, revoke, update];
 
         root = E('div', { 'class': 'tvg-console' }, [
-            E('link', { 'rel': 'stylesheet', 'href': STYLE + '?v=0.1.16-r16' }),
+            E('link', { 'rel': 'stylesheet', 'href': STYLE + '?v=0.1.16-r19' }),
             E('div', { 'class': 'tvg-header' }, [
                 E('div', {}, [
                     E('div', { 'class': 'tvg-eyebrow' }, 'TVGUARD / PARENT ACCESS'),
