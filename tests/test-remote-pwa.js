@@ -35,14 +35,14 @@ const document = {
   addEventListener(event, fn) { if (event === 'DOMContentLoaded') onLoad = fn; }
 };
 let reloaded = 0;
-const window = { confirm: () => true, setInterval: () => 1, location: {reload: () => {reloaded++;}} };
+const window = { confirm: () => true, setInterval: () => 1, location: {reload: () => {reloaded++;},hostname:'192.168.101.99',protocol:'http:'} };
 async function fetch(url, opts) {
   calls.push({url,opts});
   assert(queue.length, 'missing response for ' + url);
   const result = queue.shift();
   if (result.error) throw new Error(result.error);
   return { ok: result.status >= 200 && result.status < 300,
-           status: result.status, json: async () => result.body };
+           status: result.status, json: async () => { if (result.malformed) throw Error('invalid json'); return result.body; } };
 }
 const context = vm.createContext({document,window,fetch,Date,Math,Number,String,Error,encodeURIComponent});
 vm.runInContext(fs.readFileSync('root/usr/share/tvguard-remote/www/app.js','utf8'),context);
@@ -62,7 +62,7 @@ const nextTick = () => new Promise(resolve => setImmediate(resolve));
   assert(els.pair.classList.contains('hidden'));
   assert.strictEqual(els.watched.textContent,'0 分钟');
   assert.strictEqual(els.remaining.textContent,'1 小时 0 分钟');
-  assert.strictEqual(els.network.textContent,'已连接');
+  assert.strictEqual(els.network.textContent,'内网直连 · 在线');
   assert(controls.find(c => c.dataset.action === 'mode-child').disabled,'current mode must be disabled');
   assert(controls.find(c => c.dataset.action === 'bonus-undo').disabled,'undo with zero should be disabled');
 
@@ -76,7 +76,7 @@ const nextTick = () => new Promise(resolve => setImmediate(resolve));
 
   queue.push({error:'network interrupted'});
   await call("action('bonus-15')");
-  assert.strictEqual(els.network.textContent,'操作待确认');
+  assert.strictEqual(els.network.textContent,'内网直连 · 操作待确认');
   assert(els.errorBox.textContent.includes('防止重复奖励'));
   assert(!els.reloadPage.classList.contains('hidden'));
   els.reloadPage.handlers.click();
@@ -85,13 +85,13 @@ const nextTick = () => new Promise(resolve => setImmediate(resolve));
 
   reply(200,status);
   await call('refresh()');
-  assert.strictEqual(els.network.textContent,'已连接');
+  assert.strictEqual(els.network.textContent,'内网直连 · 在线');
   assert(els.reloadPage.classList.contains('hidden'));
   assert(!controls.find(c => c.dataset.action === 'bonus-15').disabled);
 
   queue.push({error:'offline'});
   await call('refresh()');
-  assert.strictEqual(els.network.textContent,'连接异常');
+  assert.strictEqual(els.network.textContent,'内网直连 · 连接异常');
   assert(controls.every(c => c.disabled),'offline state must prevent actions');
 
   reply(401,{ok:false,error:'pair_required'});
@@ -106,6 +106,22 @@ const nextTick = () => new Promise(resolve => setImmediate(resolve));
   assert.strictEqual(els.pairCode.value,'');
   assert(!els.main.classList.contains('hidden'));
   assert(calls.some(c => c.opts.method==='POST' && c.url.includes('action=pair')));
+  // 服务端实际配对成功但 POST 200 返回了无法解析的内容；不允许重发配对。
+  await call("showPair()");
+  els.pairCode.value = 'b2'.repeat(16);
+  const previousCount = calls.filter(c => c.opts.method==='POST' && c.url.includes('action=pair')).length;
+  queue.push({status:200,malformed:true});
+  reply(200,status);
+  await call('pair()');
+  assert(!els.main.classList.contains('hidden'));
+  assert(els.errorBox.classList.contains('hidden'));
+  assert.strictEqual(calls.filter(c => c.opts.method==='POST' && c.url.includes('action=pair')).length,previousCount + 1);
+  assert.strictEqual(calls.at(-1).url,'/cgi-bin/tvg?action=status');
+  window.location.hostname = 'tv.example.org'; window.location.protocol = 'https:';
+  reply(200,status);
+  await call('refresh()');
+  assert.strictEqual(els.network.textContent,'外网 HTTPS · 在线');
+  window.location.hostname = '192.168.101.99'; window.location.protocol = 'http:';
 
   console.log('PASS: iPhone PWA DOM/fetch, zero watch, pairing, offline, and no duplicate bonus after uncertain POST');
 })().catch(err => { console.error(err); process.exitCode=1; });

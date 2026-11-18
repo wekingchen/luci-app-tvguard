@@ -2,6 +2,14 @@
 const $ = id => document.getElementById(id);
 let busy = false;
 let session = null;
+function connectionPath() {
+    const host = String(window.location.hostname || '').toLowerCase();
+    if (/^(10\.|192\.168\.|127\.|172\.(1[6-9]|2[0-9]|3[01])\.)/.test(host) || host === 'localhost')
+        return '内网直连';
+    if (window.location.protocol === 'https:') return '外网 HTTPS';
+    return '连接来源未知';
+}
+function connectionState(state) { $('network').textContent = connectionPath() + ' · ' + state; }
 const fmt = s => {
     const n = Math.max(0, Number(s) || 0);
     const m = Math.ceil(n / 60);
@@ -19,15 +27,25 @@ async function request(method, action, body) {
         cache: 'no-store', redirect: 'error'
     });
     let json;
-    try { json = await resp.json(); } catch (_) { throw Error('设备返回的数据格式不正确；外网使用时请重新打开页面以完成 Cloudflare Access 登录'); }
+    try {
+        json = await resp.json();
+        if (json === null || typeof json !== 'object' || Array.isArray(json)) throw Error('non_object_json');
+    } catch (_) {
+        const e = Error(window.location.protocol === 'https:' ?
+            '设备响应无法解析；如外网 Access 会话过期，请重新打开页面' :
+            '设备响应无法解析，请刷新状态确认是否已经成功');
+        e.invalidResponse = true;
+        e.httpStatus = resp.status;
+        throw e;
+    }
     if (!resp.ok) {
         if (resp.status === 401) { showPair(); throw Error('设备授权已失效，请重新配对'); }
         throw Error('操作未完成：' + (json.error || 'HTTP ' + resp.status));
     }
     return json;
 }
-function showPair() { session = null; $('main').classList.add('hidden'); $('pair').classList.remove('hidden'); $('network').textContent = '待配对'; }
-function showMain() { $('main').classList.remove('hidden'); $('pair').classList.add('hidden'); $('network').textContent = '已连接'; }
+function showPair() { session = null; $('main').classList.add('hidden'); $('pair').classList.remove('hidden'); connectionState('待配对'); }
+function showMain() { $('main').classList.remove('hidden'); $('pair').classList.add('hidden'); connectionState('在线'); }
 function paint(s) {
     session = s;
     const names = {child:'儿童模式', parent:'家长模式', locked:'已锁定'};
@@ -56,7 +74,7 @@ function paint(s) {
 async function refresh() {
     try { const s = await request('GET','status'); clearError(); paint(s); }
     catch(e) {
-        $('network').textContent = '连接异常';
+        connectionState('连接异常');
         document.querySelectorAll('[data-action]').forEach(b => { b.disabled = true; });
         if (!String(e.message).includes('重新配对')) error(e.message || String(e));
     }
@@ -79,7 +97,7 @@ async function action(a) {
         verified = true;
     } catch(e) {
         error((e.message || String(e)) + '。为防止重复奖励，请先刷新状态再操作。');
-        $('network').textContent = '操作待确认';
+        connectionState('操作待确认');
     } finally {
         busy = false;
         if (verified && session) paint(session);
@@ -96,8 +114,23 @@ async function pair() {
         $('pairCode').value = '';
         clearError();
         await refresh();
-    } catch(e) { error(e.message || String(e)); }
-    finally { busy = false; $('pairButton').disabled = false; }
+    } catch(e) {
+        // 当 POST 已发放 Cookie，但响应体被截断或不是 JSON 时，先用 GET 确认。
+        // 严禁重发配对 POST（一次性码可能已经被消费）。
+        if (e.invalidResponse && e.httpStatus >= 200 && e.httpStatus < 300) {
+            try {
+                const verified = await request('GET', 'status');
+                $('pairCode').value = '';
+                clearError();
+                paint(verified);
+                return;
+            } catch (_) {
+                error('配对结果尚不能确认，请点击刷新状态；不要重复提交同一配对码');
+                return;
+            }
+        }
+        error(e.message || String(e));
+    } finally { busy = false; $('pairButton').disabled = false; }
 }
 document.addEventListener('DOMContentLoaded', () => {
     $('pairButton').addEventListener('click', pair);

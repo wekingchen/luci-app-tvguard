@@ -20,11 +20,11 @@
  <header><div class="logo">▣</div><div><h1>TVGuard</h1><p>家长遥控器</p></div><span id="network" class="pill">连接中</span></header>
  <section id="pair" class="panel hidden">
   <h2>首次连接 · 配对家长设备</h2>
-  <p>在路由器 LuCI 的「电视时间管理 → 家长遥控」生成一次性配对码。配对后设备可在有效期内直接使用，无需每次进入路由器后台。</p>
+  <p>在路由器 LuCI 的「电视时间管理 → 家长遥控」生成一次性配对码。配对后会保存独立设备授权；请使用普通浏览模式，关闭无痕会话后通常会丢失 Cookie。</p>
   <label for="pairCode">一次性配对码</label>
   <input id="pairCode" type="password" autocomplete="off" spellcheck="false" maxlength="32" placeholder="粘贴 32 位配对码">
   <button id="pairButton" class="primary full">配对此设备</button>
-  <p class="muted">请只在可信任的设备上配对。当前开发版服务仅在 N1 本机开放，尚未提供局域网 HTTPS 入口。</p>
+  <p class="muted">家中使用局域网 HTTP 直连，传输未经加密；外出需先配置 Cloudflare Tunnel + Access。只在可信家庭网络与自己的设备上配对。</p>
  </section>
  <div id="main" class="hidden">
   <section class="summary">
