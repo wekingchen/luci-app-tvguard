@@ -57,6 +57,8 @@ jobs:
         run: node tests/test-settings-ui.js
       - name: Verify random generation without od/hexdump/xxd
         run: sh tests/test-remote-random.sh
+      - name: Validate parent remote CGI end-to-end contract
+        run: python3 tests/test-remote-cgi-e2e.py
       - name: Validate uhttpd CGI same-origin behavior
         run: python3 tests/test-remote-origin.py
       - name: Validate standalone parent remote safety
