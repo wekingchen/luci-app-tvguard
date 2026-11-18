@@ -1,6 +1,6 @@
 # TVGuard · 远程访问（Cloudflare Tunnel）
 
-当前稳定版本：**v0.1.16-r16**。LuCI 远程访问页的 UI 已于 2026-11-18 获用户真机确认正常。N1 上原有专用 Tunnel 已由用户完成真实配置，iPhone 蜂窝网络通过 `https://tv.rqqr.de` 访问与控制正常。r15 仅改 LuCI 远程访问页面的视觉和交互。
+当前稳定版本：**v0.1.16-r23**。LuCI 远程访问页的 UI 已于 2026-11-18 获用户真机确认正常。N1 上原有专用 Tunnel 已由用户完成真实配置，iPhone 蜂窝网络通过 `https://tv.rqqr.de` 访问与控制正常。r15 仅改 LuCI 远程访问页面的视觉和交互。
 
 ## 页面结构
 
@@ -29,7 +29,10 @@
 
 - 只有本模块创建且带有 `org.tvguard.owner=luci-app-tvguard` 标签的同名容器可被管理，不接管 Vaultwarden 或 ntfy。
 - Token 以 N1 XFS 限权文件保存；不放入 UCI、Docker 环境变量或命令参数。前端通过权限受控的 `/tmp/tvguard-tunnel/token.pending` 提交新 Token，不回显。
-- 新建容器默认 `--metrics 127.0.0.1:20241`。一次性“安全重建”按钮已在 r6 删除；正常升级无须重建容器。
+- 新建容器固定 `--protocol http2`、`--metrics 127.0.0.1:20241`。旧版的手动“安全重建”按钮仍未恢复；**r23 是一次性的、所有权受限的后台协议迁移**，不是任意容器重建入口。
+- 升级后若 TVGuard 容器正在运行且所有权匹配，会暂存旧容器并创建 HTTP/2 容器；仅在日志显示真正注册 HTTP/2 边缘连接后才清理备份，失败则恢复旧容器。若旧容器已停止，安装时不会偷偷启动；日后从 LuCI 手动启动/重启时执行迁移。
+- LuCI 显示的是容器启动协议，**不是 Tunnel 健康状态保证**；成功应以四条 `Registered tunnel connection ... protocol=http2` 日志、实际 5G 公网访问为准。
+- 为保护本地服务，升级不会修改任何 Token 内容、Metrics 绑定、Cloudflare 路由、用户授权、ZeroTier 或其它 Docker 容器。
 - Docker 镜像必须已存在，本模块不会自动下载；原有 tvguard-agent-bridge、电视计费、NoMount、ZeroTier、其它 Tunnel 都不因 LuCI 的 UI 改版而改变。
 
 ## 版本与验收
@@ -41,3 +44,17 @@
 ## r16 · 标题遮挡修复
 
 真机截图中「远程访问」主标题被 LuCI 主题绘制为蓝色横栏。r16 取消页面顶端会触发主题全局规则的 `header` 和 `h2` HTML 标签，替换为独立标题容器，并保留无障碍标题语义；不影响 Cloudflare 域名、配对、Token 或容器状态。
+
+## r23 · QUIC 超时与 HTTP/2 对照
+
+现场日志中 `tvguard-cloudflared` 与 `ntfy_cloudflared` 均发生 QUIC 握手/已建立连接超时，而 Vaultwarden 使用 HTTP/2 相对稳定；N1 局域网 TVGuard HTTP=200 耗时约 2.36ms。选择在 TVGuard 上固定 HTTP/2（TCP 7844）做稳定性对照，不改变 N1 全局 DNS、iptables 或其它 Tunnel。
+
+验证只读命令：
+
+```sh
+docker inspect -f '{{json .Config.Cmd}}' tvguard-cloudflared
+docker logs --since 10m tvguard-cloudflared 2>&1 | grep -E 'Registered tunnel connection|protocol=http2|Failed to dial|Connection terminated' | tail -30
+/usr/libexec/tvguard-tunnel status
+```
+
+若状态依旧 `auto`，先检查迁移错误和备份容器 `tvguard-cloudflared-before-http2`，不要手动删除未知容器。HTTP/2 仅改变 cloudflared 到 Cloudflare 边缘的出站传输协议，不会让内网 HTTP 回源变为 HTTPS。
