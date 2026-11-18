@@ -51,6 +51,7 @@ for f in \
     usr/libexec/tvguard-tunnel-read \
     usr/libexec/tvguard-tunnel-manage \
     usr/libexec/tvguard-remote-admin \
+    usr/libexec/tvguard-remote-status \
     usr/libexec/tvguard-remote-read \
     usr/libexec/tvguard-remote-manage \
     usr/libexec/tvguard-remote-lan-ip \

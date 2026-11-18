@@ -70,6 +70,7 @@ for name in (
     "usr/libexec/tvguard-soak-report",
     "usr/libexec/tvguard-daily-report",
     "usr/libexec/tvguard-remote-admin",
+    "usr/libexec/tvguard-remote-status",
     "usr/libexec/tvguard-remote-read",
     "usr/libexec/tvguard-remote-manage",
     "usr/libexec/tvguard-remote-lan-ip",

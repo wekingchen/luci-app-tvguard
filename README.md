@@ -1,6 +1,6 @@
 # TV Guard · 家庭电视时间管理
 
-## v0.1.16-r9 · 独立家长遥控预览（未真机验收）
+## v0.1.16-r10 · 独立家长遥控预览（未真机验收）
 
 - 默认关闭的 localhost-only uhttpd 服务、5 分钟一次性配对、30 天可撤销会话、家长 PWA 和白名单 API。
 - LuCI 新增「家长遥控」页，支持启停、配对和全部授权撤销；计时、Agent 与 RAW 规则不变。
@@ -9,6 +9,7 @@
 
 ## v0.1.16-r3 · Cloudflare Tunnel LuCI 管理（未真机验收候选）
 
+- r10：收紧家长 API 状态为固定九个字段，避免暴露 Agent/网络诊断；修正配对领取临时路径必须包含进程号，并补白名单功能测试。
 - r9：修复手机配对报 `origin_rejected`：OpenWrt uhttpd 的 CGI 不转发自定义 `X-TVGuard-Action` 请求头；改为严格的同源 Origin/Referer、局域网 Host 地址匹配，并修复公网 HTTPS Cookie Secure 标记判断；新增真实 shell 运行的同源回归用例。
 - r8：修复 N1 精简 BusyBox 缺少 `od` 导致配对码和会话令牌生成失败；统一采用 `/dev/urandom`、长度验证和 `sha256sum`，不新增依赖。
 - r7：新增家中 HTTP 直连开关，限定 br-lan 私有 IPv4:18765 并保留本机回环 127.0.0.1:18765；保留家长配对权限，公网 HTTPS + Access 后续再配置。HTTP 明文有 Cookie 窃听风险。

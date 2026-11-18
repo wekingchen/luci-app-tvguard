@@ -21,7 +21,7 @@ assert "$1==10" in lan_helper and "$1==172" in lan_helper
 assert "enable-lan" in (p/"htdocs/luci-static/resources/view/tvguard/remote.js").read_text()
 assert "client_allowed ||" in cgi and "ip -4 route get" in cgi
 assert "-h /usr/share/tvguard-remote/www" in init and "remote-enabled" in init
-assert "/usr/libexec/tvguardctl" in cgi and "/usr/libexec/tvguard-status status" in cgi
+assert "/usr/libexec/tvguardctl" in cgi and "/usr/libexec/tvguard-remote-status" in cgi
 for command in ("mode child","mode parent","mode locked","bonus 15","bonus 30","bonus 60","bonus undo"):
     assert command in cgi,command
 assert "same_origin ||" in cgi and "HTTP_ORIGIN" in cgi

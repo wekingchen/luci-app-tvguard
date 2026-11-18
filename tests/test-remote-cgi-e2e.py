@@ -32,7 +32,7 @@ with tempfile.TemporaryDirectory(prefix="tvguard-api-e2e-") as directory:
     script = script.replace("ROOT=/mnt/mmcblk2p4/tvguard-remote", f"ROOT={state}")
     script = script.replace("PAIR=/tmp/tvguard-remote/pair", f"PAIR={pair_file}")
     script = script.replace("/tmp/tvguard-remote/pair.lock", str(lock_path))
-    script = script.replace("/usr/libexec/tvguard-status", str(status_path))
+    script = script.replace("/usr/libexec/tvguard-remote-status", str(status_path))
     script = script.replace("/usr/libexec/tvguardctl", str(ctl_path))
     script = re.sub(r"(?ms)^storage_ok\(\) \{\n.*?^\}", 'storage_ok() { [ -d "$ROOT" ]; }', script, count=1)
     script = re.sub(r"(?ms)^client_allowed\(\) \{\n.*?^\}", 'client_allowed() { [ "$REMOTE_ADDR" = 127.0.0.1 ]; }', script, count=1)

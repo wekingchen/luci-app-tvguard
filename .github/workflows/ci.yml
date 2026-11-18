@@ -29,6 +29,7 @@ jobs:
       - name: Validate standalone CGI and LAN helper syntax
         run: |
           sh -n root/usr/share/tvguard-remote/www/cgi-bin/tvg
+          sh -n root/usr/libexec/tvguard-remote-status
           sh -n root/usr/libexec/tvguard-remote-lan-ip
           sh -n root/usr/libexec/tvguard-random-hex
       - name: Validate LuCI JSON and JavaScript syntax
@@ -61,6 +62,8 @@ jobs:
         run: node tests/test-settings-ui.js
       - name: Verify random generation without od/hexdump/xxd
         run: sh tests/test-remote-random.sh
+      - name: Validate minimized remote status schema
+        run: python3 tests/test-remote-status.py
       - name: Validate parent remote CGI end-to-end contract
         run: python3 tests/test-remote-cgi-e2e.py
       - name: Validate uhttpd CGI same-origin behavior
@@ -203,17 +206,17 @@ jobs:
       - name: Build and validate OpenWrt-compatible development IPK
         run: |
           set -eu
-          sh scripts/build-ipk.sh 0.1.16 9
-          PKG=dist/luci-app-tvguard_0.1.16-9_all.ipk
+          sh scripts/build-ipk.sh 0.1.16 10
+          PKG=dist/luci-app-tvguard_0.1.16-10_all.ipk
           test -f "$PKG"
           # OpenWrt ipkg-build uses gzip-compressed tar, not Debian ar.
           test "$(od -An -tx1 -N2 "$PKG" | tr -d ' \n')" = 1f8b
           tar -tzf "$PKG" | grep -q './control.tar.gz'
-          python3 scripts/verify-ipk.py "$PKG" 0.1.16 9
+          python3 scripts/verify-ipk.py "$PKG" 0.1.16 10
           sha256sum "$PKG"
       - name: Upload development IPK
         uses: actions/upload-artifact@v4
         with:
-          name: tvguard-v0.1.16-r9-origin-compat-fix-ipk
+          name: tvguard-v0.1.16-r10-audited-remote-ipk
           path: dist/*.ipk
           if-no-files-found: error
