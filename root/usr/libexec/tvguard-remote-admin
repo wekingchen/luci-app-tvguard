@@ -244,15 +244,15 @@ revoke_all() {
     [ ! -L "$REVOKED" ] && rm -rf "$REVOKED"
     echo '已撤销所有已配对设备和未使用配对码'
 }
-case "$*" in
-    status) status ;;
-    migrate) migrate_sessions ;;
-    revoke-device) revoke_device "$2" ;;
-    enable) enable_remote ;;
-    disable) disable_remote ;;
-    enable-lan) enable_lan ;;
-    disable-lan) disable_lan ;;
-    pair) issue_pair ;;
-    revoke-all) revoke_all ;;
+case "${1:-}" in
+    status) [ "$#" -eq 1 ] || exit 2; status ;;
+    migrate) [ "$#" -eq 1 ] || exit 2; migrate_sessions ;;
+    revoke-device) [ "$#" -eq 2 ] || exit 2; revoke_device "$2" ;;
+    enable) [ "$#" -eq 1 ] || exit 2; enable_remote ;;
+    disable) [ "$#" -eq 1 ] || exit 2; disable_remote ;;
+    enable-lan) [ "$#" -eq 1 ] || exit 2; enable_lan ;;
+    disable-lan) [ "$#" -eq 1 ] || exit 2; disable_lan ;;
+    pair) [ "$#" -eq 1 ] || exit 2; issue_pair ;;
+    revoke-all) [ "$#" -eq 1 ] || exit 2; revoke_all ;;
     *) exit 2 ;;
 esac

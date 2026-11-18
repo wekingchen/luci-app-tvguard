@@ -29,7 +29,7 @@ with tempfile.TemporaryDirectory(prefix="tvguard-admin-e2e-") as temp:
     admin.chmod(0o700)
 
     def run(action):
-        return subprocess.run(["/bin/sh",str(admin),action],capture_output=True,text=True,timeout=8)
+        return subprocess.run(["/bin/sh",str(admin),*action.split()],capture_output=True,text=True,timeout=8)
 
     out=run("pair")
     assert out.returncode==0,(out.stderr,out.stdout)
