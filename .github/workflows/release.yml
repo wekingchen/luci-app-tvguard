@@ -178,6 +178,17 @@ jobs:
                     ;;
                 esac
               done
+            # This release tag is retained across package revisions. Keep only
+            # the current IPK to avoid users mistakenly installing an older rN.
+            gh release view "$TAG" --json assets --jq '.assets[].name' |
+              while IFS= read -r asset; do
+                case "$asset" in
+                  luci-app-tvguard_*_all.ipk)
+                    [ "$asset" = "$(basename "$PKG")" ] ||
+                      gh release delete-asset "$TAG" "$asset" --yes
+                    ;;
+                esac
+              done
             gh release edit "$TAG" --title "TV Guard v$VERSION" --notes-file /tmp/release-notes.md
             gh release upload "$TAG" "$PKG" "$APK" --clobber
           else
@@ -204,7 +215,8 @@ jobs:
             chore/v0.1.14-release-refresh \
             feat/v0.1.15-multi-app-generalization \
             feat/v0.1.16-tunnel-ui \
-            fix/v0.1.16-r17-iphone-pwa; do
+            fix/v0.1.16-r17-iphone-pwa \
+            fix/v0.1.16-r17-release-asset-hygiene; do
             encoded="${branch//\//%2F}"
             # Best-effort cleanup only; release success must not depend on an
             # already-deleted development branch.
