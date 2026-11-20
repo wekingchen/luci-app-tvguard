@@ -187,16 +187,23 @@ status() {
             done < "$SESSIONS"
         fi
     fi
-    lan_enabled=false; lan_url=''
+    lan_enabled=false; lan_listener=false; lan_url=''
     if [ -f "$LAN_ENABLED" ] && [ "$(cat "$LAN_ENABLED")" = 1 ]; then
         lan_enabled=true
         addr="$("$LAN_HELPER" 2>/dev/null || :)"
         if [ -n "$addr" ]; then
             lan_url="http://$addr:18765/"
+            # A configured LAN listener may still be absent after a boot
+            # address race. Never report "LAN available" on flags alone.
+            if [ "$enabled" = true ] && command -v curl >/dev/null 2>&1; then
+                lan_code="$(curl --noproxy '*' --connect-timeout 1 --max-time 2 \
+                    -s -o /dev/null -w '%{http_code}' "$lan_url" 2>/dev/null || :)"
+                [ "$lan_code" = 200 ] && lan_listener=true
+            fi
         fi
     fi
-    printf '{"enabled":%s,"listener":%s,"paired":%s,"devices":[%s],"lan_enabled":%s,"lan_url":"%s"}\n' \
-        "$enabled" "$listener" "$count" "$entries" "$lan_enabled" "$lan_url"
+    printf '{"enabled":%s,"listener":%s,"paired":%s,"devices":[%s],"lan_enabled":%s,"lan_listener":%s,"lan_url":"%s"}\n' \
+        "$enabled" "$listener" "$count" "$entries" "$lan_enabled" "$lan_listener" "$lan_url"
 }
 enable_remote() {
     require_storage

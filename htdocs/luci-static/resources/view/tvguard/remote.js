@@ -207,16 +207,22 @@ return view.extend({
             service.note.textContent = ready ? '独立 HTTP 已就绪' : '不会影响原有电视计时与断网';
             serviceBadge.textContent = ready ? '可用' : '未就绪';
             serviceBadge.className = 'tvg-pill ' + (ready ? 'is-good' : (s.enabled ? 'is-warn' : ''));
-            home.value.textContent = s.lan_enabled ? '已开放' : '未开放';
-            home.note.textContent = s.lan_enabled ? '仅家中可信网络 · HTTP' : '外网 Tunnel 不受此开关影响';
-            lanBadge.textContent = s.lan_enabled ? '内网可用' : '未开启';
-            lanBadge.className = 'tvg-pill ' + (s.lan_enabled ? 'is-good' : '');
+            // Configuration alone does not prove LAN HTTP was bound after
+            // a cold boot. Show actual LAN reachability from N1.
+            var lanReady = ready && !!s.lan_enabled && !!s.lan_listener;
+            home.value.textContent = s.lan_enabled ? (lanReady ? '已开放' : '待恢复') : '未开放';
+            home.note.textContent = s.lan_enabled ?
+                (lanReady ? '仅家中可信网络 · HTTP' : '等待 LAN 监听恢复，可刷新查看') :
+                '外网 Tunnel 不受此开关影响';
+            lanBadge.textContent = s.lan_enabled ? (lanReady ? '内网可用' : '内网未就绪') : '未开启';
+            lanBadge.className = 'tvg-pill ' + (lanReady ? 'is-good' : (s.lan_enabled ? 'is-warn' : ''));
             devices.value.textContent = String(Number(s.paired) || 0) + ' / 4 台';
             devices.note.textContent = '授权长期有效，支持单台撤销';
             serviceMessage.textContent = ready ? '本机 API 127.0.0.1:18765 已就绪。' :
                 '这是独立遥控服务，启停不会修改儿童模式或正式控制开关。';
             lanMessage.textContent = s.lan_enabled ?
-                '家中 HTTP 直连已启用；浏览器与手机仍需完成设备配对。' :
+                (lanReady ? '家中 HTTP 直连可访问；浏览器与手机仍需完成设备配对。' :
+                    '局域网监听尚未就绪。开机网络恢复后会自动重新绑定；若持续异常请查看系统日志。') :
                 '家中 HTTP 尚未开放。打开后可从同一局域网的手机访问。';
             var url = s.lan_enabled ? validLocalUrl(s.lan_url) : '';
             if (url) {
@@ -293,7 +299,7 @@ return view.extend({
         buttons = [enable, disable, enableLan, disableLan, pair, revoke, update];
 
         root = E('div', { 'class': 'tvg-console' }, [
-            E('link', { 'rel': 'stylesheet', 'href': STYLE + '?v=0.1.16-r24' }),
+            E('link', { 'rel': 'stylesheet', 'href': STYLE + '?v=0.1.16-r25' }),
             E('div', { 'class': 'tvg-header' }, [
                 E('div', {}, [
                     E('div', { 'class': 'tvg-page-heading', 'role': 'heading', 'aria-level': '1' }, 'TV Guard · 家长遥控'),

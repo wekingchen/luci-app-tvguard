@@ -1,11 +1,20 @@
-# TVGuard v0.1.16-r24 · 交付与验收记录
+# TVGuard v0.1.16-r25 · 交付与验收记录
 
 ## 交付内容
 
-- **N1**：`luci-app-tvguard_0.1.16-24_all.ipk`，Build ID `v0.1.16-r24-apply-local-cloudflared-image`。
+- **N1**：`luci-app-tvguard_0.1.16-25_all.ipk`，Build ID `v0.1.16-r25-remote-coldboot-recovery`。
 - **小米电视 Agent**：保持固定签名 `0.3.7`（versionCode 20）；原先已装同版本且权限正常，无需重复安装。
 - **GitHub Release**：正式版标签 `v0.1.16`，同时提供 N1 主 IPK 与已验证固定签名的 Agent APK；Bridge/Fusion 已包含在 N1 主包。
 - **受控的数据与服务**：家长设备授权/备注、TVGuard 计时和学习数据、Bark 设置、Cloudflare Tunnel Token 均在 N1 保留；软件升级不要求重新配对或重建 Docker 容器。
+
+## r25 · 家长遥控 N1 冷启动自恢复（待实机重启验证）
+
+- 用户确认 r24 在日常使用及本地镜像应用正常，但 N1 某次重启后独立家长遥控服务不可用；手工停用、启用后立即恢复。
+- 源码根因候选为 `root/etc/init.d/tvguard-remote`：之前等待 br-lan 地址不存在，只要 `tvguard-remote-lan-ip` 失败便在 procd 实例未关闭前直接 `return 1`；无法保证网络事件后自动恢复。源码问题确定，现场单次事件还需日志核实。
+- r25：启动时有限等待 br-lan 私有 IPv4；没拿到时仍先提供 127.0.0.1:18765，不放开 0.0.0.0；netifd `lan` 接口 up/update 后由 procd 重启独立 uhttpd 重新绑定局域网 IP。未启用家长遥控或 LAN 时不会额外启动。
+- 状态接口新增 `lan_listener` 真实 HTTP 探测，LuCI 由原来「配置已启用即显示内网可用」改为「真实可用 / 待恢复」区分。
+- 新增执行式 Shell 冷启动失败、延迟恢复、禁用开关模拟，保留原有配对、CGI、N1 计时和全库回归。
+- 本版尚无 N1 重启后的真实日志，因此不能声称已验证长期或开机稳定性。
 
 ## r24 · 仅应用 N1 已下载的 cloudflared 镜像（待 N1 真机验收）
 

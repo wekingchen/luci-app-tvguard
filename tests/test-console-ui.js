@@ -67,7 +67,7 @@ function nodeWithClass(root, name) {
     assert(css.includes('.tvg-device { flex-direction: column'), 'mobile device controls need vertical layout');
     assert(css.includes('.tvg-address { align-items: stretch; flex-direction: column'), 'mobile address stacking missing');
 
-    let parent = {enabled:true,listener:true,lan_enabled:true,
+    let parent = {enabled:true,listener:true,lan_enabled:true,lan_listener:true,
         lan_url:'http://192.168.101.99:18765/',paired:2,
         devices:[
             {id:'0123456789abcdef',name:'iPhone Chrome',paired_at:1795000000,expires:0},
@@ -94,7 +94,7 @@ function nodeWithClass(root, name) {
         (x.className || '').split(/\s+/).includes('btn')),
         'parent actions must use native overview LuCI buttons');
     assert(find(p.tree,'link').attrs.href.includes('panel.css'));
-    assert(find(p.tree,'link').attrs.href.includes('?v=0.1.16-r24'), 'LuCI parent CSS cache key stale');
+    assert(find(p.tree,'link').attrs.href.includes('?v=0.1.16-r25'), 'LuCI parent CSS cache key stale');
     const code = nodeWithClass(p.tree,'tvg-code')[0];
     assert(code && code.tag === 'code', 'pairing code must remain selectable code');
     const parentHeadings = nodeWithClass(p.tree,'tvg-card-title');
@@ -104,6 +104,15 @@ function nodeWithClass(root, name) {
     assert(all(p.tree,x=>x.tag==='header'||x.tag==='h2').length===0,'theme global selectors must not cover page title');
     assert(all(p.tree,x=>x.className==='tvg-page-heading'&&strings(x).includes('家长遥控')).length===1);
     assert(strings(p.tree).includes('192.168.101.99:18765'));
+    assert(strings(p.tree).includes('内网可用'), 'working LAN HTTP should show ready');
+    parent={...parent,lan_listener:false};
+    await find(p.tree,'button','刷新状态').attrs.click();
+    assert(strings(p.tree).includes('内网未就绪'), 'configured LAN must not claim available without listener');
+    assert(strings(p.tree).includes('待恢复'), 'LAN boot race should show recovery status');
+    parent={...parent,lan_listener:true};
+    await find(p.tree,'button','刷新状态').attrs.click();
+    assert(strings(p.tree).includes('内网可用'), 'LAN should return to ready after recovery');
+
     assert(strings(p.tree).includes('iPhone Chrome'));
     assert(strings(p.tree).includes('长期有效'));
     assert(strings(p.tree).includes('fedcba9876543210'));
@@ -135,7 +144,7 @@ function nodeWithClass(root, name) {
     assert(all(t.tree,x=>x.tag==='button').every(x=>
         (x.className || '').split(/\s+/).includes('btn')),
         'tunnel actions must use native overview LuCI buttons');
-    assert(find(t.tree,'link').attrs.href.includes('?v=0.1.16-r24'), 'LuCI tunnel CSS cache key stale');
+    assert(find(t.tree,'link').attrs.href.includes('?v=0.1.16-r25'), 'LuCI tunnel CSS cache key stale');
     const tunnelHeadings = nodeWithClass(t.tree,'tvg-card-title');
     assert(tunnelHeadings.length === 3 && tunnelHeadings.every(x =>
         x.tag === 'div' && x.attrs.role === 'heading' && x.attrs['aria-level'] === '2'),

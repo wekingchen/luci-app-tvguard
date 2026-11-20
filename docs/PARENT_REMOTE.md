@@ -1,6 +1,6 @@
 # TVGuard · 家长遥控
 
-当前稳定版本：**v0.1.16-r16**。家长遥控的家庭 HTTP、Cloudflare Tunnel 外网功能已在 N1 + iPhone 验收；r16 的 LuCI 家长遥控/远程访问两页 UI（标题、移动适配及设备备注）也已在 2026-11-18 获用户确认正常。N1 重启后的功能也由用户确认正常。iPhone 主屏幕图标可使用同一个公网 HTTPS 地址，无须对 N1 增加分流功能。
+当前稳定版本：**v0.1.16-r25**。家长遥控的家庭 HTTP、Cloudflare Tunnel 外网功能已在 N1 + iPhone 验收；r16 的 LuCI 家长遥控/远程访问两页 UI（标题、移动适配及设备备注）也已在 2026-11-18 获用户确认正常。N1 重启后的功能也由用户确认正常。iPhone 主屏幕图标可使用同一个公网 HTTPS 地址，无须对 N1 增加分流功能。
 
 ## 页面布局
 
@@ -46,3 +46,26 @@ iPhone 推荐统一将 https://tv.rqqr.de 设为 Safari 主屏幕 Web App，家�
 备注最多 24 个界面字符，服务器额外限制在 96 UTF-8 字节，拒绝换行、引号、反斜杠、竖线与控制字符。备注写入 N1 的 `/mnt/mmcblk2p4/tvguard-remote/device-names/`，按授权哈希独立持久保存，文件权限 0600、目录权限 0700。修改不影响配对 Cookie 或会话，撤销设备时清除其备注，全部撤销时清除整个目录。公网家长遥控网页不能修改备注，只有 LuCI 管理员可操作。
 
 原 r15 两页标题被主题蓝条遮挡，原因是 LuCI 主题对 `header`、`h2` 的全局规则与页面标签冲突。r16 使用独立 div 容器及 `role=heading`/`aria-level`，保持桌面和手机布局；已由用户在实际浏览器中确认视觉修复正常。
+
+## r25 · N1 冷启动 br-lan 地址竞态修复（待真机重启复验）
+
+用户确认 r24 运行正常，但某次 N1 重启后家长遥控不可用，手动停用并启用即恢复。审查发现 `/etc/init.d/tvguard-remote` 启动时立即调用 `tvguard-remote-lan-ip`，一旦 br-lan 私有 IPv4 未出现，原逻辑 `return 1` 而且没有完成 `procd_close_instance`。这是能够导致所述现象的**确定代码缺陷**，但无法单靠源码证明历史现场一定由它引起。
+
+修复原则：
+- 启动时只在家长遥控与 LAN 均显式开启时短暂等待（最多约十秒）网络地址；
+- 即便 LAN IP 仍暂不可用，也先注册只监听 `127.0.0.1:18765` 的 uhttpd，以保护 Cloudflare Tunnel 的本机回源；不扩大为 `0.0.0.0`；
+- 在 LuCI 控制的独立 procd 服务上注册逻辑 `lan` 的 `interface.up` 和 `interface.update` 恢复触发，网络真正就绪后重新运行本服务、自动绑定私有 br-lan IPv4；不做全局网络重启；
+- 实时状态新增 `lan_listener`（只读布尔值），通过从 N1 访问私有 LAN HTTP 200 校验监听；前端区分「已开放」「待恢复」，避免「配置已开启」冒充「网络实际可达」；
+- 既有长效家长授权文件、配对 Cookie、时间控制与 Tunnel 不变化，家长遥控已停用时不会被触发器重新启用。
+
+新 CI 使用真实 init Shell / mock procd 和延迟 LAN-IP helper 模拟冷启动 IP 缺失、有限重试、LAN 恢复、禁用模式与安全监听范围；真实 N1 开机以及网络事件是否按预期触发，仍需实机检查。
+
+如再次出现问题，可以只读诊断：
+```sh
+/etc/init.d/tvguard-remote enabled; echo "enabled_rc=$?"
+/etc/init.d/tvguard-remote status
+/usr/libexec/tvguard-remote-admin status
+ip -4 -o addr show dev br-lan
+ss -ltnp | grep ':18765' || netstat -ltnp | grep ':18765'
+logread | grep -Ei 'tvguard-remote|uhttpd|procd|br-lan' | tail -80
+```
