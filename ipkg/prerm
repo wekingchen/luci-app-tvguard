@@ -4,6 +4,8 @@
 # Upgrades must not change enforcement, remove firewall hooks or reset
 # counters. The new postinst will restart both services.
 if [ "${1:-remove}" = upgrade ]; then
+    # Prevent a watchdog tick from racing with replaced service scripts.
+    /etc/init.d/tvguard-remote-watchdog stop 2>/dev/null || :
     # 先停止独立家长 HTTP，避免旧 CGI 在会话迁移期间改写同一授权文件。
     # postinst 会按 remote-enabled 原值恢复服务，不改变电视控制策略。
     /etc/init.d/tvguard-remote stop 2>/dev/null || :
@@ -14,6 +16,8 @@ fi
 
 # 卸载时停止独立遥控服务；升级不删除授权记录和后台配置。
 if [ "${1:-remove}" != upgrade ]; then
+    /etc/init.d/tvguard-remote-watchdog stop 2>/dev/null || :
+    /etc/init.d/tvguard-remote-watchdog disable 2>/dev/null || :
     /etc/init.d/tvguard-remote stop 2>/dev/null || :
     /etc/init.d/tvguard-remote disable 2>/dev/null || :
 fi
