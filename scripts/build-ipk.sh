@@ -56,7 +56,9 @@ for f in \
     usr/libexec/tvguard-remote-manage \
     usr/libexec/tvguard-remote-lan-ip \
     usr/libexec/tvguard-random-hex \
+    usr/libexec/tvguard-remote-watchdog \
     etc/init.d/tvguard-remote \
+    etc/init.d/tvguard-remote-watchdog \
     usr/share/tvguard-remote/www/cgi-bin/tvg \
     etc/init.d/tvguard-agent-bridge \
     www/cgi-bin/tvguard-agent \
