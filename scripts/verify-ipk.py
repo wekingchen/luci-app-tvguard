@@ -111,8 +111,8 @@ postinst = control["postinst"][1].decode("utf-8")
 prerm = control["prerm"][1].decode("utf-8")
 assert 'probe_loopback && probe_lan' in watchdog, "independent HTTP probes missing"
 assert 'BOOT_GRACE=120' in watchdog and 'FAIL_LIMIT=2' in watchdog, "transient-failure safeguards missing"
-assert 'COOLDOWN=600' in watchdog and 'storage_ready || return 0' in watchdog, "recovery storm/storage gate missing"
-assert 'enabled || return 0' in watchdog, "explicit remote-disable consent must be honored"
+assert 'COOLDOWN=600' in watchdog and 'if ! storage_ready; then clear_streak; return 0; fi' in watchdog, "recovery storm/storage gate missing"
+assert 'if ! enabled; then clear_streak; return 0; fi' in watchdog, "explicit remote-disable consent must be honored"
 assert '"$INIT" restart' in watchdog, "watchdog must only restart parent remote service"
 assert 'procd_set_param command /usr/libexec/tvguard-remote-watchdog run' in watchdog_init, "independent watchdog procd instance missing"
 assert '/etc/init.d/tvguard-remote-watchdog enable' in postinst, "watchdog auto-start installation missing"
