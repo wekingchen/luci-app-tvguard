@@ -103,6 +103,55 @@ def main() -> None:
                    "native/root/etc/uci-defaults/99-tvguard-native-init",
                    "native/root/etc/init.d/tvguard-native-bootstrap"):
         subprocess.run(["sh", "-n", str(ROOT / script)], check=True)
+    # Execute the actual Makefile prepare/install recipes with OpenWrt's
+    # relevant make macros mocked. This catches syntax, bad copy paths and
+    # missing rcS symlinks that direct staging comparison cannot detect.
+    with tempfile.TemporaryDirectory(prefix="tvguard-make-") as temp:
+        top = Path(temp)
+        (top / "include").mkdir()
+        (top / "rules.mk").write_text(
+            "INCLUDE_DIR := $(TOPDIR)/include\n"
+            "PKG_BUILD_DIR := $(TOPDIR)/build\n"
+            "INSTALL_DIR := install -d\n"
+            "CP := cp -fpR\n"
+            "SHELL := /usr/bin/env bash\n"
+        )
+        (top / "include/package.mk").write_text("define BuildPackage\nendef\n")
+        recipes = top / "native-recipes.mk"
+        recipes.write_text(
+            "export MOCK_PREINST = $(call Package/luci-app-tvguard/preinst)\n"
+            "export MOCK_POSTINST = $(call Package/luci-app-tvguard/postinst)\n"
+            "export MOCK_PRERM = $(call Package/luci-app-tvguard/prerm)\n"
+            "export MOCK_CONFFILES = $(call Package/luci-app-tvguard/conffiles)\n"
+            ".PHONY: native-recipes\n"
+            "native-recipes:\n"
+            "\t$(Build/Prepare)\n"
+            "\t$(call Package/luci-app-tvguard/install,$(TOPDIR)/image)\n"
+            "\t@echo \"$MOCK_PREINST\" > \"$(TOPDIR)/native-preinst\"\n"
+            "\t@echo \"$MOCK_POSTINST\" > \"$(TOPDIR)/native-postinst\"\n"
+            "\t@echo \"$MOCK_PRERM\" > \"$(TOPDIR)/native-prerm\"\n"
+            "\t@echo \"$MOCK_CONFFILES\" > \"$(TOPDIR)/native-conffiles\"\n"
+        )
+        subprocess.run(
+            ["make", "--no-print-directory", "-C", str(ROOT),
+             "-f", "Makefile", "-f", str(recipes), "native-recipes",
+             f"TOPDIR={top}"],
+            capture_output=True, text=True, check=True,
+        )
+        image = top / "image"
+        link = image / "etc/rc.d/S94tvguard-native-bootstrap"
+        demand(link.is_symlink() and os.readlink(link) ==
+               "../init.d/tvguard-native-bootstrap",
+               "native rootfs bootstrap is not enabled before rcS startup")
+        for path, contents in payload.items():
+            mounted = image / path
+            demand(mounted.is_file() and mounted.read_bytes() == contents,
+                   f"actual Makefile install dropped/changed: {path}")
+        for hook in ("preinst", "postinst", "prerm", "conffiles"):
+            demand((top / f"native-{hook}").read_bytes() ==
+                   (ROOT / "ipkg" / hook).read_bytes(),
+                   f"Makefile lifecycle script expansion changed ipkg/{hook}")
+
     print(f"Native staging parity OK ({len(payload)} main IPK files, {len(extras)} native-only files)")
 
 if __name__ == "__main__":
