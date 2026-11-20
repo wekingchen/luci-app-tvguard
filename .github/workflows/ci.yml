@@ -72,6 +72,8 @@ jobs:
         run: python3 tests/test-remote-lifecycle.py
       - name: Reproduce cold-boot delayed br-lan and self-recovery via procd
         run: python3 tests/test-remote-coldboot.py
+      - name: Verify bounded remote HTTP watchdog self-healing under real shell
+        run: python3 tests/test-remote-watchdog.py
       - name: Validate remote admin issue and revocation lifecycle
         run: python3 tests/test-remote-admin-e2e.py
       - name: Validate minimized remote status schema
