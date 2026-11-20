@@ -148,9 +148,18 @@ def main() -> None:
             demand(mounted.is_file() and mounted.read_bytes() == contents,
                    f"actual Makefile install dropped/changed: {path}")
         for hook in ("preinst", "postinst", "prerm", "conffiles"):
-            demand((top / f"native-{hook}").read_bytes() ==
-                   (ROOT / "ipkg" / hook).read_bytes(),
-                   f"Makefile lifecycle script expansion changed ipkg/{hook}")
+            actual = (top / f"native-{hook}").read_bytes()
+            expected_hook = (ROOT / "ipkg" / hook).read_bytes()
+            if actual != expected_hook:
+                mismatch = next((i for i, (x, y) in enumerate(zip(actual, expected_hook))
+                                 if x != y), min(len(actual), len(expected_hook)))
+                raise AssertionError(
+                    f"Makefile lifecycle script expansion changed ipkg/{hook}; "
+                    f"lengths {len(actual)}/{len(expected_hook)}; "
+                    f"first difference at {mismatch}; "
+                    f"actual={actual[max(0,mismatch-25):mismatch+55]!r}, "
+                    f"expected={expected_hook[max(0,mismatch-25):mismatch+55]!r}"
+                )
 
     print(f"Native staging parity OK ({len(payload)} main IPK files, {len(extras)} native-only files)")
 
