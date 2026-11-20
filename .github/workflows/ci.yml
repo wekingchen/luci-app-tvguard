@@ -245,6 +245,8 @@ jobs:
           tar -tzf "$PKG" | grep -q './control.tar.gz'
           python3 scripts/verify-ipk.py "$PKG" 0.1.16 26
           sha256sum "$PKG"
+      - name: Verify native OpenWrt package parity
+        run: python3 tests/test-native-openwrt-package.py
       - name: Upload development IPK
         uses: actions/upload-artifact@v4
         with:

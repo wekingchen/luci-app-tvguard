@@ -226,5 +226,8 @@ if [ -x /etc/init.d/tvguard-remote-watchdog ]; then
     /etc/init.d/tvguard-remote-watchdog restart 2>/dev/null ||
         echo 'TVGuard: watchdog service restart failed; parent remote still independent' >&2
 fi
+# An online opkg install already initialized TVGuard. Do not schedule the
+# image-only bootstrap again at the next reboot.
+rm -f /etc/uci-defaults/99-tvguard-native-init
 rm -rf "$UPGRADE"
 exit 0
