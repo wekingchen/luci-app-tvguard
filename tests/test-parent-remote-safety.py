@@ -18,8 +18,8 @@ watchdog=(p/"root/usr/libexec/tvguard-remote-watchdog").read_text()
 watchdog_init=(p/"root/etc/init.d/tvguard-remote-watchdog").read_text()
 assert 'INTERVAL=60' in watchdog
 assert 'BOOT_GRACE=120' in watchdog and 'FAIL_LIMIT=2' in watchdog
-assert 'COOLDOWN=600' in watchdog and 'enabled || return 0' in watchdog
-assert 'storage_ready || return 0' in watchdog
+assert 'COOLDOWN=600' in watchdog and 'if ! enabled; then clear_streak; return 0; fi' in watchdog
+assert 'if ! storage_ready; then clear_streak; return 0; fi' in watchdog
 assert 'probe_loopback && probe_lan' in watchdog
 assert 'tvguard-remote-watchdog' in watchdog_init
 assert 'USE_PROCD=1' in watchdog_init and 'procd_set_param respawn' in watchdog_init
