@@ -1,11 +1,20 @@
-# TVGuard v0.1.16-r25 · 交付与验收记录
+# TVGuard v0.1.16-r26 · 交付与验收记录
 
 ## 交付内容
 
-- **N1**：`luci-app-tvguard_0.1.16-25_all.ipk`，Build ID `v0.1.16-r25-remote-coldboot-recovery`。
+- **N1**：`luci-app-tvguard_0.1.16-26_all.ipk`，Build ID `v0.1.16-r26-remote-http-watchdog`。
 - **小米电视 Agent**：保持固定签名 `0.3.7`（versionCode 20）；原先已装同版本且权限正常，无需重复安装。
 - **GitHub Release**：正式版标签 `v0.1.16`，同时提供 N1 主 IPK 与已验证固定签名的 Agent APK；Bridge/Fusion 已包含在 N1 主包。
 - **受控的数据与服务**：家长设备授权/备注、TVGuard 计时和学习数据、Bark 设置、Cloudflare Tunnel Token 均在 N1 保留；软件升级不要求重新配对或重建 Docker 容器。
+
+## r26 · 家长遥控健康巡检与自动恢复（待 N1 真机验收）
+
+- 2026-11-20 用户提出：家长遥控异常时手动重新启动即可恢复，应当能够通过周期巡检自动识别并恢复。
+- r25 的 LAN 冷启动竞态修复仍保留；r26 新增 `tvguard-remote-watchdog` 独立 procd 服务，每 60 秒运行真实 HTTP 检测，支持 uhttpd 进程仍存活但 HTTP 假死。
+- 预期：本机匿名 API 401；已启用 LAN 且 br-lan IP 已就绪时 LAN 首页 200。两次连续异常才只重启遥控服务；启动宽限 120 秒、重启冷却 600 秒、原子锁和遗留锁恢复，防止反复重启。
+- 用户主动关闭、XFS rw 未挂载、LAN 地址暂不可用均不可触发不合适的服务恢复；无 cron 修改、无自动下载镜像、无 Docker/电视计时/firewall/全局 network 操作。
+- Postinst 自动启用独立 watchdog；prerm 升级暂停、卸载停用。新增真实 Shell 模拟、包生命周期和 IPK 实物检测。
+- 完整 CI 通过后方可正式发布，但**无需用户手动停启的 N1 实际重启与长时间自恢复尚需真机验证**。
 
 ## r25 · 家长遥控 N1 冷启动自恢复（待实机重启验证）
 
