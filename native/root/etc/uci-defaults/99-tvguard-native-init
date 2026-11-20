@@ -1,0 +1,5 @@
+#!/bin/sh
+# OpenWrt image installation skips the runtime postinst (IPKG_INSTROOT).
+# Enable a late one-shot initializer; never initialize during early boot.
+[ -x /etc/init.d/tvguard-native-bootstrap ] || exit 1
+/etc/init.d/tvguard-native-bootstrap enable

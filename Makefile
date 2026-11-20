@@ -1,18 +1,70 @@
 include $(TOPDIR)/rules.mk
 
-LUCI_TITLE:=TV Guard - 家庭电视时间管理
-LUCI_DESCRIPTION:=LuCI UI and lightweight time-control daemon for firewall3 routers
-LUCI_DEPENDS:=+luci-base +rpcd +curl +uhttpd +jsonfilter
-LUCI_PKGARCH:=all
-PKG_LICENSE:=MIT
+PKG_NAME:=luci-app-tvguard
 PKG_VERSION:=0.1.16
 PKG_RELEASE:=26
+PKG_LICENSE:=MIT
+PKG_MAINTAINER:=TV Guard contributors
 
-# luci.mk only stages ./root by default. Merge the separately tested Bridge
-# sources into that tree for OpenWrt-feed builds as well as script-built IPKs.
-define Build/Prepare/luci-app-tvguard
-	$(CP) ./bridge/root/* $(PKG_BUILD_DIR)/root/
-	$(INSTALL_BIN) ./bridge/ipkg/postinst $(PKG_BUILD_DIR)/root/usr/libexec/tvguard-agent-bridge-setup
+# package.mk is required: luci.mk ignores our former custom prepare hook
+# and can override the lifecycle hooks necessary for the integrated Bridge.
+include $(INCLUDE_DIR)/package.mk
+
+define Package/luci-app-tvguard
+  SECTION:=luci
+  CATEGORY:=LuCI
+  SUBMENU:=3. Applications
+  TITLE:=TV Guard - 家庭电视时间管理
+  DEPENDS:=+luci-base +rpcd +curl +uhttpd +jsonfilter
+  PKGARCH:=all
+  CONFLICTS:=tvguard-agent-bridge
+  PROVIDES:=tvguard-agent-bridge
 endef
 
-include $(TOPDIR)/feeds/luci/luci.mk
+define Package/luci-app-tvguard/description
+  LuCI UI, policy daemon, parent remote, and integrated TV Agent Bridge
+  for firewall3 / iptables-legacy OpenWrt routers.
+endef
+
+define Build/Prepare
+	$(INSTALL_DIR) $(PKG_BUILD_DIR)/root $(PKG_BUILD_DIR)/htdocs
+	$(CP) ./root/. $(PKG_BUILD_DIR)/root/
+	$(CP) ./htdocs/. $(PKG_BUILD_DIR)/htdocs/
+	sh ./scripts/stage-openwrt-native.sh "$(CURDIR)" "$(PKG_BUILD_DIR)"
+endef
+
+define Build/Configure
+endef
+
+define Build/Compile
+endef
+
+define Package/luci-app-tvguard/install
+	$(INSTALL_DIR) $(1)/www
+	$(CP) $(PKG_BUILD_DIR)/root/. $(1)/
+	$(CP) $(PKG_BUILD_DIR)/htdocs/. $(1)/www/
+	# Rootfs image installs skip runtime postinst; pre-enable the late one-shot
+	# bootstrap so it is present when rcS enumerates its S* links at boot.
+	$(INSTALL_DIR) $(1)/etc/rc.d
+	ln -snf ../init.d/tvguard-native-bootstrap $(1)/etc/rc.d/S94tvguard-native-bootstrap
+endef
+
+# One source of truth: exactly the same opkg scripts as scripts/build-ipk.sh.
+# GNU make's file-read function retains the original shell syntax and newlines.
+define Package/luci-app-tvguard/conffiles
+$(file <$(CURDIR)/ipkg/conffiles)
+endef
+
+define Package/luci-app-tvguard/preinst
+$(file <$(CURDIR)/ipkg/preinst)
+endef
+
+define Package/luci-app-tvguard/postinst
+$(file <$(CURDIR)/ipkg/postinst)
+endef
+
+define Package/luci-app-tvguard/prerm
+$(file <$(CURDIR)/ipkg/prerm)
+endef
+
+$(eval $(call BuildPackage,luci-app-tvguard))

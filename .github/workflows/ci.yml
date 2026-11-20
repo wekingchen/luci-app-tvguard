@@ -177,8 +177,9 @@ jobs:
           grep -q 'reply_coverage' root/usr/libexec/tvguardctl
           grep -q 'proxy isolation audit is not ok' root/usr/libexec/tvguardctl
           grep -q 'isolation)' root/usr/libexec/tvguard-status
-          grep -q 'tvguard-isolation-audit' scripts/build-ipk.sh
-          grep -q 'tvguard-compat-check' scripts/build-ipk.sh
+          grep -q 'package-executables.txt' scripts/build-ipk.sh
+          grep -q 'tvguard-isolation-audit' scripts/package-executables.txt
+          grep -q 'tvguard-compat-check' scripts/package-executables.txt
           grep -q 'TX_IDLE_BILLING_AUTHORITY=0' root/usr/libexec/tvguardctl
           grep -q 'AGENT_BILLING=/usr/libexec/tvguard-agent-billing-hint' root/usr/libexec/tvguardctl
           grep -q 'system_home|app_home|paused|nonplaying) HOME_FREE_REASON=' root/usr/libexec/tvguardctl
@@ -191,8 +192,8 @@ jobs:
           grep -q 'charge paused' bridge/root/usr/libexec/tvguard-agent-billing-hint
           grep -q 'idle_grace' root/usr/libexec/tvguardctl
           grep -q 'BUILD_ID_FILE' root/usr/libexec/tvguardctl
-          grep -q 'tvguard-learn' scripts/build-ipk.sh
-          grep -q 'tvguard-adaptive' scripts/build-ipk.sh
+          grep -q 'tvguard-learn' scripts/package-executables.txt
+          grep -q 'tvguard-adaptive' scripts/package-executables.txt
           grep -q 'ADAPTIVE_STATE' root/usr/libexec/tvguardctl
           grep -q 'ADAPTIVE_PAUSE_HINT' root/usr/libexec/tvguardctl
           grep -q 'high_ratio_pause' root/usr/libexec/tvguard-adaptive
@@ -215,7 +216,7 @@ jobs:
           grep -q '不代表暂停概率' htdocs/luci-static/resources/view/tvguard/overview.js
           grep -q '1048576 bytes (1 MiB)' root/usr/libexec/tvguard-retention
           grep -q '/mnt/mmcblk2p4' root/usr/libexec/tvguard-data
-          grep -q 'tvguard-data' scripts/build-ipk.sh
+          grep -q 'tvguard-data' scripts/package-executables.txt
           grep -q 'tvguard-v014-upgrade' ipkg/preinst
           grep -q 'agent-bridge.key' ipkg/preinst
           grep -q 'restore-config' ipkg/postinst
@@ -245,6 +246,8 @@ jobs:
           tar -tzf "$PKG" | grep -q './control.tar.gz'
           python3 scripts/verify-ipk.py "$PKG" 0.1.16 26
           sha256sum "$PKG"
+      - name: Verify native OpenWrt package parity
+        run: python3 tests/test-native-openwrt-package.py
       - name: Upload development IPK
         uses: actions/upload-artifact@v4
         with:

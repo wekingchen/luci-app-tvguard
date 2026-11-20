@@ -226,5 +226,12 @@ if [ -x /etc/init.d/tvguard-remote-watchdog ]; then
     /etc/init.d/tvguard-remote-watchdog restart 2>/dev/null ||
         echo 'TVGuard: watchdog service restart failed; parent remote still independent' >&2
 fi
+# Online opkg installs already ran the full setup; remove the image-only
+# bootstrap rc link. On an image's first boot, this is also safe: its
+# currently running initializer will finish and must not run twice.
+if [ -x /etc/init.d/tvguard-native-bootstrap ]; then
+    /etc/init.d/tvguard-native-bootstrap disable 2>/dev/null || :
+fi
+rm -f /etc/uci-defaults/99-tvguard-native-init
 rm -rf "$UPGRADE"
 exit 0
