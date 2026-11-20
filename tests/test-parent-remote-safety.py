@@ -13,6 +13,16 @@ menu=json.loads((p/"root/usr/share/luci/menu.d/luci-app-tvguard.json").read_text
 assert "-p 127.0.0.1:18765" in init
 assert 'procd_append_param command -p "$lan_ip:18765"' in init
 assert "remote-lan-enabled" in init
+# Cold boot with no br-lan IP must not abort the entire uhttpd instance.
+assert init.index("lan_ip=") < init.index("procd_open_instance")
+assert "while [ \"$attempt\" -lt 10 ]" in init
+assert "service_triggers()" in init
+assert 'procd_add_interface_trigger "interface.up" "lan"' in init
+assert 'procd_add_interface_trigger "interface.update" "lan"' in init
+assert "procd_close_instance" in init
+assert "lan_listener" in (p/"root/usr/libexec/tvguard-remote-admin").read_text()
+assert "lanReady" in (p/"htdocs/luci-static/resources/view/tvguard/remote.js").read_text()
+
 assert "0.0.0.0:18765" not in init
 lan_helper=(p/"root/usr/libexec/tvguard-remote-lan-ip").read_text()
 assert "dev br-lan scope global" in lan_helper
