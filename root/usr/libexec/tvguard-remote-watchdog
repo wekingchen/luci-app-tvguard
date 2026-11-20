@@ -38,6 +38,13 @@ read_counter() {
     value="$(cat "$1" 2>/dev/null || :)"
     if uint "$value" && [ "${#value}" -le 9 ]; then printf '%s' "$value"; else printf '0'; fi
 }
+clear_streak() {
+    # A disabled service or an unready XFS mount breaks the consecutive
+    # failure sequence; do not carry an old bad probe over a deliberate stop.
+    if [ -f "$FAILS" ] && [ ! -L "$FAILS" ]; then
+        printf '0\n' > "$FAILS" 2>/dev/null || :
+    fi
+}
 probe_loopback() {
     [ "$(curl --noproxy '*' --connect-timeout 1 --max-time 3 -s \
         -o /dev/null -w '%{http_code}' \
@@ -57,23 +64,28 @@ healthy() {
 }
 tick() {
     # Honour the user's Stop/Disable choice even if the watchdog stays alive.
-    enabled || return 0
+    if ! enabled; then clear_streak; return 0; fi
     [ -x "$INIT" ] && command -v curl >/dev/null 2>&1 || return 0
     # CGI authorization lives on XFS; do not restart while it is missing.
-    storage_ready || return 0
+    if ! storage_ready; then clear_streak; return 0; fi
 
     up="$(uptime_seconds)"
     uint "$up" || return 0
-    [ "$up" -ge "$BOOT_GRACE" ] || return 0
+    if [ "$up" -lt "$BOOT_GRACE" ]; then clear_streak; return 0; fi
 
     mkdir -p "$STATE_DIR" || return 0
     chmod 700 "$STATE_DIR"
     if ! mkdir "$LOCK" 2>/dev/null; then
-        # A killed tick can leave a lock, but no legitimate tick needs 120s:
-        # HTTP probes are strictly timeout-bounded.
+        # A killed tick can leave a lock. If it was killed between mkdir and
+        # writing "started", first mark the missing stamp, then reclaim only
+        # if a later check still sees it unmarked.
         stale="$(read_counter "$LOCK/started")"
-        if [ "$stale" -gt 0 ] && [ "$up" -ge "$((stale + 120))" ]; then
-            rm -f "$LOCK/started"
+        if [ "$stale" -eq 0 ] && [ ! -f "$LOCK/unstamped-seen" ]; then
+            : > "$LOCK/unstamped-seen"
+            return 0
+        fi
+        if [ "$stale" -eq 0 ] || [ "$up" -ge "$((stale + 120))" ]; then
+            rm -f "$LOCK/started" "$LOCK/unstamped-seen"
             rmdir "$LOCK" 2>/dev/null || return 0
             mkdir "$LOCK" 2>/dev/null || return 0
         else
@@ -81,7 +93,7 @@ tick() {
         fi
     fi
     printf '%s\n' "$up" > "$LOCK/started"
-    trap 'rm -f "$LOCK/started"; rmdir "$LOCK" 2>/dev/null || :' EXIT
+    trap 'rm -f "$LOCK/started" "$LOCK/unstamped-seen"; rmdir "$LOCK" 2>/dev/null || :' EXIT
     trap 'exit 0' HUP INT TERM
 
     # Recheck desired state after taking the lock to avoid racing an explicit
