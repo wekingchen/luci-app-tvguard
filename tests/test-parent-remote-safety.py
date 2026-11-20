@@ -13,6 +13,19 @@ menu=json.loads((p/"root/usr/share/luci/menu.d/luci-app-tvguard.json").read_text
 assert "-p 127.0.0.1:18765" in init
 assert 'procd_append_param command -p "$lan_ip:18765"' in init
 assert "remote-lan-enabled" in init
+# Recovery supervises only the independent HTTP listener, never TV controls.
+watchdog=(p/"root/usr/libexec/tvguard-remote-watchdog").read_text()
+watchdog_init=(p/"root/etc/init.d/tvguard-remote-watchdog").read_text()
+assert 'INTERVAL=60' in watchdog
+assert 'BOOT_GRACE=120' in watchdog and 'FAIL_LIMIT=2' in watchdog
+assert 'COOLDOWN=600' in watchdog and 'enabled || return 0' in watchdog
+assert 'storage_ready || return 0' in watchdog
+assert 'probe_loopback && probe_lan' in watchdog
+assert 'tvguard-remote-watchdog' in watchdog_init
+assert 'USE_PROCD=1' in watchdog_init and 'procd_set_param respawn' in watchdog_init
+assert '"$INIT" restart' in watchdog
+assert 'docker ' not in watchdog and 'iptables ' not in watchdog
+
 # Cold boot with no br-lan IP must not abort the entire uhttpd instance.
 assert init.index("lan_ip=") < init.index("procd_open_instance")
 assert "while [ \"$attempt\" -lt 10 ]" in init
