@@ -67,7 +67,7 @@ function nodeWithClass(root, name) {
     assert(css.includes('.tvg-device { flex-direction: column'), 'mobile device controls need vertical layout');
     assert(css.includes('.tvg-address { align-items: stretch; flex-direction: column'), 'mobile address stacking missing');
 
-    let parent = {enabled:true,listener:true,lan_enabled:true,
+    let parent = {enabled:true,listener:true,lan_enabled:true,lan_listener:true,
         lan_url:'http://192.168.101.99:18765/',paired:2,
         devices:[
             {id:'0123456789abcdef',name:'iPhone Chrome',paired_at:1795000000,expires:0},
@@ -104,6 +104,15 @@ function nodeWithClass(root, name) {
     assert(all(p.tree,x=>x.tag==='header'||x.tag==='h2').length===0,'theme global selectors must not cover page title');
     assert(all(p.tree,x=>x.className==='tvg-page-heading'&&strings(x).includes('家长遥控')).length===1);
     assert(strings(p.tree).includes('192.168.101.99:18765'));
+    assert(strings(p.tree).includes('内网可用'), 'working LAN HTTP should show ready');
+    parent={...parent,lan_listener:false};
+    await find(p.tree,'button','刷新状态').attrs.click();
+    assert(strings(p.tree).includes('内网未就绪'), 'configured LAN must not claim available without listener');
+    assert(strings(p.tree).includes('待恢复'), 'LAN boot race should show recovery status');
+    parent={...parent,lan_listener:true};
+    await find(p.tree,'button','刷新状态').attrs.click();
+    assert(strings(p.tree).includes('内网可用'), 'LAN should return to ready after recovery');
+
     assert(strings(p.tree).includes('iPhone Chrome'));
     assert(strings(p.tree).includes('长期有效'));
     assert(strings(p.tree).includes('fedcba9876543210'));
