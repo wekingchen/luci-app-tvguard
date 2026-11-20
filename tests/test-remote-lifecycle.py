@@ -15,15 +15,30 @@ with tempfile.TemporaryDirectory(prefix="tvguard-lifecycle-") as temp:
     lan_enabled=etc/"remote-lan-enabled"
     mock_init=p/"mock-init"
     mock_curl=p/"mock-curl"
+    mock_lan=p/"mock-lan"
+    lan_code=p/"lan-code"
+    lan_ip=p/"lan-ip"
     service_log=p/"service.log"
     mock_init.write_text("#!/bin/sh\nprintf '%s\\n' \"$1\" >> '"+str(service_log)+"'\nexit 0\n")
-    mock_curl.write_text("#!/bin/sh\nprintf '%s' \"$(cat '"+str(p/"code")+"' 2>/dev/null || echo 000)\"\n")
+    mock_curl.write_text(
+        "#!/bin/sh\n"
+        "case \"$*\" in\n"
+        "  *127.0.0.1:18765*) cat '"+str(p/"code")+"' ;;\n"
+        "  *192.168.101.99:18765*) cat '"+str(lan_code)+"' ;;\n"
+        "  *) printf 000 ;;\n"
+        "esac\n"
+    )
+    mock_lan.write_text("#!/bin/sh\n[ -s '"+str(lan_ip)+"' ] || exit 1\ncat '"+str(lan_ip)+"'\n")
+    mock_lan.chmod(0o700)
+    lan_ip.write_text("192.168.101.99\n")
+    lan_code.write_text("200\n")
     mock_init.chmod(0o700)
     mock_curl.chmod(0o700)
     script=source.replace("ROOT=/mnt/mmcblk2p4/tvguard-remote","ROOT="+str(data))
     script=script.replace("ENABLED=/etc/tvguard/remote-enabled","ENABLED="+str(enabled))
     script=script.replace("LAN_ENABLED=/etc/tvguard/remote-lan-enabled","LAN_ENABLED="+str(lan_enabled))
     script=script.replace("INIT=/etc/init.d/tvguard-remote","INIT="+str(mock_init))
+    script=script.replace("LAN_HELPER=/usr/libexec/tvguard-remote-lan-ip","LAN_HELPER="+str(mock_lan))
     script=script.replace("curl --noproxy","'"+str(mock_curl)+"' --noproxy")
     script=script.replace("command -v uhttpd >/dev/null 2>&1","true")
     script=script.replace("mkdir -p /etc/tvguard; chmod 700 /etc/tvguard","mkdir -p '"+str(etc)+"'; chmod 700 '"+str(etc)+"'")
@@ -42,6 +57,18 @@ with tempfile.TemporaryDirectory(prefix="tvguard-lifecycle-") as temp:
     state=run("status")
     assert state.returncode==0
     assert '"listener":true' in state.stdout,state.stdout
+    assert '"lan_listener":false' in state.stdout,state.stdout
+    lan_enabled.write_text("1\n")
+    lan_ready=run("status")
+    assert '"lan_listener":true' in lan_ready.stdout,lan_ready.stdout
+    lan_code.write_text("000\n")
+    lan_down=run("status")
+    assert '"lan_listener":false' in lan_down.stdout,lan_down.stdout
+    lan_ip.write_text("")
+    lan_without_ip=run("status")
+    assert '"lan_listener":false' in lan_without_ip.stdout,lan_without_ip.stdout
+    lan_enabled.write_text("0\n")
+
     (p/"code").write_text("200")
     wrong=run("enable")
     assert wrong.returncode!=0,(wrong.stdout,wrong.stderr)
