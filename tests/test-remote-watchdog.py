@@ -126,6 +126,12 @@ with tempfile.TemporaryDirectory(prefix="tvguard-watchdog-") as tmp:
         tick()
     assert restarts() == 0
     enabled.write_text("1\n")
+    tick()
+    assert (state / "failures").read_text().strip() == "1"
+    enabled.write_text("0\n")
+    tick()
+    assert (state / "failures").read_text().strip() == "0", "explicit disable must clear prior bad sample"
+    enabled.write_text("1\n")
 
     # No false reboot recovery during initial grace or without mounted XFS.
     reset()
@@ -215,6 +221,20 @@ with tempfile.TemporaryDirectory(prefix="tvguard-watchdog-") as tmp:
     tick()
     assert not lock.exists(), "stale lock was not cleared"
     assert restarts() == 0  # only one actual failed sample so far
+    tick()
+    assert restarts() == 1
+
+    # Hard-killed tick before the "started" stamp must not disable the
+    # watchdog forever. Observe an unmarked lock twice before reclaiming.
+    reset()
+    lock.mkdir()
+    curl_loop.write_text("000")
+    set_uptime(1700)
+    tick()
+    assert (lock / "unstamped-seen").exists()
+    tick()
+    assert not lock.exists(), "unstamped orphan lock was not reclaimed"
+    assert restarts() == 0
     tick()
     assert restarts() == 1
 
