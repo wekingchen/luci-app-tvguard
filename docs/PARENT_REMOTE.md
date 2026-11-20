@@ -1,6 +1,6 @@
 # TVGuard · 家长遥控
 
-当前稳定版本：**v0.1.16-r25**。家长遥控的家庭 HTTP、Cloudflare Tunnel 外网功能已在 N1 + iPhone 验收；r16 的 LuCI 家长遥控/远程访问两页 UI（标题、移动适配及设备备注）也已在 2026-11-18 获用户确认正常。N1 重启后的功能也由用户确认正常。iPhone 主屏幕图标可使用同一个公网 HTTPS 地址，无须对 N1 增加分流功能。
+当前稳定版本：**v0.1.16-r26**。家长遥控的家庭 HTTP、Cloudflare Tunnel 外网功能已在 N1 + iPhone 验收；r16 的 LuCI 家长遥控/远程访问两页 UI（标题、移动适配及设备备注）也已在 2026-11-18 获用户确认正常。N1 重启后的功能也由用户确认正常。iPhone 主屏幕图标可使用同一个公网 HTTPS 地址，无须对 N1 增加分流功能。
 
 ## 页面布局
 
@@ -69,3 +69,24 @@ ip -4 -o addr show dev br-lan
 ss -ltnp | grep ':18765' || netstat -ltnp | grep ':18765'
 logread | grep -Ei 'tvguard-remote|uhttpd|procd|br-lan' | tail -80
 ```
+
+## r26 · 家长遥控独立 HTTP 健康巡检与自恢复（待 N1 实机验收）
+
+r25 仅修复了开机时 br-lan 地址尚未就绪导致的服务失败。**如果 uhttpd 进程存活但 CGI 假死、LAN 绑定失败或此后意外失去监听，procd 的进程 respawn 无法保证自动修复。** r26 增加独立 procd 服务 `/etc/init.d/tvguard-remote-watchdog`，不依赖被守护的 uhttpd 运行；`/usr/libexec/tvguard-remote-watchdog run` 每 60 秒运行只读 `tick`。
+
+- 实际探测：未携带授权凭据的 `http://127.0.0.1:18765/cgi-bin/tvg?action=status` 必须返回 401；若用户开启了局域网访问且 br-lan 私有 IP 已就绪，`http://<br-lan-ip>:18765/` 必须返回 200。没有配对设备不影响此健康检查。
+- 启动后前 120 秒不干预，连续 2 次不健康才尝试恢复；失败冷却至少 600 秒，防止重启风暴。并发通过原子目录锁互斥，全部持久状态仅在 `/var/run/tvguard-remote-watchdog/`（重启清空）。
+- 只有 `/etc/tvguard/remote-enabled=1` 且 XFS rw 可用才允许恢复。家长主动停止服务，巡检不反向启动；br-lan 无地址时跳过 LAN 检测，保留 Cloudflare Tunnel 本机回源检测。
+- 恢复只调用 `/etc/init.d/tvguard-remote restart`。不影响 TVGuard 核心、电视计时/正式控制、Agent、Bark、Cloudflare、其它 Docker、网络和防火墙。成功及失败均通过 `logread` 留存简短系统日志。
+- 安装 IPK 自动启用并启动 watchdog；升级期间停止旧 watchdog，卸载时停用。无需新增 cron 行；procd 守护 watchdog 进程本身。
+
+N1 验收：
+```sh
+cat /usr/share/tvguard/build-id
+/etc/init.d/tvguard-remote-watchdog enabled; echo "watchdog_autostart=$?"
+/etc/init.d/tvguard-remote-watchdog status
+/usr/libexec/tvguard-remote-admin status
+logread | grep 'tvguard-remote-watchdog' | tail -20
+```
+
+请勿为了测试主动删除授权文件或杀 TVGuard 核心进程。建议先正常使用，方便时仅重启 N1 一次，观察系统开机后的 HTTP 监听是否自行恢复。**仓库模拟测试不能代替实机重启验收**。

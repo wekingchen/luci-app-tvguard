@@ -1,0 +1,148 @@
+#!/bin/sh
+# TVGuard 家长遥控独立健康巡检。只允许恢复 tvguard-remote，不碰电视计费、
+# firewall、Docker、Cloudflare、网络或其它 OpenWrt 服务。
+set -eu
+umask 077
+PATH=/usr/sbin:/usr/bin:/sbin:/bin
+export PATH
+
+ENABLED=/etc/tvguard/remote-enabled
+LAN_ENABLED=/etc/tvguard/remote-lan-enabled
+LAN_HELPER=/usr/libexec/tvguard-remote-lan-ip
+INIT=/etc/init.d/tvguard-remote
+STATE_DIR=/var/run/tvguard-remote-watchdog
+LOCK="$STATE_DIR/lock"
+FAILS="$STATE_DIR/failures"
+LAST="$STATE_DIR/last-restart"
+MOUNT=/mnt/mmcblk2p4
+
+# Every 60s, require two consecutive failed samples after the first 120s
+# of boot, and allow at most one recovery attempt every 10 minutes.
+INTERVAL=60
+BOOT_GRACE=120
+FAIL_LIMIT=2
+COOLDOWN=600
+
+enabled() { [ -f "$ENABLED" ] && [ "$(cat "$ENABLED" 2>/dev/null || :)" = 1 ]; }
+lan_enabled() { [ -f "$LAN_ENABLED" ] && [ "$(cat "$LAN_ENABLED" 2>/dev/null || :)" = 1 ]; }
+storage_ready() {
+    awk -v mount="$MOUNT" '$2 == mount && $3 == "xfs" && index("," $4 ",", ",rw,") { found=1 }
+        END { exit !found }' /proc/mounts
+}
+uptime_seconds() {
+    awk 'NR==1 { printf "%.0f\n", $1; exit }' /proc/uptime 2>/dev/null
+}
+uint() { case "$1" in ''|*[!0-9]*) return 1;; *) return 0;; esac; }
+log() { logger -t tvguard-remote-watchdog "$1" 2>/dev/null || :; }
+read_counter() {
+    value="$(cat "$1" 2>/dev/null || :)"
+    if uint "$value" && [ "${#value}" -le 9 ]; then printf '%s' "$value"; else printf '0'; fi
+}
+clear_streak() {
+    # A disabled service or an unready XFS mount breaks the consecutive
+    # failure sequence; do not carry an old bad probe over a deliberate stop.
+    if [ -f "$FAILS" ] && [ ! -L "$FAILS" ]; then
+        printf '0\n' > "$FAILS" 2>/dev/null || :
+    fi
+}
+probe_loopback() {
+    [ "$(curl --noproxy '*' --connect-timeout 1 --max-time 3 -s \
+        -o /dev/null -w '%{http_code}' \
+        'http://127.0.0.1:18765/cgi-bin/tvg?action=status' 2>/dev/null || :)" = 401 ]
+}
+probe_lan() {
+    lan_enabled || return 0
+    # No private br-lan address yet: an HTTP service restart cannot repair
+    # netifd. Avoid a restart storm until the interface becomes usable.
+    addr="$("$LAN_HELPER" 2>/dev/null || :)"
+    [ -n "$addr" ] || return 0
+    [ "$(curl --noproxy '*' --connect-timeout 1 --max-time 3 -s \
+        -o /dev/null -w '%{http_code}' "http://$addr:18765/" 2>/dev/null || :)" = 200 ]
+}
+healthy() {
+    probe_loopback && probe_lan
+}
+tick() {
+    # Honour the user's Stop/Disable choice even if the watchdog stays alive.
+    if ! enabled; then clear_streak; return 0; fi
+    [ -x "$INIT" ] && command -v curl >/dev/null 2>&1 || return 0
+    # CGI authorization lives on XFS; do not restart while it is missing.
+    if ! storage_ready; then clear_streak; return 0; fi
+
+    up="$(uptime_seconds)"
+    uint "$up" || return 0
+    if [ "$up" -lt "$BOOT_GRACE" ]; then clear_streak; return 0; fi
+
+    mkdir -p "$STATE_DIR" || return 0
+    chmod 700 "$STATE_DIR"
+    if ! mkdir "$LOCK" 2>/dev/null; then
+        # A killed tick can leave a lock. If it was killed between mkdir and
+        # writing "started", first mark the missing stamp, then reclaim only
+        # if a later check still sees it unmarked.
+        stale="$(read_counter "$LOCK/started")"
+        if [ "$stale" -eq 0 ] && [ ! -f "$LOCK/unstamped-seen" ]; then
+            : > "$LOCK/unstamped-seen"
+            return 0
+        fi
+        if [ "$stale" -eq 0 ] || [ "$up" -ge "$((stale + 120))" ]; then
+            rm -f "$LOCK/started" "$LOCK/unstamped-seen"
+            rmdir "$LOCK" 2>/dev/null || return 0
+            mkdir "$LOCK" 2>/dev/null || return 0
+        else
+            return 0
+        fi
+    fi
+    printf '%s\n' "$up" > "$LOCK/started"
+    trap 'rm -f "$LOCK/started" "$LOCK/unstamped-seen"; rmdir "$LOCK" 2>/dev/null || :' EXIT
+    trap 'exit 0' HUP INT TERM
+
+    # Recheck desired state after taking the lock to avoid racing an explicit
+    # LuCI stop. A good sample clears the failure streak but not cooldown.
+    if ! enabled; then
+        printf '0\n' > "$FAILS"
+        return 0
+    fi
+    if healthy; then
+        printf '0\n' > "$FAILS"
+        return 0
+    fi
+    failures="$(read_counter "$FAILS")"
+    failures=$((failures + 1))
+    [ "$failures" -le "$FAIL_LIMIT" ] || failures="$FAIL_LIMIT"
+    printf '%s\n' "$failures" > "$FAILS"
+    [ "$failures" -ge "$FAIL_LIMIT" ] || return 0
+
+    previous="$(read_counter "$LAST")"
+    if [ "$previous" -gt 0 ] && [ "$up" -ge "$previous" ] &&
+       [ "$((up - previous))" -lt "$COOLDOWN" ]; then
+        return 0
+    fi
+    # Persist before invoking init; the watchdog runs in a different procd
+    # service, so it survives an independent tvguard-remote restart.
+    printf '%s\n' "$up" > "$LAST"
+    printf '0\n' > "$FAILS"
+
+    # The user may have disabled remote after the probes. Never resurrect it.
+    enabled || return 0
+    log "遥控 HTTP 连续 $FAIL_LIMIT 次探测异常，尝试仅重启 tvguard-remote"
+    if "$INIT" restart >/dev/null 2>&1; then
+        sleep 2
+        if enabled && healthy; then
+            log "遥控 HTTP 已自动恢复"
+        else
+            log "遥控 HTTP 重启后仍未就绪；进入 10 分钟冷却期"
+        fi
+    else
+        log "tvguard-remote 重启失败；进入 10 分钟冷却期"
+    fi
+}
+case "${1:-}" in
+    tick) tick ;;
+    run)
+        while :; do
+            sleep "$INTERVAL"
+            "$0" tick >/dev/null 2>&1 || :
+        done
+        ;;
+    *) exit 2 ;;
+esac

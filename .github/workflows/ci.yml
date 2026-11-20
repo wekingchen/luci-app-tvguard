@@ -72,6 +72,8 @@ jobs:
         run: python3 tests/test-remote-lifecycle.py
       - name: Reproduce cold-boot delayed br-lan and self-recovery via procd
         run: python3 tests/test-remote-coldboot.py
+      - name: Verify bounded remote HTTP watchdog self-healing under real shell
+        run: python3 tests/test-remote-watchdog.py
       - name: Validate remote admin issue and revocation lifecycle
         run: python3 tests/test-remote-admin-e2e.py
       - name: Validate minimized remote status schema
@@ -235,17 +237,17 @@ jobs:
       - name: Build and validate OpenWrt-compatible development IPK
         run: |
           set -eu
-          sh scripts/build-ipk.sh 0.1.16 25
-          PKG=dist/luci-app-tvguard_0.1.16-25_all.ipk
+          sh scripts/build-ipk.sh 0.1.16 26
+          PKG=dist/luci-app-tvguard_0.1.16-26_all.ipk
           test -f "$PKG"
           # OpenWrt ipkg-build uses gzip-compressed tar, not Debian ar.
           test "$(od -An -tx1 -N2 "$PKG" | tr -d ' \n')" = 1f8b
           tar -tzf "$PKG" | grep -q './control.tar.gz'
-          python3 scripts/verify-ipk.py "$PKG" 0.1.16 25
+          python3 scripts/verify-ipk.py "$PKG" 0.1.16 26
           sha256sum "$PKG"
       - name: Upload development IPK
         uses: actions/upload-artifact@v4
         with:
-          name: tvguard-v0.1.16-r25-remote-coldboot-recovery-ipk
+          name: tvguard-v0.1.16-r26-remote-http-watchdog-ipk
           path: dist/*.ipk
           if-no-files-found: error

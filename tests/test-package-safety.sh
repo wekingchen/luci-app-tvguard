@@ -68,7 +68,7 @@ exit 0
 SH
 
 chmod +x "$TMP/bin/uci" "$TMP/mock-action"
-for name in rpcd tvguard tvguardctl tvguard-remote tvguard-agent-bridge tvguard-agent-bridge-setup; do
+for name in rpcd tvguard tvguardctl tvguard-remote tvguard-remote-watchdog tvguard-agent-bridge tvguard-agent-bridge-setup; do
     cp "$TMP/mock-action" "$TMP/$name"
 done
 
@@ -97,6 +97,7 @@ import sys
 src, dst, tmp = sys.argv[1:]
 text = Path(src).read_text()
 text = text.replace("/etc/init.d/rpcd", tmp + "/rpcd")
+text = text.replace("/etc/init.d/tvguard-remote-watchdog", tmp + "/tvguard-remote-watchdog")
 text = text.replace("/etc/init.d/tvguard-agent-bridge", tmp + "/tvguard-agent-bridge")
 text = text.replace("/etc/init.d/tvguard", tmp + "/tvguard")
 text = text.replace("/usr/libexec/tvguard-agent-bridge-setup", tmp + "/tvguard-agent-bridge-setup")
@@ -172,6 +173,8 @@ grep -q '^commit firewall$' "$LOG"
 grep -q '^tvguard enable$' "$LOG"
 grep -q '^tvguard start$' "$LOG"
 grep -q '^tvguard-agent-bridge-setup $' "$LOG"
+grep -q '^tvguard-remote-watchdog enable$' "$LOG"
+grep -q '^tvguard-remote-watchdog restart$' "$LOG"
 ! grep -q 'firewall restart\|firewall reload' "$LOG"
 
 # Existing owned section: accept without rewriting firewall UCI. A divergent
@@ -209,6 +212,8 @@ sh "$TMP/prerm" upgrade
 assert_proxy_section
 grep -q '^tvguard-agent-bridge stop$' "$LOG"
 grep -q '^tvguard-remote stop$' "$LOG"
+grep -q '^tvguard-remote-watchdog stop$' "$LOG"
+! grep -q '^tvguard-remote-watchdog disable$' "$LOG"
 grep -q '^tvguard stop$' "$LOG"
 ! grep -q '^tvguardctl enforce off$' "$LOG"
 ! grep -q '^tvguard-fw remove$' "$LOG"
@@ -254,5 +259,8 @@ assert_proxy_section
 ! grep -q '^firewall.tvguard=' "$STATE"
 grep -q '^delete firewall.tvguard$' "$LOG"
 grep -q '^commit firewall$' "$LOG"
+
+grep -q '^tvguard-remote-watchdog stop$' "$LOG"
+grep -q '^tvguard-remote-watchdog disable$' "$LOG"
 
 echo "PASS: package lifecycle preserves proxy UCI and aborts incomplete TVG detach safely"
