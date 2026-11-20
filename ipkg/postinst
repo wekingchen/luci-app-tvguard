@@ -112,7 +112,7 @@ if [ -r "$UPGRADE/config" ]; then
     }
 fi
 
-for path in /etc/init.d/tvguard /usr/libexec/tvguardctl /usr/libexec/tvguardd /usr/libexec/tvguard-status /usr/libexec/tvguard-fw /usr/libexec/tvguard-firewall-include /usr/libexec/tvguard-isolation-audit /usr/libexec/tvguard-compat-check /usr/libexec/tvguard-shadow /usr/libexec/tvguard-learn /usr/libexec/tvguard-adaptive /usr/libexec/tvguard-retention /usr/libexec/tvguard-data /usr/libexec/tvguard-daily-report /usr/libexec/tvguard-tunnel /usr/libexec/tvguard-tunnel-read /usr/libexec/tvguard-tunnel-manage /usr/libexec/tvguard-remote-admin /usr/libexec/tvguard-remote-status /usr/libexec/tvguard-remote-read /usr/libexec/tvguard-remote-manage /usr/libexec/tvguard-remote-lan-ip /usr/libexec/tvguard-random-hex /etc/init.d/tvguard-remote /usr/share/tvguard-remote/www/cgi-bin/tvg; do
+for path in /etc/init.d/tvguard /usr/libexec/tvguardctl /usr/libexec/tvguardd /usr/libexec/tvguard-status /usr/libexec/tvguard-fw /usr/libexec/tvguard-firewall-include /usr/libexec/tvguard-isolation-audit /usr/libexec/tvguard-compat-check /usr/libexec/tvguard-shadow /usr/libexec/tvguard-learn /usr/libexec/tvguard-adaptive /usr/libexec/tvguard-retention /usr/libexec/tvguard-data /usr/libexec/tvguard-daily-report /usr/libexec/tvguard-tunnel /usr/libexec/tvguard-tunnel-read /usr/libexec/tvguard-tunnel-manage /usr/libexec/tvguard-remote-admin /usr/libexec/tvguard-remote-status /usr/libexec/tvguard-remote-read /usr/libexec/tvguard-remote-manage /usr/libexec/tvguard-remote-lan-ip /usr/libexec/tvguard-random-hex /usr/libexec/tvguard-remote-watchdog /etc/init.d/tvguard-remote /etc/init.d/tvguard-remote-watchdog /usr/share/tvguard-remote/www/cgi-bin/tvg; do
     chmod 755 "$path" 2>/dev/null || :
 done
 
@@ -215,6 +215,16 @@ if command -v docker >/dev/null 2>&1 &&
    [ "$(docker inspect -f '{{.State.Running}}' tvguard-cloudflared 2>/dev/null || :)" = true ]; then
     /usr/libexec/tvguard-tunnel start ||
         echo 'TVGuard: HTTP/2 upgrade could not be confirmed; old Tunnel should remain in place, inspect container logs' >&2
+fi
+# r26: independent, low-cost procd watchdog must survive a hung uhttpd.
+# Start it regardless of the user's remote-enabled flag. Every tick checks
+# that flag; an explicitly stopped remote is never resurrected.
+# No cron edits, new network rules, persistent state, or Docker actions.
+if [ -x /etc/init.d/tvguard-remote-watchdog ]; then
+    /etc/init.d/tvguard-remote-watchdog enable 2>/dev/null ||
+        echo 'TVGuard: watchdog auto-start enable failed' >&2
+    /etc/init.d/tvguard-remote-watchdog restart 2>/dev/null ||
+        echo 'TVGuard: watchdog service restart failed; parent remote still independent' >&2
 fi
 rm -rf "$UPGRADE"
 exit 0
