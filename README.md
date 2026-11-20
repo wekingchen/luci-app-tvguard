@@ -1,6 +1,15 @@
 # TV Guard · 家庭电视时间管理
 
-## 当前稳定版 · v0.1.16-r24（应用 Portainer 已下载的 cloudflared 镜像）
+## 当前稳定版 · v0.1.16-r25（家长遥控冷启动自恢复修复）
+
+- **N1 主包**：`luci-app-tvguard_0.1.16-25_all.ipk`；电视 Agent 仍为 0.3.7，不需重装。
+- r24 真实 N1 重启出现过一次家长遥控不可用、手动停止再启动后恢复。源码确认 `/etc/init.d/tvguard-remote` 在 `START=97` 时立即依赖 br-lan 私有 IPv4：LAN 地址缺失直接 `return 1`，导致独立 uhttpd 实例没有完成 procd 注册，没有自动重试。**这是确定存在的冷启动竞态；但单次现场故障的直接根因仍需开机日志核实。**
+- 新版对 br-lan IP 做有限重试；仍未就绪时**先保持 127.0.0.1:18765 回环监听**（Tunnel 回源可用），不再因 LAN 失败而放弃整个家长遥控服务。利用 OpenWrt procd 的 `interface.up/interface.update` 网络事件在 LAN 地址就绪后重启专用 uhttpd、重新绑定私有 LAN IP，不重启其它网络/防火墙。
+- LuCI「家长遥控」不再将「内网访问选项已开启」误报为「内网可用」。通过 N1 自己访问 LAN HTTP:18765 校验实际响应，未就绪显示「待恢复」，可刷新状态。
+- 新增真实 Shell/mock procd 冷启动测试：无 IP、延迟获得 IP、网络恢复、LAN 禁用、遥控服务禁用；补充 LuCI/UI 及状态探测回归。家长配对、Token、儿童模式、Agent、Bark、HTTP/2 Tunnel 镜像更新及其它 Docker 服务均不修改。
+- **N1 真机验证仍需做**：升级后确认家长遥控状态，再在方便时通过一次 N1 重启观察自恢复；不凭 CI 断言已经实机验证重启。
+
+## 上一稳定版 · v0.1.16-r24（应用 Portainer 已下载的 cloudflared 镜像）
 
 - **N1 主包**：`luci-app-tvguard_0.1.16-24_all.ipk`；电视 Agent 仍为 0.3.7，不需重装。
 - 用户已在 Portainer 拉取 `cloudflare/cloudflared:latest`。本轮**不检查远端、不拉取镜像**，只负责将已下载的新镜像安全应用到 TVGuard 自己的运行容器。
