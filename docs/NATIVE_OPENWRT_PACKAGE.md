@@ -8,7 +8,9 @@ Build/Prepare/luci-app-tvguard hook (ignored by luci.mk) was removed.
 
 Only native image packages add a late one-shot bootstrap service and an
 uci-defaults hook. Image builds set IPKG_INSTROOT and must not execute runtime
-postinst. At boot, uci-defaults enables tvguard-native-bootstrap (START=94).
+postinst. At image assembly the package installs S94tvguard-native-bootstrap in /etc/rc.d,
+so it is present before rcS enumerates startup services. The uci-defaults hook
+also enables the same one-shot service defensively (START=94).
 After /mnt/mmcblk2p4 is mounted, this runs an exact staged copy of the normal
 postinst, enabling core, Agent Bridge, remote watchdog, and restoring config.
 Successful initialization disables the bootstrap service. Missing XFS
@@ -34,3 +36,6 @@ and firmware rootfs manifest. N1 real-boot acceptance remains required:
 check XFS mount readiness, tvguard status, isolation audit, Bridge, parent
 remote/watchdog, and existing persisted settings/pairing after a reflash.
 Host-side parity tests are not proof of a full LEDE build or N1 boot.
+
+The executable-bit manifest lives in scripts/package-executables.txt and
+is consumed by both the standalone IPK builder and the native stage helper.

@@ -32,6 +32,8 @@ def tar_files(blob: bytes) -> dict[str, bytes]:
 def main() -> None:
     demand(PKG.is_file(), f"build scripts/build-ipk.sh first: {PKG}")
     demand("include $(INCLUDE_DIR)/package.mk" in MAKEFILE, "missing package.mk")
+    demand("ln -snf ../init.d/tvguard-native-bootstrap" in MAKEFILE,
+           "native rootfs must pre-enable bootstrap before rcS enumerates services")
     demand("feeds/luci/luci.mk" not in MAKEFILE, "luci.mk shadows lifecycle hooks")
     for hook in ("preinst", "postinst", "prerm", "conffiles"):
         demand(f"$(file <$(CURDIR)/ipkg/{hook})" in MAKEFILE,

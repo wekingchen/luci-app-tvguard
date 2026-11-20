@@ -43,6 +43,10 @@ define Package/luci-app-tvguard/install
 	$(INSTALL_DIR) $(1)/www
 	$(CP) $(PKG_BUILD_DIR)/root/. $(1)/
 	$(CP) $(PKG_BUILD_DIR)/htdocs/. $(1)/www/
+	# Rootfs image installs skip runtime postinst; pre-enable the late one-shot
+	# bootstrap so it is present when rcS enumerates its S* links at boot.
+	$(INSTALL_DIR) $(1)/etc/rc.d
+	ln -snf ../init.d/tvguard-native-bootstrap $(1)/etc/rc.d/S94tvguard-native-bootstrap
 endef
 
 # One source of truth: exactly the same opkg scripts as scripts/build-ipk.sh.

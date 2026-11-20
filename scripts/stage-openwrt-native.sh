@@ -24,3 +24,13 @@ install -m 0755 "$src/bridge/ipkg/postinst" \
     "$dst/root/usr/libexec/tvguard-agent-bridge-setup"
 install -m 0755 "$src/ipkg/postinst" \
     "$dst/root/usr/libexec/tvguard-package-postinst"
+
+# Both packaging paths must ship exactly the same executable entrypoints.
+while IFS= read -r file; do
+    [ -n "$file" ] || continue
+    if [ ! -f "$dst/root/$file" ]; then
+        echo "TVGuard native package missing executable: $file" >&2
+        exit 1
+    fi
+    chmod 755 "$dst/root/$file"
+done < "$src/scripts/package-executables.txt"
