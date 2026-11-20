@@ -127,10 +127,10 @@ def main() -> None:
             "native-recipes:\n"
             "\t$(Build/Prepare)\n"
             "\t$(call Package/luci-app-tvguard/install,$(TOPDIR)/image)\n"
-            "\t@echo \"$MOCK_PREINST\" > \"$(TOPDIR)/native-preinst\"\n"
-            "\t@echo \"$MOCK_POSTINST\" > \"$(TOPDIR)/native-postinst\"\n"
-            "\t@echo \"$MOCK_PRERM\" > \"$(TOPDIR)/native-prerm\"\n"
-            "\t@echo \"$MOCK_CONFFILES\" > \"$(TOPDIR)/native-conffiles\"\n"
+            "\t@echo \"$$MOCK_PREINST\" > \"$(TOPDIR)/native-preinst\"\n"
+            "\t@echo \"$$MOCK_POSTINST\" > \"$(TOPDIR)/native-postinst\"\n"
+            "\t@echo \"$$MOCK_PRERM\" > \"$(TOPDIR)/native-prerm\"\n"
+            "\t@echo \"$$MOCK_CONFFILES\" > \"$(TOPDIR)/native-conffiles\"\n"
         )
         subprocess.run(
             ["make", "--no-print-directory", "-C", str(ROOT),
