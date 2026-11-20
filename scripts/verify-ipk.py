@@ -75,7 +75,9 @@ for name in (
     "usr/libexec/tvguard-remote-manage",
     "usr/libexec/tvguard-remote-lan-ip",
     "usr/libexec/tvguard-random-hex",
+    "usr/libexec/tvguard-remote-watchdog",
     "etc/init.d/tvguard-remote",
+    "etc/init.d/tvguard-remote-watchdog",
     "usr/share/tvguard-remote/www/cgi-bin/tvg",
     "usr/share/tvguard-remote/www/index.html",
     "usr/share/tvguard-remote/www/app.js",
@@ -103,6 +105,19 @@ for name in (
         raise SystemExit(f"FAIL: missing installed file {name}")
     if name.startswith("usr/libexec/") or name.startswith("etc/init.d/") or name.startswith("www/cgi-bin/") or name == "usr/share/tvguard-remote/www/cgi-bin/tvg":
         assert data[name][0].mode & 0o111, f"{name} is not executable"
+watchdog = data["usr/libexec/tvguard-remote-watchdog"][1].decode("utf-8")
+watchdog_init = data["etc/init.d/tvguard-remote-watchdog"][1].decode("utf-8")
+postinst = control["postinst"][1].decode("utf-8")
+prerm = control["prerm"][1].decode("utf-8")
+assert 'probe_loopback && probe_lan' in watchdog, "independent HTTP probes missing"
+assert 'BOOT_GRACE=120' in watchdog and 'FAIL_LIMIT=2' in watchdog, "transient-failure safeguards missing"
+assert 'COOLDOWN=600' in watchdog and 'storage_ready || return 0' in watchdog, "recovery storm/storage gate missing"
+assert 'enabled || return 0' in watchdog, "explicit remote-disable consent must be honored"
+assert '"$INIT" restart' in watchdog, "watchdog must only restart parent remote service"
+assert 'procd_set_param command /usr/libexec/tvguard-remote-watchdog run' in watchdog_init, "independent watchdog procd instance missing"
+assert '/etc/init.d/tvguard-remote-watchdog enable' in postinst, "watchdog auto-start installation missing"
+assert '/etc/init.d/tvguard-remote-watchdog stop' in prerm, "watchdog upgrade/uninstall cleanup missing"
+
 # Protect iPhone standalone Web App updates from accidental reused asset URLs.
 # The initial r17 candidate and its later status-label fix shared the same
 # app.js query key, so iOS could continue displaying old Cloudflare Tunnel text.
