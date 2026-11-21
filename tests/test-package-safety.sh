@@ -68,7 +68,7 @@ exit 0
 SH
 
 chmod +x "$TMP/bin/uci" "$TMP/mock-action"
-for name in rpcd tvguard tvguardctl tvguard-remote tvguard-remote-watchdog tvguard-agent-bridge tvguard-agent-bridge-setup; do
+for name in rpcd tvguard tvguardctl tvguard-remote tvguard-remote-watchdog tvguard-agent-bridge tvguard-agent-bridge-setup tvguard-data; do
     cp "$TMP/mock-action" "$TMP/$name"
 done
 
@@ -101,6 +101,7 @@ text = text.replace("/etc/init.d/tvguard-remote-watchdog", tmp + "/tvguard-remot
 text = text.replace("/etc/init.d/tvguard-agent-bridge", tmp + "/tvguard-agent-bridge")
 text = text.replace("/etc/init.d/tvguard", tmp + "/tvguard")
 text = text.replace("/usr/libexec/tvguard-agent-bridge-setup", tmp + "/tvguard-agent-bridge-setup")
+text = text.replace("/usr/libexec/tvguard-data", tmp + "/tvguard-data")
 text = text.replace("/usr/libexec/tvguardctl", tmp + "/tvguardctl")
 text = text.replace("/usr/libexec/tvguard-fw", tmp + "/tvguard-fw")
 text = text.replace("/etc/config/tvguard-opkg", tmp + "/tvguard-opkg")
