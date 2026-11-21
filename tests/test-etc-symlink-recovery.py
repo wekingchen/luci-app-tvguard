@@ -67,15 +67,15 @@ def test_ota_recovery():
               "original TV pairing key changed")
         check((legacy / "remote-enabled").read_text().strip() == "1",
               "original remote consent not restored")
-        backups = list(persistent.glob(".overlay-etc-tvguard.*"))
-        check(len(backups) == 1, "missing or duplicate durable backup")
-        check((backups[0] / "agent-bridge.key").read_text().strip() == NEW_KEY,
-              "replacement overlay credential not backed up")
-        check((backups[0] / "unknown-admin-file").read_text() == "must-keep",
-              "unknown administrator files were lost")
+        check(not (legacy / "unknown-admin-file").exists(),
+              "stale overlay contents were not removed")
+        check(not list(persistent.glob(".overlay-etc-tvguard.*")),
+              "OTA recovery unexpectedly created a backup")
+        check(not list(legacy.parent.glob("tvguard.relink.*")),
+              "OTA recovery unexpectedly left a parked overlay")
         check(prepare(script).returncode == 0, "repeated prepare is not idempotent")
-        check(len(list(persistent.glob(".overlay-etc-tvguard.*"))) == 1,
-              "repeated prepare duplicated backup")
+        check(legacy.is_symlink() and legacy.resolve() == persistent,
+              "repeated prepare changed persistent link")
 
 
 def test_without_mount():

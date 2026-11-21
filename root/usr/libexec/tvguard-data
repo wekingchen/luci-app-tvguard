@@ -216,26 +216,17 @@ restore_legacy_link() {
         return 1
     }
 
-    # Back up ALL overlay contents, including unknown administrator files.
-    recovery="$(mktemp -d "$PERSIST_DIR/.overlay-etc-tvguard.XXXXXX")" || return 1
-    chmod 700 "$recovery" || return 1
-    cp -pR "$LEGACY_DIR/." "$recovery/" || {
-        echo "TVGuard: overlay backup failed; /etc/tvguard unchanged" >&2
+    # The old XFS identity is authoritative after OTA. The new /etc/tvguard
+    # overlay directory is disposable; never delete XFS data or follow a link.
+    rm -rf "$LEGACY_DIR" || {
+        echo "TVGuard: unable to remove stale overlay /etc/tvguard" >&2
         return 1
     }
-
-    # Move atomically within the overlay; rollback if linking fails.
-    parked="$LEGACY_DIR.relink.$"
-    [ ! -e "$parked" ] && [ ! -L "$parked" ] || return 1
-    mv "$LEGACY_DIR" "$parked" || return 1
     if ! ln -s "$PERSIST_DIR" "$LEGACY_DIR"; then
-        mv "$parked" "$LEGACY_DIR" || :
-        echo "TVGuard: relink failed; original directory restored" >&2
+        echo "TVGuard: failed to recreate /etc/tvguard symlink" >&2
         return 1
     fi
-
-    # Keep the parked directory for a manual audit; the durable copy remains.
-    logger -t tvguard-data "restored /etc/tvguard XFS link; backup: $recovery" 2>/dev/null || :
+    logger -t tvguard-data "restored /etc/tvguard -> XFS persistent directory" 2>/dev/null || :
     return 0
 }
 
