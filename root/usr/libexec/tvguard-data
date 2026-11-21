@@ -179,6 +179,66 @@ migrate_legacy_once() {
     fi
 }
 
+# N1 firmware reflashing drops the overlay /etc/tvguard -> XFS link.
+# The old XFS marker survives, so the one-time migration never relinks.
+restore_legacy_link() {
+    [ -d "$PERSIST_DIR" ] || return 1
+
+    if [ -L "$LEGACY_DIR" ]; then
+        [ "$(readlink "$LEGACY_DIR")" = "$PERSIST_DIR" ] || {
+            echo "TVGuard: unexpected /etc/tvguard symlink; refusing replacement" >&2
+            return 1
+        }
+        return 0
+    fi
+
+    if [ ! -e "$LEGACY_DIR" ]; then
+        ln -s "$PERSIST_DIR" "$LEGACY_DIR"
+        return
+    fi
+
+    [ -d "$LEGACY_DIR" ] || {
+        echo "TVGuard: /etc/tvguard is not a directory; refusing replacement" >&2
+        return 1
+    }
+
+    # Only prefer durable settings when a valid older identity exists.
+    [ -f "$PERSIST_DIR/agent-bridge.key" ] || return 0
+    old_key=''
+    IFS= read -r old_key < "$PERSIST_DIR/agent-bridge.key" || :
+    case "$old_key" in
+        ''|*[!0123456789abcdef]*)
+            echo "TVGuard: persistent Agent key invalid; refusing recovery" >&2
+            return 1 ;;
+    esac
+    [ "$(printf '%s' "$old_key" | wc -c | tr -d ' ')" = 32 ] || {
+        echo "TVGuard: persistent Agent key length invalid" >&2
+        return 1
+    }
+
+    # Back up ALL overlay contents, including unknown administrator files.
+    recovery="$(mktemp -d "$PERSIST_DIR/.overlay-etc-tvguard.XXXXXX")" || return 1
+    chmod 700 "$recovery" || return 1
+    cp -pR "$LEGACY_DIR/." "$recovery/" || {
+        echo "TVGuard: overlay backup failed; /etc/tvguard unchanged" >&2
+        return 1
+    }
+
+    # Move atomically within the overlay; rollback if linking fails.
+    parked="$LEGACY_DIR.relink.$"
+    [ ! -e "$parked" ] && [ ! -L "$parked" ] || return 1
+    mv "$LEGACY_DIR" "$parked" || return 1
+    if ! ln -s "$PERSIST_DIR" "$LEGACY_DIR"; then
+        mv "$parked" "$LEGACY_DIR" || :
+        echo "TVGuard: relink failed; original directory restored" >&2
+        return 1
+    fi
+
+    # Keep the parked directory for a manual audit; the durable copy remains.
+    logger -t tvguard-data "restored /etc/tvguard XFS link; backup: $recovery" 2>/dev/null || :
+    return 0
+}
+
 merge_volatile() {
     [ -d "$VOLATILE_DIR" ] || return 0
 
@@ -220,6 +280,7 @@ prepare() {
         mkdir -p "$PERSIST_DIR"
         chmod 700 "$PERSIST_DIR"
         migrate_legacy_once
+        restore_legacy_link
         merge_volatile
     else
         seed_volatile_from_legacy
