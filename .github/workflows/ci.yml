@@ -151,6 +151,8 @@ jobs:
         run: dash tests/test-data-root.sh
       - name: Validate UCI config persistence install semantics
         run: dash tests/test-config-persistence.sh
+      - name: Validate N1 OTA /etc/tvguard link and original pairing recovery
+        run: python3 tests/test-etc-symlink-recovery.py
       - name: Simulate v0.1.13 to integrated v0.1.14 no-loss upgrade
         run: dash tests/test-integrated-upgrade.sh
       - name: Validate bounded Shadow Soak observer

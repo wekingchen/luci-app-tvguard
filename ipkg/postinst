@@ -96,6 +96,19 @@ restore_upgrade_key() {
         echo 'TV Guard: saved Agent pairing key is invalid; refusing to replace it' >&2
         return 1
     }
+    # After OTA, a preinst snapshot may contain the transient key created
+    # in the rebuilt overlay. Once /etc/tvguard points to XFS, NEVER let
+    # that snapshot overwrite the established durable TV pairing identity.
+    if [ -L /etc/tvguard ] &&
+       [ "$(readlink /etc/tvguard)" = /mnt/mmcblk2p4/tvguard ] &&
+       valid_key_file /mnt/mmcblk2p4/tvguard/agent-bridge.key; then
+        if ! cmp -s "$UPGRADE/agent-bridge.key" /mnt/mmcblk2p4/tvguard/agent-bridge.key; then
+            echo 'TV Guard: discarded stale overlay pairing snapshot; preserved original XFS identity' >&2
+            rm -f "$UPGRADE/agent-bridge.key" || return 1
+        fi
+        return 0
+    fi
+
     mkdir -p /etc/tvguard
     chmod 700 /etc/tvguard 2>/dev/null || :
     atomic_copy "$UPGRADE/agent-bridge.key" /etc/tvguard/agent-bridge.key
@@ -136,7 +149,12 @@ else
     uci commit firewall
 fi
 
-/usr/libexec/tvguard-data prepare 2>/dev/null || :
+# Recover the original /etc/tvguard -> XFS link BEFORE Bridge may create a
+# new pairing key. A failed recovery must not silently rotate credentials.
+if ! /usr/libexec/tvguard-data prepare; then
+    echo 'TV Guard: /etc/tvguard recovery failed; refusing to rotate Bridge identity' >&2
+    exit 1
+fi
 # 仅迁移尚有效的家长会话，升级前已失效的令牌不可复活。
 /usr/libexec/tvguard-remote-admin migrate >/dev/null 2>&1 || :
 if [ -f /tmp/tvguard-config-restore-needed ]; then
