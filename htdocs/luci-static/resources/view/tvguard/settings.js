@@ -171,7 +171,7 @@ return view.extend({
         // the Bark test callbacks remain owned by the stock form implementation.
         return Promise.resolve(m.render()).then(function(mapNode) {
             return E('div', { 'class': 'tvg-settings-root' }, [
-                E('link', { 'rel': 'stylesheet', 'href': STYLE + '?v=0.1.16-r26' }),
+                E('link', { 'rel': 'stylesheet', 'href': STYLE + '?v=0.1.16-r27' }),
                 E('div', { 'class': 'tvg-settings-header' }, [
                     E('div', { 'class': 'tvg-settings-heading', 'role': 'heading', 'aria-level': '1' },
                         'TV Guard · 设置'),
