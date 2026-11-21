@@ -216,6 +216,13 @@ restore_legacy_link() {
         return 1
     }
 
+    # Do not recursively delete a bind-mounted directory: it may actually
+    # be the durable XFS tree. Only an ordinary overlay directory is disposable.
+    if awk -v m="$LEGACY_DIR" '$2 == m {found=1} END {exit !found}' "$MOUNTS"; then
+        echo "TVGuard: /etc/tvguard is a mountpoint; refusing recursive removal" >&2
+        return 1
+    fi
+
     # The old XFS identity is authoritative after OTA. The new /etc/tvguard
     # overlay directory is disposable; never delete XFS data or follow a link.
     rm -rf "$LEGACY_DIR" || {

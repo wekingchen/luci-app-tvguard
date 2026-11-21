@@ -137,6 +137,19 @@ def test_stale_upgrade_snapshot_cannot_overwrite_durable_key():
         check(not list(persistent.glob(".overlay-etc-tvguard.*")),
               "unexpected XFS backup created during key restore")
 
+def test_bind_mount_directory_is_never_deleted():
+    with tempfile.TemporaryDirectory(prefix="tvguard-mounted-") as folder:
+        root = Path(folder)
+        script, persistent, legacy = setup(root)
+        with (root / "mounts").open("a") as mounts:
+            mounts.write(f"/dev/test {legacy} xfs rw 0 0\n")
+        result = prepare(script)
+        check(result.returncode != 0, "mounted legacy directory was accepted")
+        check(legacy.is_dir() and not legacy.is_symlink(),
+              "mounted legacy directory was deleted")
+        check((legacy / "agent-bridge.key").read_text().strip() == NEW_KEY,
+              "mounted legacy directory contents were changed")
+
 def test_admin_symlink():
     with tempfile.TemporaryDirectory(prefix="tvguard-ota-") as folder:
         root = Path(folder)
@@ -156,5 +169,6 @@ if __name__ == "__main__":
     test_invalid_durable_key()
     test_new_install_with_existing_overlay()
     test_stale_upgrade_snapshot_cannot_overwrite_durable_key()
+    test_bind_mount_directory_is_never_deleted()
     test_admin_symlink()
     print("PASS: OTA restores original Agent key, remote consent and safe XFS link")
