@@ -2,7 +2,7 @@ include $(TOPDIR)/rules.mk
 
 PKG_NAME:=luci-app-tvguard
 PKG_VERSION:=0.1.16
-PKG_RELEASE:=26
+PKG_RELEASE:=27
 PKG_LICENSE:=MIT
 PKG_MAINTAINER:=TV Guard contributors
 

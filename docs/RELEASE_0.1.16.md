@@ -1,8 +1,19 @@
-# TVGuard v0.1.16-r26 · 交付与验收记录
+# TVGuard v0.1.16-r27 · 交付与验收记录
+
+## r27 · 固件升级后 /etc/tvguard 软链接及原配对身份自动恢复
+
+- 主包：`luci-app-tvguard_0.1.16-27_all.ipk`；Build ID：`v0.1.16-r27-ota-etc-link-recovery`。
+- 真实故障：N1 升级前 `/etc/tvguard` 是指向 XFS `/mnt/mmcblk2p4/tvguard` 的软链接；升级后变成普通目录，导致 Bridge 读取了另一套配对密钥，电视上报返回 HTTP 403，LuCI 显示电视 Agent 暂无上报。用户手动重建链接后已恢复正常。
+- 代码根因：`tvguard-data` 先前只在 `.layout-v1` 首次迁移时尝试创建软链接；标记保存在 XFS，OTA 后不会自动再执行链接恢复。Bridge 的安装脚本会在 `/etc/tvguard` 不存在时直接新建目录和密钥。
+- r27 每次准备数据目录时，在 XFS 挂载且原持久化配对密钥合法的前提下，直接移除新 overlay 中的 `/etc/tvguard` 普通目录并链接回旧 XFS，**不备份该临时目录**；原 XFS 目录、配对密钥、家长遥控授权和计时学习数据不变。
+- 对已正确链接、异常链接、缺少挂载、密钥非法，以及目录是挂载点等边界行为设置保护；升级过程中阻止临时配对密钥快照覆盖 XFS 中的旧密钥；先恢复链接，后执行 Bridge 初始化。
+- CI 新增恢复、幂等、无备份、旧密钥防覆盖等模拟回归，同时保持主包/Bridge/Android 兼容性校验。实际下一次固件升级的自动恢复仍待 N1 真机验收。
+
+## r26 · 家长遥控健康巡检与自动恢复（历史版本）
 
 ## 交付内容
 
-- **N1**：`luci-app-tvguard_0.1.16-26_all.ipk`，Build ID `v0.1.16-r26-remote-http-watchdog`。
+- **N1**：`luci-app-tvguard_0.1.16-27_all.ipk`，Build ID `v0.1.16-r27-ota-etc-link-recovery`。
 - **小米电视 Agent**：保持固定签名 `0.3.7`（versionCode 20）；原先已装同版本且权限正常，无需重复安装。
 - **GitHub Release**：正式版标签 `v0.1.16`，同时提供 N1 主 IPK 与已验证固定签名的 Agent APK；Bridge/Fusion 已包含在 N1 主包。
 - **受控的数据与服务**：家长设备授权/备注、TVGuard 计时和学习数据、Bark 设置、Cloudflare Tunnel Token 均在 N1 保留；软件升级不要求重新配对或重建 Docker 容器。
