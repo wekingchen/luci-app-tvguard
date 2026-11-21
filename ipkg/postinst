@@ -136,7 +136,12 @@ else
     uci commit firewall
 fi
 
-/usr/libexec/tvguard-data prepare 2>/dev/null || :
+# Recover the original /etc/tvguard -> XFS link BEFORE Bridge may create a
+# new pairing key. A failed recovery must not silently rotate credentials.
+if ! /usr/libexec/tvguard-data prepare; then
+    echo 'TV Guard: /etc/tvguard recovery failed; refusing to rotate Bridge identity' >&2
+    exit 1
+fi
 # 仅迁移尚有效的家长会话，升级前已失效的令牌不可复活。
 /usr/libexec/tvguard-remote-admin migrate >/dev/null 2>&1 || :
 if [ -f /tmp/tvguard-config-restore-needed ]; then
