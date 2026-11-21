@@ -102,6 +102,41 @@ def test_new_install_with_existing_overlay():
               "unknown existing overlay moved without durable identity")
 
 
+def test_stale_upgrade_snapshot_cannot_overwrite_durable_key():
+    """preinst may snapshot the regenerated overlay key before postinst relinks XFS."""
+    with tempfile.TemporaryDirectory(prefix="tvguard-upgrade-") as folder:
+        root = Path(folder)
+        script, persistent, legacy = setup(root)
+        check(prepare(script).returncode == 0, "initial OTA recovery failed")
+        upgrade = root / "upgrade"
+        upgrade.mkdir()
+        snapshot = upgrade / "agent-bridge.key"
+        snapshot.write_text(NEW_KEY + "\n")
+        full_postinst = (ROOT / "ipkg/postinst").read_text()
+        start = full_postinst.index("restore_upgrade_key() {")
+        end = full_postinst.index("\n}\n", start) + 2
+        valid_start = full_postinst.index("valid_key_file() {")
+        valid_end = full_postinst.index("\n}\n", valid_start) + 2
+        implementation = full_postinst[valid_start:valid_end] + "\n" + full_postinst[start:end]
+        implementation = implementation.replace("/mnt/mmcblk2p4/tvguard", str(persistent))
+        implementation = implementation.replace("/etc/tvguard", str(legacy))
+        restore = root / "upgrade-restore"
+        restore.write_text(
+            "set -eu\nUPGRADE='" + str(upgrade) + "'\n" +
+            "atomic_copy() { cp \"$1\" \"$2\"; }\n" +
+            implementation + "\nrestore_upgrade_key\n"
+        )
+        completed = subprocess.run(
+            ["dash", str(restore)], capture_output=True, text=True
+        )
+        check(completed.returncode == 0,
+              "durable pairing key upgrade protection failed: " + completed.stderr)
+        check((legacy / "agent-bridge.key").read_text().strip() == OLD_KEY,
+              "preinst snapshot replaced the original paired TV identity")
+        check(not snapshot.exists(), "stale snapshot not discarded")
+        check(not list(persistent.glob(".overlay-etc-tvguard.*")),
+              "unexpected XFS backup created during key restore")
+
 def test_admin_symlink():
     with tempfile.TemporaryDirectory(prefix="tvguard-ota-") as folder:
         root = Path(folder)
@@ -120,5 +155,6 @@ if __name__ == "__main__":
     test_without_mount()
     test_invalid_durable_key()
     test_new_install_with_existing_overlay()
+    test_stale_upgrade_snapshot_cannot_overwrite_durable_key()
     test_admin_symlink()
     print("PASS: OTA restores original Agent key, remote consent and safe XFS link")
