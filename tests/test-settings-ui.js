@@ -101,7 +101,12 @@ const page = factory(view, form, uci, mockFs, mockUi, E);
     const root = await page.render();
     assert.equal(root.attrs.class, 'tvg-settings-root');
     assert.equal(root.children[0].tag, 'link');
-    assert.match(root.children[0].attrs.href, /panel\.css\?v=0\.1\.16-r26$/);
+    const makefile = fs.readFileSync('Makefile', 'utf8');
+    const pkgVersion = makefile.match(/^PKG_VERSION:=(\S+)$/m)?.[1];
+    const pkgRelease = makefile.match(/^PKG_RELEASE:=(\d+)$/m)?.[1];
+    assert.ok(pkgVersion && pkgRelease, 'package version is required');
+    assert.ok(root.children[0].attrs.href.endsWith('panel.css?v=' + pkgVersion + '-r' + pkgRelease),
+        'settings stylesheet cache revision must match the package');
     assert.equal(root.children[1].attrs.class, 'tvg-settings-header');
     assert.equal(root.children[1].children[0].attrs.role, 'heading');
     const map = root.children[2];
